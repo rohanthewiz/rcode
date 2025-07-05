@@ -20,6 +20,6 @@ func main() {
 
 	handlers.SetupRoutes(s)
 
-	log.Printf("Starting RoCode server on :8000")
+	log.Printf("Starting RCode server on :8000")
 	log.Fatal(s.Run())
 }

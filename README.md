@@ -1,6 +1,6 @@
-# RoCode Go Server
+# RCode Agentic Coding
 
-A Go-based server implementation of RoCode with web UI, replacing the original TypeScript implementation.
+A Go, web-based agentic coding implementation -- because we think outside the box ;-)
 
 ## Features
 
@@ -43,7 +43,7 @@ go run cmd/main.go
 
 ## Development
 
-See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for detailed implementation notes and next steps.
+See [CLAUDE.md](CLAUDE.md) for detailed implementation notes and next steps.
 
 ## Environment
 

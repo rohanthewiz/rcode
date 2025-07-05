@@ -3,6 +3,14 @@ let eventSource = null;
 let messageInput;
 let editor = null;
 
+// SSE connection tracking
+let reconnectAttempts = 0;
+let reconnectDelay = 1000; // Start with 1 second
+const maxReconnectAttempts = 5;
+const maxReconnectDelay = 30000; // Max 30 seconds
+let isManuallyDisconnected = false;
+let connectionStatus = 'disconnected'; // 'connected', 'disconnected', 'reconnecting'
+
 console.log('Initializing JavaScript...');
 
 // Configure marked.js when available
@@ -26,7 +34,38 @@ function configureMarked() {
 }
 
 function connectEventSource() {
+  // Don't connect if manually disconnected
+  if (isManuallyDisconnected) {
+    console.log('Not connecting - manually disconnected');
+    return;
+  }
+
+  // Close any existing connection first
+  if (eventSource) {
+    console.log('Closing existing EventSource before creating new connection');
+    eventSource.close();
+    eventSource = null;
+  }
+
+  console.log(`Attempting SSE connection (attempt ${reconnectAttempts + 1})`);
+
+  // Update status to reconnecting if we're retrying
+  if (reconnectAttempts > 0 || connectionStatus === 'reconnecting') {
+    updateConnectionStatus('reconnecting');
+  }
+
   eventSource = new EventSource('/events');
+
+  eventSource.onopen = function() {
+    console.log('SSE connection established');
+    // Reset reconnection state on successful connection
+    reconnectAttempts = 0;
+    reconnectDelay = 1000;
+    updateConnectionStatus('connected');
+    
+    // Refresh sessions in case server was restarted
+    loadSessions();
+  };
 
   eventSource.onmessage = function(event) {
     const data = JSON.parse(event.data);
@@ -35,8 +74,136 @@ function connectEventSource() {
 
   eventSource.onerror = function(error) {
     console.error('SSE error:', error);
-    setTimeout(connectEventSource, 5000); // Reconnect after 5 seconds
+    
+    // Close the current connection
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+
+    // Increment attempts first
+    reconnectAttempts++;
+
+    // Check if we've exceeded max reconnection attempts
+    if (reconnectAttempts > maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached. Stopping auto-reconnect.');
+      updateConnectionStatus('disconnected');
+      showConnectionError('Connection to server lost. Please refresh the page or click reconnect.');
+      return;
+    }
+
+    // Update status to show we're reconnecting with attempt count
+    updateConnectionStatus('reconnecting');
+
+    // Calculate next delay with exponential backoff
+    const nextDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
+    
+    console.log(`Reconnecting in ${reconnectDelay/1000} seconds... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+    
+    setTimeout(() => {
+      connectEventSource();
+    }, reconnectDelay);
+    
+    // Update delay for next attempt
+    reconnectDelay = nextDelay;
   };
+}
+
+// Manually reconnect SSE
+function reconnectSSE() {
+  console.log('Manual SSE reconnection requested');
+  
+  // Close any existing connection first
+  if (eventSource) {
+    console.log('Closing existing EventSource before reconnecting');
+    eventSource.close();
+    eventSource = null;
+  }
+  
+  isManuallyDisconnected = false;
+  reconnectAttempts = 0;
+  reconnectDelay = 1000;
+  
+  // Update status to show we're starting fresh
+  // Set attempts to 1 temporarily for display purposes
+  const tempAttempts = reconnectAttempts;
+  reconnectAttempts = 1;
+  updateConnectionStatus('reconnecting');
+  reconnectAttempts = tempAttempts;
+  
+  // Small delay to ensure UI updates before connection attempt
+  setTimeout(() => {
+    connectEventSource();
+  }, 100);
+}
+
+// Disconnect SSE
+function disconnectSSE() {
+  console.log('Disconnecting SSE');
+  isManuallyDisconnected = true;
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+  updateConnectionStatus('disconnected');
+}
+
+// Update connection status in UI
+function updateConnectionStatus(status) {
+  connectionStatus = status;
+  const statusElement = document.getElementById('connection-status');
+  if (!statusElement) {
+    console.error('Connection status element not found');
+    return;
+  }
+
+  console.log(`Updating connection status to: ${status}`);
+
+  // Remove all status classes
+  statusElement.classList.remove('connected', 'disconnected', 'reconnecting');
+  
+  // Add current status class
+  statusElement.classList.add(status);
+  
+  // Update text and visibility
+  switch(status) {
+    case 'connected':
+      statusElement.style.display = 'none'; // Hide when connected
+      statusElement.textContent = ''; // Clear text content
+      console.log('Status set to connected - indicator should be hidden');
+      break;
+    case 'reconnecting':
+      statusElement.textContent = `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`;
+      statusElement.style.display = 'block';
+      break;
+    case 'disconnected':
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        statusElement.innerHTML = 'Connection lost. <a href="#" onclick="reconnectSSE(); return false;">Reconnect</a>';
+      } else {
+        statusElement.textContent = 'Disconnected';
+      }
+      statusElement.style.display = 'block';
+      break;
+  }
+}
+
+// Show connection error message
+function showConnectionError(message) {
+  const messagesContainer = document.getElementById('messages');
+  if (!messagesContainer) return;
+
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'connection-error';
+  errorDiv.innerHTML = `
+    <div class="error-content">
+      <strong>Connection Error</strong>
+      <p>${message}</p>
+      <button onclick="reconnectSSE()" class="btn-secondary">Reconnect</button>
+    </div>
+  `;
+  
+  messagesContainer.appendChild(errorDiv);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
 // Handle server events
@@ -272,6 +439,25 @@ async function sendMessage() {
     if (!response.ok) {
       const errorText = await response.text();
       console.error('Response error:', errorText);
+      
+      // Handle session not found error
+      if (response.status === 404) {
+        console.log('Session not found, creating new session');
+        // Clear current session and create a new one
+        currentSessionId = null;
+        await createNewSession();
+        
+        // Show error message to user
+        addMessageToUI({
+          role: 'assistant',
+          content: 'Previous session was lost (server may have restarted). Created a new session. Please resend your message.'
+        });
+        
+        // Restore the user's message to the input
+        editor.setValue(content);
+        return;
+      }
+      
       throw new Error('Failed to send message: ' + errorText);
     }
 

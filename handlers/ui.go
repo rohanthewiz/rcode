@@ -35,7 +35,7 @@ func generateMainUI(isAuthenticated bool) string {
 
 	b.Html().R(
 		b.Head().R(
-			b.Title().T("RoCode - AI Coding Assistant"),
+			b.Title().T("RCode - AI Coding Assistant"),
 			b.Meta("charset", "UTF-8"),
 			b.Meta("name", "viewport", "content", "width=device-width, initial-scale=1.0"),
 			b.Style().T(generateCSS()),
@@ -55,11 +55,12 @@ func generateMainUI(isAuthenticated bool) string {
 				// Header
 				b.Header().R(
 					b.Div("class", "header-content").R(
-						b.H1().T("RoCode"),
+						b.H1().T("RCode"),
 						b.Div("class", "header-right").R(
 							func() any {
 								if isAuthenticated {
 									b.Span("class", "auth-status").T("Connected to Claude Pro/Max")
+									b.Span("id", "connection-status", "class", "connection-status").R()
 									b.Button("id", "logout-btn", "class", "btn-secondary").T("Logout")
 								} else {
 									b.Button("class", "btn-primary", "onclick", "handleLogin()").T("Login with Claude Pro/Max")
@@ -139,7 +140,7 @@ func generateJavaScript(isAuthenticated bool) string {
 		return loginJS + `
 			// Non-authenticated view
 			document.addEventListener('DOMContentLoaded', function() {
-				console.log('RoCode initialized - Please login to continue');
+				console.log('RCode initialized - Please login to continue');
 			});
 		`
 	}

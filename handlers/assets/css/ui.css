@@ -46,6 +46,60 @@ header {
   margin: 0 auto;
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+}
+
+/* Connection status indicator */
+.connection-status {
+  display: none;
+  padding: 0.25rem 0.75rem;
+  border-radius: 4px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  animation: pulse 2s infinite;
+}
+
+.connection-status.reconnecting {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ff9800;
+  border: 1px solid rgba(255, 152, 0, 0.3);
+}
+
+.connection-status.disconnected {
+  background: rgba(244, 67, 54, 0.2);
+  color: #f44336;
+  border: 1px solid rgba(244, 67, 54, 0.3);
+}
+
+.connection-status.connected {
+  display: none !important;
+}
+
+.connection-status a {
+  color: inherit;
+  text-decoration: underline;
+  margin-left: 0.5rem;
+}
+
+.connection-status a:hover {
+  opacity: 0.8;
+}
+
+@keyframes pulse {
+  0% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
 h1 {
   font-size: 1.5rem;
   color: var(--accent);
@@ -241,6 +295,37 @@ main {
 
 .message-content a:hover {
   text-decoration: underline;
+}
+
+/* Connection error message */
+.connection-error {
+  margin: 1rem;
+  padding: 1rem;
+  background: rgba(244, 67, 54, 0.1);
+  border: 1px solid rgba(244, 67, 54, 0.3);
+  border-radius: 8px;
+  text-align: center;
+}
+
+.connection-error .error-content {
+  max-width: 400px;
+  margin: 0 auto;
+}
+
+.connection-error strong {
+  color: #f44336;
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 1.1rem;
+}
+
+.connection-error p {
+  margin-bottom: 1rem;
+  color: var(--text-secondary);
+}
+
+.connection-error button {
+  margin-top: 0.5rem;
 }
 
 .message-content table {
