@@ -1,0 +1,60 @@
+package tools
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+
+	"github.com/rohanthewiz/serr"
+)
+
+// WriteFileTool implements file writing functionality
+type WriteFileTool struct{}
+
+// GetDefinition returns the tool definition for the AI
+func (t *WriteFileTool) GetDefinition() Tool {
+	return Tool{
+		Name:        "write_file",
+		Description: "Write content to a file at the specified path. Creates the file if it doesn't exist.",
+		InputSchema: map[string]interface{}{
+			"type": "object",
+			"properties": map[string]interface{}{
+				"path": map[string]interface{}{
+					"type":        "string",
+					"description": "The path where the file should be written",
+				},
+				"content": map[string]interface{}{
+					"type":        "string",
+					"description": "The content to write to the file",
+				},
+			},
+			"required": []string{"path", "content"},
+		},
+	}
+}
+
+// Execute writes the content to the file
+func (t *WriteFileTool) Execute(input map[string]interface{}) (string, error) {
+	path, ok := GetString(input, "path")
+	if !ok || path == "" {
+		return "", serr.New("path is required")
+	}
+
+	content, ok := GetString(input, "content")
+	if !ok {
+		return "", serr.New("content is required")
+	}
+
+	// Create directory if it doesn't exist
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return "", serr.Wrap(err, fmt.Sprintf("Failed to create directory: %s", dir))
+	}
+
+	// Write the file
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		return "", serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path))
+	}
+
+	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), path), nil
+}
