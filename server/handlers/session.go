@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/opencodesdev/opencode/server/providers"
+	"github.com/opencodesdev/opencode/server/tools"
 	"github.com/rohanthewiz/logger"
 	"github.com/rohanthewiz/rweb"
 	"github.com/rohanthewiz/serr"
@@ -98,8 +99,9 @@ func sendMessageHandler(c rweb.Context) error {
 	session.Messages = append(session.Messages, userMsg)
 	session.UpdatedAt = time.Now()
 
-	// Create Anthropic client
+	// Create Anthropic client and tool registry
 	client := providers.NewAnthropicClient()
+	toolRegistry := tools.DefaultRegistry()
 
 	// Use the model from the request, or default to Claude Sonnet 4
 	model := msgReq.Model
@@ -109,8 +111,10 @@ func sendMessageHandler(c rweb.Context) error {
 
 	logger.Info("Using model", "model", model)
 
-	// Prepare request - Anthropic API expects system in a separate field
-	// IMPORTANT: Must use exact system prompt for OAuth authentication
+	// Get available tools
+	availableTools := toolRegistry.GetTools()
+
+	// Prepare request with tools
 	systemPrompt := "You are Claude Code, Anthropic's official CLI for Claude."
 
 	request := providers.CreateMessageRequest{
@@ -119,44 +123,95 @@ func sendMessageHandler(c rweb.Context) error {
 		MaxTokens: 4096,
 		Stream:    false,
 		System:    systemPrompt,
+		Tools:     availableTools,
 	}
 
-	// Send message to Claude
-	response, err := client.SendMessage(request)
-	if err != nil {
-		logger.LogErr(err, "failed to send message to Claude")
-		return c.WriteError(err, 500)
-	}
-
-	// Extract text content from response
-	var responseText string
-	for _, content := range response.Content {
-		if content.Type == "text" {
-			responseText += content.Text
+	// Keep trying until we get a final response (not a tool use)
+	for {
+		// Send message to Claude
+		response, err := client.SendMessage(request)
+		if err != nil {
+			logger.LogErr(err, "failed to send message to Claude")
+			return c.WriteError(err, 500)
 		}
+
+		// Check if response contains tool uses
+		var hasToolUse bool
+		var toolResults []interface{}
+
+		for _, content := range response.Content {
+			if content.Type == "tool_use" {
+				hasToolUse = true
+				
+				// Parse the tool use
+				toolUseData, _ := json.Marshal(content)
+				var toolUse tools.ToolUse
+				json.Unmarshal(toolUseData, &toolUse)
+
+				logger.Info("Executing tool", "name", toolUse.Name)
+
+				// Execute the tool
+				result, err := toolRegistry.Execute(toolUse)
+				if err != nil {
+					logger.LogErr(err, "tool execution failed")
+				}
+
+				// Add tool result to results
+				toolResults = append(toolResults, result)
+			}
+		}
+
+		// If there were tool uses, add assistant message and tool results, then continue
+		if hasToolUse {
+			// Add the assistant's message with tool uses to session
+			assistantMsg := providers.ChatMessage{
+				Role:    "assistant",
+				Content: response.Content,
+			}
+			session.Messages = append(session.Messages, assistantMsg)
+
+			// Add tool results as user message
+			toolResultMsg := providers.ChatMessage{
+				Role:    "user",
+				Content: toolResults,
+			}
+			session.Messages = append(session.Messages, toolResultMsg)
+
+			// Update request with new messages and continue
+			request.Messages = providers.ConvertToAPIMessages(session.Messages)
+			continue
+		}
+
+		// No tool use, extract text content from response
+		var responseText string
+		for _, content := range response.Content {
+			if content.Type == "text" {
+				responseText += content.Text
+			}
+		}
+
+		// Add assistant message to session
+		assistantMsg := providers.ChatMessage{
+			Role:    "assistant",
+			Content: responseText,
+		}
+		session.Messages = append(session.Messages, assistantMsg)
+
+		// Broadcast the assistant's message
+		BroadcastMessage(sessionID, map[string]interface{}{
+			"role":    "assistant",
+			"content": responseText,
+			"model":   response.Model,
+		})
+
+		// Return the assistant's response with model info
+		return c.WriteJSON(map[string]interface{}{
+			"role":    "assistant",
+			"content": responseText,
+			"usage":   response.Usage,
+			"model":   response.Model,
+		})
 	}
-
-	// Add assistant message to session
-	assistantMsg := providers.ChatMessage{
-		Role:    "assistant",
-		Content: responseText,
-	}
-	session.Messages = append(session.Messages, assistantMsg)
-
-	// Broadcast the assistant's message
-	BroadcastMessage(sessionID, map[string]interface{}{
-		"role":    "assistant",
-		"content": responseText,
-		"model":   response.Model,
-	})
-
-	// Return the assistant's response with model info
-	return c.WriteJSON(map[string]interface{}{
-		"role":    "assistant",
-		"content": responseText,
-		"usage":   response.Usage,
-		"model":   response.Model,
-	})
 }
 
 // Add a handler to get messages for a session

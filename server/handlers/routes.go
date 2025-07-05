@@ -18,6 +18,9 @@ func SetupRoutes(s *rweb.Server) {
 	s.Post("/auth/anthropic/exchange", auth.AnthropicExchangeHandler)
 	s.Post("/auth/anthropic/refresh", auth.AnthropicRefreshHandler)
 	s.Get("/auth/callback", AuthCallbackHandler)
+	
+	// Logout endpoint
+	s.Post("/api/auth/logout", auth.LogoutHandler)
 
 	// API endpoints
 	s.Get("/api/app", appInfoHandler)

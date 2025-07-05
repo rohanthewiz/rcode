@@ -61,11 +61,12 @@ type ToolResult struct {
 
 // CreateMessageRequest represents the request to create a message
 type CreateMessageRequest struct {
-	Model     string    `json:"model"`
-	Messages  []Message `json:"messages"`
-	MaxTokens int       `json:"max_tokens"`
-	Stream    bool      `json:"stream"`
-	System    string    `json:"system,omitempty"`
+	Model     string      `json:"model"`
+	Messages  []Message   `json:"messages"`
+	MaxTokens int         `json:"max_tokens"`
+	Stream    bool        `json:"stream"`
+	System    string      `json:"system,omitempty"`
+	Tools     interface{} `json:"tools,omitempty"`
 }
 
 // CreateMessageResponse represents the response from creating a message

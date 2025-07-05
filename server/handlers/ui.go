@@ -134,7 +134,8 @@ func generateCSS() string {
 
 func generateJavaScript(isAuthenticated bool) string {
 	if !isAuthenticated {
-		return `
+		// Return login JS for non-authenticated users
+		return loginJS + `
 			// Non-authenticated view
 			document.addEventListener('DOMContentLoaded', function() {
 				console.log('RoCode initialized - Please login to continue');
