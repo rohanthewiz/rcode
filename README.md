@@ -1,12 +1,13 @@
 # RCode Agentic Coding
 
-A Go, web-based agentic coding implementation -- because we think outside the box ;-)
+A pure Go, web-based agentic coding implementation for Anthropic. This is a work in progress --Alpha status.
+Note: It is way better to use Claude Code, but if you want to see how deep the rabbit hole goes, take the red pill!
 
 ## Features
 
-- 🔐 **Anthropic OAuth Authentication** - Login with Claude Pro/Max for free API usage
-- 🌐 **Web UI** - Built with element package for HTML generation
-- 📝 **Monaco Editor** - Rich code editing experience
+- 🔐 **Anthropic OAuth Authentication** - (Prerequisite) Login with Claude Pro/Max
+- 🌐 **Web UI** - Built with element package
+- 📝 **Monaco Editor** - For graphical chat input editing
 - 💬 **Real-time Chat** - Server-sent events for live updates
 - 🎯 **Session Management** - Multiple chat sessions support
 
