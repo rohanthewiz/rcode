@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Monaco Editor Test</title>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/editor/editor.main.min.css">
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            background: #1a1a1a;
+            color: white;
+            font-family: sans-serif;
+        }
+        #container {
+            width: 800px;
+            height: 200px;
+            border: 1px solid #444;
+            margin: 20px auto;
+        }
+        #status {
+            text-align: center;
+            margin: 20px;
+        }
+        button {
+            padding: 10px 20px;
+            margin: 10px;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        .controls {
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+    <h1 style="text-align: center;">Monaco Editor Test</h1>
+    <div id="status">Loading editor...</div>
+    <div id="container"></div>
+    <div class="controls">
+        <button onclick="testGetValue()">Get Value</button>
+        <button onclick="testSetValue()">Set Test Value</button>
+        <button onclick="testFocus()">Focus Editor</button>
+    </div>
+    <div id="output" style="margin: 20px; padding: 20px; background: #2a2a2a; border-radius: 4px; font-family: monospace; white-space: pre-wrap;"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs/loader.min.js"></script>
+    <script>
+        let editor;
+        const output = document.getElementById('output');
+        const status = document.getElementById('status');
+
+        function log(message) {
+            const timestamp = new Date().toLocaleTimeString();
+            output.textContent += `[${timestamp}] ${message}\n`;
+            console.log(message);
+        }
+
+        // Configure Monaco
+        require.config({ 
+            paths: { 
+                vs: 'https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.45.0/min/vs' 
+            } 
+        });
+
+        // Load Monaco
+        require(['vs/editor/editor.main'], function() {
+            log('Monaco loaded successfully');
+            status.textContent = 'Initializing editor...';
+            
+            try {
+                editor = monaco.editor.create(document.getElementById('container'), {
+                    value: '// Type here to test Monaco editor\n// Press Ctrl/Cmd+Enter to test keyboard shortcut\n',
+                    language: 'javascript',
+                    theme: 'vs-dark',
+                    minimap: { enabled: false },
+                    wordWrap: 'on',
+                    fontSize: 14,
+                    automaticLayout: true,
+                    scrollBeyondLastLine: false,
+                    padding: { top: 10, bottom: 10 }
+                });
+                
+                log('Editor created successfully');
+                status.textContent = 'Editor ready! Try typing in the editor.';
+                
+                // Add keyboard shortcut test
+                editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function() {
+                    log('Ctrl/Cmd+Enter pressed!');
+                    alert('Keyboard shortcut works!');
+                });
+                
+                // Listen for content changes
+                editor.onDidChangeModelContent((event) => {
+                    log(`Content changed: ${event.changes.length} changes`);
+                });
+                
+                // Focus the editor
+                setTimeout(() => {
+                    editor.focus();
+                    log('Editor focused');
+                }, 100);
+                
+            } catch (error) {
+                log('Error creating editor: ' + error.message);
+                status.textContent = 'Error: ' + error.message;
+            }
+        });
+
+        function testGetValue() {
+            if (editor) {
+                const value = editor.getValue();
+                log('Editor value: ' + value);
+                alert('Editor value:\n' + value);
+            } else {
+                log('Editor not initialized');
+            }
+        }
+
+        function testSetValue() {
+            if (editor) {
+                editor.setValue('// Test value set at ' + new Date().toLocaleTimeString());
+                log('Set test value');
+            } else {
+                log('Editor not initialized');
+            }
+        }
+
+        function testFocus() {
+            if (editor) {
+                editor.focus();
+                log('Editor focused');
+            } else {
+                log('Editor not initialized');
+            }
+        }
+    </script>
+</body>
+</html>
