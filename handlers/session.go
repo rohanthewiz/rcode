@@ -5,11 +5,12 @@ import (
 	"fmt"
 	"time"
 
+	"rcode/providers"
+	"rcode/tools"
+
 	"github.com/rohanthewiz/logger"
 	"github.com/rohanthewiz/rweb"
 	"github.com/rohanthewiz/serr"
-	"rcode/providers"
-	"rcode/tools"
 )
 
 // Session represents a chat session
@@ -26,10 +27,16 @@ var sessions = make(map[string]*Session)
 
 // createSession creates a new chat session
 func createSession() *Session {
+	// Create initial message with user instructions
+	initMessage := providers.ChatMessage{
+		Role:    "user",
+		Content: "Always ask before creating or writing files or using any tools",
+	}
+
 	session := &Session{
 		ID:        fmt.Sprintf("session-%d", time.Now().Unix()),
 		Title:     "New Chat",
-		Messages:  []providers.ChatMessage{},
+		Messages:  []providers.ChatMessage{initMessage},
 		CreatedAt: time.Now(),
 		UpdatedAt: time.Now(),
 	}
