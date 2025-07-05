@@ -2,6 +2,7 @@ let currentSessionId = null;
 let eventSource = null;
 let messageInput;
 let editor = null;
+let pendingNewSession = false; // Track if we're waiting to create a new session
 
 // SSE connection tracking
 let reconnectAttempts = 0;
@@ -246,6 +247,7 @@ async function loadSessions() {
 // Select session
 function selectSession(sessionId) {
   currentSessionId = sessionId;
+  pendingNewSession = false; // Clear pending state when selecting existing session
   loadMessages();
   loadSessions(); // Refresh to update active state
 }
@@ -398,10 +400,17 @@ async function sendMessage() {
     return;
   }
 
-  if (!currentSessionId) {
-    console.log('No session, creating new one');
-    // Create new session if none selected
-    await createNewSession();
+  // Create session if needed
+  if (!currentSessionId || pendingNewSession) {
+    console.log('Creating new session before sending message');
+    try {
+      await actuallyCreateSession();
+      console.log('Session created:', currentSessionId);
+    } catch (error) {
+      console.error('Failed to create session:', error);
+      alert('Failed to create session. Please try again.');
+      return;
+    }
   }
 
   console.log('Sending to session:', currentSessionId);
@@ -472,6 +481,10 @@ async function sendMessage() {
         model: result.model
       });
     }
+    
+    // Reload sessions to show updated title (for first message)
+    // The backend will have updated the session title based on the first user message
+    loadSessions();
   } catch (error) {
     // Remove thinking indicator on error
     removeThinkingIndicator(thinkingId);
@@ -480,8 +493,8 @@ async function sendMessage() {
   }
 }
 
-// Create new session
-async function createNewSession() {
+// Actually create a new session in the database
+async function actuallyCreateSession() {
   try {
     const response = await fetch('/api/session', {
       method: 'POST',
@@ -490,12 +503,33 @@ async function createNewSession() {
 
     const session = await response.json();
     currentSessionId = session.id;
-    await loadSessions();
-
-    // Clear messages
-    document.getElementById('messages').innerHTML = '';
+    pendingNewSession = false;
+    
+    // Don't reload sessions immediately - wait for title to be set
+    return session;
   } catch (error) {
     console.error('Failed to create session:', error);
+    throw error;
+  }
+}
+
+// Prepare UI for new session (called by New Session button)
+async function createNewSession() {
+  // Just prepare UI for new session
+  currentSessionId = null;
+  pendingNewSession = true;
+  
+  // Clear messages
+  document.getElementById('messages').innerHTML = '';
+  
+  // Remove active class from all sessions
+  document.querySelectorAll('.session-item').forEach(item => {
+    item.classList.remove('active');
+  });
+  
+  // Focus on input
+  if (editor) {
+    editor.focus();
   }
 }
 

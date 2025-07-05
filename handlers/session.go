@@ -55,6 +55,38 @@ type MessageRequest struct {
 	Model   string `json:"model,omitempty"`
 }
 
+// generateSessionTitle creates a friendly title from the first user message
+func generateSessionTitle(content string) string {
+	// Trim whitespace
+	content = strings.TrimSpace(content)
+	
+	// If content is too short, use default
+	if len(content) < 3 {
+		return "New Chat"
+	}
+	
+	// Take first line only (in case of multi-line messages)
+	lines := strings.Split(content, "\n")
+	title := lines[0]
+	
+	// Remove any leading command-like prefixes
+	title = strings.TrimPrefix(title, "/")
+	title = strings.TrimSpace(title)
+	
+	// Limit length and add ellipsis if needed
+	maxLength := 50
+	if len(title) > maxLength {
+		// Try to cut at a word boundary
+		if idx := strings.LastIndexAny(title[:maxLength-3], " .,!?"); idx > maxLength/2 {
+			title = title[:idx] + "..."
+		} else {
+			title = title[:maxLength-3] + "..."
+		}
+	}
+	
+	return title
+}
+
 // Updated handlers with proper implementation
 
 func listSessionsHandler(c rweb.Context) error {
@@ -143,6 +175,23 @@ func sendMessageHandler(c rweb.Context) error {
 	err = database.AddMessage(sessionID, userMsg, "", nil)
 	if err != nil {
 		return c.WriteError(serr.Wrap(err, "failed to add user message"), 500)
+	}
+
+	// Check if this is the first user message (after initial prompt)
+	// and update session title if needed
+	messageCount, err := database.GetMessageCount(sessionID)
+	if err != nil {
+		logger.LogErr(err, "failed to get message count")
+	} else if messageCount == 2 && session.Title == "New Chat" {
+		// This is the first real user message, generate a title
+		newTitle := generateSessionTitle(msgReq.Content)
+		if err := database.UpdateSession(sessionID, newTitle, session.Metadata); err != nil {
+			logger.LogErr(err, "failed to update session title")
+		} else {
+			logger.Info("Updated session title", "session_id", sessionID, "title", newTitle)
+			// Broadcast session list update so UI refreshes
+			BroadcastSessionList()
+		}
 	}
 
 	// Get all messages for context
