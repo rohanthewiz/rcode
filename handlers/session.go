@@ -2,9 +2,10 @@ package handlers
 
 import (
 	"encoding/json"
-	"fmt"
+	"strings"
 	"time"
 
+	"rcode/db"
 	"rcode/providers"
 	"rcode/tools"
 
@@ -13,35 +14,39 @@ import (
 	"github.com/rohanthewiz/serr"
 )
 
-// Session represents a chat session
-type Session struct {
-	ID        string                  `json:"id"`
-	Title     string                  `json:"title"`
-	Messages  []providers.ChatMessage `json:"messages"`
-	CreatedAt time.Time               `json:"created_at"`
-	UpdatedAt time.Time               `json:"updated_at"`
-}
+// Session represents a chat session (alias for db.Session for backward compatibility)
+type Session = db.Session
 
-// In-memory session storage (for now)
-var sessions = make(map[string]*Session)
+// createSession creates a new chat session in the database
+func createSession() (*Session, error) {
+	// Get database instance
+	database, err := db.GetDB()
+	if err != nil {
+		return nil, serr.Wrap(err, "failed to get database")
+	}
 
-// createSession creates a new chat session
-func createSession() *Session {
-	// Create initial message with user instructions
-	initMessage := providers.ChatMessage{
+	// Create session with default initial prompt
+	session, err := database.CreateSession(db.SessionOptions{
+		Title: "New Chat",
+		InitialPrompts: []string{
+			"Always ask before creating or writing files or using any tools",
+		},
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	// Add the initial prompt as the first message
+	initialPrompt := strings.Join(session.InitialPrompts, "\n")
+	err = database.AddMessage(session.ID, providers.ChatMessage{
 		Role:    "user",
-		Content: "Always ask before creating or writing files or using any tools",
+		Content: initialPrompt,
+	}, "", nil)
+	if err != nil {
+		logger.LogErr(err, "failed to add initial message")
 	}
 
-	session := &Session{
-		ID:        fmt.Sprintf("session-%d", time.Now().Unix()),
-		Title:     "New Chat",
-		Messages:  []providers.ChatMessage{initMessage},
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
-	}
-	sessions[session.ID] = session
-	return session
+	return session, nil
 }
 
 // MessageRequest represents a request to send a message
@@ -53,15 +58,27 @@ type MessageRequest struct {
 // Updated handlers with proper implementation
 
 func listSessionsHandler(c rweb.Context) error {
-	sessionList := make([]*Session, 0, len(sessions))
-	for _, session := range sessions {
-		sessionList = append(sessionList, session)
+	// Get database instance
+	database, err := db.GetDB()
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get database"), 500)
 	}
-	return c.WriteJSON(sessionList)
+
+	// List sessions from database
+	sessions, err := database.ListSessions()
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to list sessions"), 500)
+	}
+
+	return c.WriteJSON(sessions)
 }
 
 func createSessionHandler(c rweb.Context) error {
-	session := createSession()
+	session, err := createSession()
+	if err != nil {
+		return c.WriteError(err, 500)
+	}
+
 	logger.F("Created new session: %s", session.ID)
 
 	// Broadcast session list update
@@ -72,7 +89,18 @@ func createSessionHandler(c rweb.Context) error {
 
 func deleteSessionHandler(c rweb.Context) error {
 	sessionID := c.Request().Param("id")
-	delete(sessions, sessionID)
+
+	// Get database instance
+	database, err := db.GetDB()
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get database"), 500)
+	}
+
+	// Delete session from database
+	err = database.DeleteSession(sessionID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to delete session"), 500)
+	}
 
 	// Broadcast session list update
 	BroadcastSessionList()
@@ -84,9 +112,18 @@ func sendMessageHandler(c rweb.Context) error {
 	sessionID := c.Request().Param("id")
 	logger.Info("Sending message to session: " + sessionID)
 
-	// Get session
-	session, exists := sessions[sessionID]
-	if !exists {
+	// Get database instance
+	database, err := db.GetDB()
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get database"), 500)
+	}
+
+	// Get session from database
+	session, err := database.GetSession(sessionID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get session"), 500)
+	}
+	if session == nil {
 		logger.Info("Session not found for message: " + sessionID)
 		return c.WriteError(serr.New("session not found"), 404)
 	}
@@ -98,13 +135,21 @@ func sendMessageHandler(c rweb.Context) error {
 		return c.WriteError(serr.Wrap(err, "invalid request body"), 400)
 	}
 
-	// Add user message to session
+	// Add user message to database
 	userMsg := providers.ChatMessage{
 		Role:    "user",
 		Content: msgReq.Content,
 	}
-	session.Messages = append(session.Messages, userMsg)
-	session.UpdatedAt = time.Now()
+	err = database.AddMessage(sessionID, userMsg, "", nil)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to add user message"), 500)
+	}
+
+	// Get all messages for context
+	messages, err := database.GetMessages(sessionID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get messages"), 500)
+	}
 
 	// Create Anthropic client and tool registry
 	client := providers.NewAnthropicClient()
@@ -126,7 +171,7 @@ func sendMessageHandler(c rweb.Context) error {
 
 	request := providers.CreateMessageRequest{
 		Model:     model,
-		Messages:  providers.ConvertToAPIMessages(session.Messages),
+		Messages:  providers.ConvertToAPIMessages(messages),
 		MaxTokens: 4096,
 		Stream:    false,
 		System:    systemPrompt,
@@ -157,8 +202,18 @@ func sendMessageHandler(c rweb.Context) error {
 
 				logger.Info("Executing tool", "name", toolUse.Name)
 
+				// Log tool usage (measure execution time)
+				startTime := time.Now()
+
 				// Execute the tool
 				result, err := toolRegistry.Execute(toolUse)
+				durationMs := int(time.Since(startTime).Milliseconds())
+				
+				// Log tool usage to database
+				if logErr := database.LogToolUsage(sessionID, toolUse.Name, toolUse.Input, result.Content, durationMs, err); logErr != nil {
+					logger.LogErr(logErr, "failed to log tool usage")
+				}
+				
 				if err != nil {
 					logger.LogErr(err, "tool execution failed")
 				}
@@ -170,22 +225,34 @@ func sendMessageHandler(c rweb.Context) error {
 
 		// If there were tool uses, add assistant message and tool results, then continue
 		if hasToolUse {
-			// Add the assistant's message with tool uses to session
+			// Add the assistant's message with tool uses to database
 			assistantMsg := providers.ChatMessage{
 				Role:    "assistant",
 				Content: response.Content,
 			}
-			session.Messages = append(session.Messages, assistantMsg)
+			err = database.AddMessage(sessionID, assistantMsg, response.Model, &response.Usage)
+			if err != nil {
+				logger.LogErr(err, "failed to add assistant message with tool use")
+			}
 
 			// Add tool results as user message
 			toolResultMsg := providers.ChatMessage{
 				Role:    "user",
 				Content: toolResults,
 			}
-			session.Messages = append(session.Messages, toolResultMsg)
+			err = database.AddMessage(sessionID, toolResultMsg, "", nil)
+			if err != nil {
+				logger.LogErr(err, "failed to add tool result message")
+			}
+
+			// Get updated messages
+			messages, err = database.GetMessages(sessionID)
+			if err != nil {
+				return c.WriteError(serr.Wrap(err, "failed to get updated messages"), 500)
+			}
 
 			// Update request with new messages and continue
-			request.Messages = providers.ConvertToAPIMessages(session.Messages)
+			request.Messages = providers.ConvertToAPIMessages(messages)
 			continue
 		}
 
@@ -197,12 +264,15 @@ func sendMessageHandler(c rweb.Context) error {
 			}
 		}
 
-		// Add assistant message to session
+		// Add assistant message to database
 		assistantMsg := providers.ChatMessage{
 			Role:    "assistant",
 			Content: responseText,
 		}
-		session.Messages = append(session.Messages, assistantMsg)
+		err = database.AddMessage(sessionID, assistantMsg, response.Model, &response.Usage)
+		if err != nil {
+			logger.LogErr(err, "failed to add assistant message")
+		}
 
 		// Broadcast the assistant's message
 		BroadcastMessage(sessionID, map[string]interface{}{
@@ -226,15 +296,21 @@ func getSessionMessagesHandler(c rweb.Context) error {
 	sessionID := c.Request().Param("id")
 
 	logger.Info("Getting messages for session: " + sessionID)
-	logger.F("Number of active sessions: %d", len(sessions))
 
-	session, exists := sessions[sessionID]
-	if !exists {
-		logger.Info("Session not found: " + sessionID)
-		// Return empty array instead of 404 to avoid breaking the UI
+	// Get database instance
+	database, err := db.GetDB()
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get database"), 500)
+	}
+
+	// Get messages from database
+	messages, err := database.GetMessages(sessionID)
+	if err != nil {
+		logger.LogErr(err, "failed to get messages")
+		// Return empty array instead of error to avoid breaking the UI
 		return c.WriteJSON([]providers.ChatMessage{})
 	}
 
-	logger.F("Found session with messages: %d", len(session.Messages))
-	return c.WriteJSON(session.Messages)
+	logger.F("Found session with messages: %d", len(messages))
+	return c.WriteJSON(messages)
 }
