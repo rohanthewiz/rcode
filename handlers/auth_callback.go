@@ -16,7 +16,7 @@ func generateAuthCallbackHTML() string {
 
 	b.Html().R(
 		b.Head().R(
-			b.Title().T("OpenCode - Enter Authorization Code"),
+			b.Title().T("RCode - Enter Authorization Code"),
 			b.Meta("charset", "UTF-8"),
 			b.Meta("name", "viewport", "content", "width=device-width, initial-scale=1.0"),
 			b.Style().T(`
@@ -92,7 +92,7 @@ func generateAuthCallbackHTML() string {
 		b.Body().R(
 			b.Div("class", "container").R(
 				b.H1().T("Authorization Required"),
-				b.P().T("After authorizing OpenCode on Claude.ai, you should see an authorization code. Please copy and paste it below:"),
+				b.P().T("After authorizing RCode on Claude.ai, you should see an authorization code. Please copy and paste it below:"),
 				b.Input("type", "text", "id", "code-input", "class", "code-input", "placeholder", "Paste authorization code here"),
 				b.Button("id", "submit-btn", "class", "btn", "onclick", "submitCode()").T("Submit Code"),
 				b.Div("id", "error-msg", "class", "error").T("Invalid code. Please try again."),

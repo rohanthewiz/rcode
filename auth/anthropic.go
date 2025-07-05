@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	// OAuth client ID for OpenCode
+	// OAuth client ID for RCode
 	clientID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 	// OAuth endpoints
 	authorizeURL = "https://claude.ai/oauth/authorize"
@@ -170,8 +170,8 @@ func AnthropicCallbackHandler(c rweb.Context) error {
     <h1>Authentication Successful!</h1>
     <div class="success">
         <p>You have successfully authenticated with Claude Pro/Max.</p>
-        <p>You can now close this window and return to OpenCode.</p>
-        <p><a href="/">Return to OpenCode</a></p>
+        <p>You can now close this window and return to RCode.</p>
+        <p><a href="/">Return to RCode</a></p>
     </div>
 </body>
 </html>`

@@ -3,8 +3,9 @@ package main
 import (
 	"log"
 
-	"github.com/rohanthewiz/rweb"
 	"rcode/handlers"
+
+	"github.com/rohanthewiz/rweb"
 )
 
 func main() {
@@ -16,6 +17,7 @@ func main() {
 
 	// Add middleware for request logging
 	s.Use(rweb.RequestInfo)
+	s.ElementDebugRoutes()
 
 	// Setup routes
 	handlers.SetupRoutes(s)

@@ -1,15 +1,15 @@
 package handlers
 
 import (
-	"github.com/rohanthewiz/rweb"
 	"rcode/auth"
+
+	"github.com/rohanthewiz/rweb"
 )
 
 // SetupRoutes configures all HTTP routes for the server
 func SetupRoutes(s *rweb.Server) {
 	// Root endpoint - serves the main web UI
 	s.Get("/", rootHandler)
-	s.Get("/test", TestUIHandler) // Test page
 
 	// Auth endpoints
 	s.Get("/auth/anthropic/authorize", auth.AnthropicAuthorizeHandler)

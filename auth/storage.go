@@ -16,13 +16,13 @@ type TokenStorage struct {
 
 // NewTokenStorage creates a new token storage instance
 func NewTokenStorage() (*TokenStorage, error) {
-	// Use ~/.local/share/opencode/auth.json similar to the TypeScript version
+	// Use ~/.local/share/rcode/auth.json similar to the TypeScript version
 	homeDir, err := os.UserHomeDir()
 	if err != nil {
 		return nil, serr.Wrap(err, "failed to get home directory")
 	}
 
-	dataDir := filepath.Join(homeDir, ".local", "share", "opencode")
+	dataDir := filepath.Join(homeDir, ".local", "share", "rcode")
 
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(dataDir, 0700); err != nil {

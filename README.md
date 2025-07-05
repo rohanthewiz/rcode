@@ -49,4 +49,4 @@ See [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) for detailed implementa
 
 - Go 1.22+
 - No API keys required with Claude Pro/Max OAuth
-- Tokens stored in `~/.local/share/opencode/auth.json`
+- Tokens stored in `~/.local/share/rcode/auth.json`

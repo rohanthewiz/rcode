@@ -15,6 +15,8 @@ github.com/rohanthewiz/logger v1.2.6-0.20250414041848-3a03f01e83a7 h1:muS5sAUXjw
 github.com/rohanthewiz/logger v1.2.6-0.20250414041848-3a03f01e83a7/go.mod h1:1A2v/8q3ue3vJ5mguli3gsyhWrlXZGWrVocdEv1svXE=
 github.com/rohanthewiz/rweb v0.1.15-0.20250628000932-253d87247d87 h1:RtH0fYo5gaXckTUd//yCtOJ7bOIRXw6MkQqjztPk5r4=
 github.com/rohanthewiz/rweb v0.1.15-0.20250628000932-253d87247d87/go.mod h1:Ye+1p+Emvyp3TvpmqPWUrTaLWPBbsc4F5gvfI4dz2CI=
+github.com/rohanthewiz/rweb v0.1.15-0.20250704184127-b79cab8af5af h1:RVsyuXuv8XqlchcVozJs/pQHE1sWRw8gvR3s/SFYapQ=
+github.com/rohanthewiz/rweb v0.1.15-0.20250704184127-b79cab8af5af/go.mod h1:Q7Mk/N8Z5XzIK1PeKoDAB+whpygl//wv5wSgFb61HcU=
 github.com/rohanthewiz/serr v1.2.4 h1:cW2IrPvNfE89BxfW+NwvrgtbLqacz4LG1DLw54mOn/Q=
 github.com/rohanthewiz/serr v1.2.4/go.mod h1:WYBghPccoTAUknotbanGZzWnIFREXYI5ULwf5sjznxY=
 github.com/sirupsen/logrus v1.9.3 h1:dueUQJ1C2q9oE3F7wvmSGAaVtTmUizReu6fjN8uqzbQ=

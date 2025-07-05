@@ -3,9 +3,10 @@ package handlers
 import (
 	_ "embed"
 
+	"rcode/auth"
+
 	"github.com/rohanthewiz/element"
 	"github.com/rohanthewiz/rweb"
-	"rcode/auth"
 )
 
 //go:embed assets/js/ui.js
@@ -39,10 +40,10 @@ func generateMainUI(isAuthenticated bool) string {
 			b.Meta("name", "viewport", "content", "width=device-width, initial-scale=1.0"),
 			b.Style().T(generateCSS()),
 			// Marked.js for markdown rendering
-			b.Script("src", "https://cdn.jsdelivr.net/npm/marked/marked.min.js"),
+			b.Script("src", "https://cdn.jsdelivr.net/npm/marked/marked.min.js").R(),
 			// Highlight.js for code syntax highlighting
 			b.Link("rel", "stylesheet", "href", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css"),
-			b.Script("src", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"),
+			b.Script("src", "https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js").R(),
 			// Monaco Editor CSS
 			b.Link("rel", "stylesheet", "href", "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/editor/editor.main.min.css"),
 			// Our custom styles
@@ -83,7 +84,7 @@ func generateMainUI(isAuthenticated bool) string {
 						func() any {
 							if !isAuthenticated {
 								b.Div("class", "auth-prompt").R(
-									b.H2().T("Welcome to OpenCode"),
+									b.H2().T("Welcome to RCode"),
 									b.P().T("Please login with your Claude Pro/Max account to start coding."),
 									b.Button("class", "btn-primary large", "onclick", "handleLogin()").T("Login with Claude Pro/Max"),
 								)
