@@ -1,4 +1,4 @@
-package handlers
+package web
 
 import (
 	"encoding/json"
@@ -59,20 +59,20 @@ type MessageRequest struct {
 func generateSessionTitle(content string) string {
 	// Trim whitespace
 	content = strings.TrimSpace(content)
-	
+
 	// If content is too short, use default
 	if len(content) < 3 {
 		return "New Chat"
 	}
-	
+
 	// Take first line only (in case of multi-line messages)
 	lines := strings.Split(content, "\n")
 	title := lines[0]
-	
+
 	// Remove any leading command-like prefixes
 	title = strings.TrimPrefix(title, "/")
 	title = strings.TrimSpace(title)
-	
+
 	// Limit length and add ellipsis if needed
 	maxLength := 50
 	if len(title) > maxLength {
@@ -83,11 +83,9 @@ func generateSessionTitle(content string) string {
 			title = title[:maxLength-3] + "..."
 		}
 	}
-	
+
 	return title
 }
-
-// Updated handlers with proper implementation
 
 func listSessionsHandler(c rweb.Context) error {
 	// Get database instance
@@ -247,7 +245,11 @@ func sendMessageHandler(c rweb.Context) error {
 				// Parse the tool use
 				toolUseData, _ := json.Marshal(content)
 				var toolUse tools.ToolUse
-				json.Unmarshal(toolUseData, &toolUse)
+				err = json.Unmarshal(toolUseData, &toolUse)
+				if err != nil {
+					logger.Warn("Error unmarshalling tool_use data", "error", err, "contentName", content.Name)
+					continue
+				}
 
 				logger.Info("Executing tool", "name", toolUse.Name)
 
@@ -257,12 +259,12 @@ func sendMessageHandler(c rweb.Context) error {
 				// Execute the tool
 				result, err := toolRegistry.Execute(toolUse)
 				durationMs := int(time.Since(startTime).Milliseconds())
-				
+
 				// Log tool usage to database
 				if logErr := database.LogToolUsage(sessionID, toolUse.Name, toolUse.Input, result.Content, durationMs, err); logErr != nil {
 					logger.LogErr(logErr, "failed to log tool usage")
 				}
-				
+
 				if err != nil {
 					logger.LogErr(err, "tool execution failed")
 				}

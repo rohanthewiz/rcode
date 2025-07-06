@@ -1,4 +1,4 @@
-package handlers
+package web
 
 import (
 	"encoding/json"
@@ -79,7 +79,7 @@ func eventsHandler(c rweb.Context) error {
 	}()
 
 	// Send initial connection event
-	fmt.Fprintf(c.Response(), "event: connected\ndata: {}\n\n")
+	_, _ = fmt.Fprintf(c.Response(), "event: connected\ndata: {}\n\n")
 	if flusher, ok := c.Response().(http.Flusher); ok {
 		flusher.Flush()
 	}
@@ -101,7 +101,7 @@ func eventsHandler(c rweb.Context) error {
 			}
 
 			// Send event
-			fmt.Fprintf(c.Response(), "data: %s\n\n", string(data))
+			_, _ = fmt.Fprintf(c.Response(), "data: %s\n\n", string(data))
 
 			// Flush the response
 			if flusher, ok := c.Response().(http.Flusher); ok {

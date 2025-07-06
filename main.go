@@ -4,7 +4,7 @@ import (
 	"log"
 
 	"rcode/db"
-	"rcode/handlers"
+	"rcode/web"
 
 	"github.com/rohanthewiz/logger"
 	"github.com/rohanthewiz/rweb"
@@ -29,7 +29,7 @@ func main() {
 	s.Use(rweb.RequestInfo)
 	s.ElementDebugRoutes()
 
-	handlers.SetupRoutes(s)
+	web.SetupRoutes(s)
 
 	log.Printf("Starting RCode server on :8000")
 	log.Fatal(s.Run())

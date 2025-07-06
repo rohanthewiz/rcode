@@ -13,7 +13,7 @@ rcode/
 │   ├── oauth_url.go          # OAuth URL generation
 │   ├── logout.go             # Logout handler
 │   └── storage.go            # Token persistence
-├── handlers/
+├── web/
 │   ├── routes.go             # Route definitions
 │   ├── ui.go                 # Main UI with element
 │   ├── auth_callback.go      # OAuth callback UI

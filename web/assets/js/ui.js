@@ -310,8 +310,7 @@ function addMessageToUI(message) {
 
   if (message.role === 'assistant' && typeof marked !== 'undefined') {
     // Render markdown for assistant messages
-    const htmlContent = marked.parse(message.content);
-    content.innerHTML = htmlContent;
+    content.innerHTML = marked.parse(message.content);
 
     // Highlight code blocks if highlight.js is available
     if (typeof hljs !== 'undefined') {
