@@ -668,7 +668,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
 
     // Add keyboard shortcut for Ctrl/Cmd+Enter
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, function() {
+    editor.addCommand(monaco.KeyCode.Enter, function() {
       sendMessage();
     });
 
