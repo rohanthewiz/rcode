@@ -5,7 +5,6 @@ Note: It is way better to use Claude Code, but if you want to see how deep the r
 
 ## Features
 
-- 🔐 **Anthropic OAuth Authentication** - (Prerequisite) Login with Claude Pro/Max
 - 🌐 **Web UI** - Built with element package
 - 📝 **Monaco Editor** - For graphical chat input editing
 - 💬 **Real-time Chat** - Server-sent events for live updates
@@ -22,11 +21,7 @@ go run cmd/main.go
 
 ## Authentication
 
-1. Click "Login with Claude Pro/Max"
-2. Authorize on Claude.ai (opens in new tab)
-3. Copy the authorization code
-4. Paste it in the callback page
-5. You're connected!
+1. Authorize on Claude.ai (opens in new tab)
 
 ## Technical Stack
 
@@ -42,12 +37,9 @@ go run cmd/main.go
 - RESTful API with SSE for real-time updates
 - Clean separation of concerns with auth, handlers, and providers
 
-## Development
-
-See [CLAUDE.md](CLAUDE.md) for detailed implementation notes and next steps.
-
 ## Environment
 
 - Go 1.22+
-- No API keys required with Claude Pro/Max OAuth
-- Tokens stored in `~/.local/share/rcode/auth.json`
+- Zero frontend framework
+- Zero Nodejs
+- Zero TypeScript
