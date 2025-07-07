@@ -136,6 +136,42 @@ var migrations = []Migration{
 			CREATE INDEX idx_tool_usage_session ON tool_usage(session_id);
 		`,
 	},
+	{
+		Version:     3,
+		Description: "Create initial prompts management table",
+		SQL: `
+			-- Create initial_prompts table for managing reusable prompts
+			CREATE SEQUENCE IF NOT EXISTS initial_prompts_id_seq;
+			
+			CREATE TABLE IF NOT EXISTS initial_prompts (
+				id INTEGER PRIMARY KEY DEFAULT nextval('initial_prompts_id_seq'),
+				name TEXT NOT NULL UNIQUE,
+				description TEXT,
+				content TEXT NOT NULL,
+				includes_permissions BOOLEAN DEFAULT false,
+				permission_template JSON,
+				is_active BOOLEAN DEFAULT true,
+				is_default BOOLEAN DEFAULT false,
+				created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+			);
+			
+			-- Create session_initial_prompts join table to link sessions with prompts
+			CREATE TABLE IF NOT EXISTS session_initial_prompts (
+				session_id TEXT NOT NULL,
+				prompt_id INTEGER NOT NULL,
+				applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (session_id) REFERENCES sessions(id),
+				FOREIGN KEY (prompt_id) REFERENCES initial_prompts(id),
+				PRIMARY KEY (session_id, prompt_id)
+			);
+			
+			-- Insert default prompts
+			INSERT INTO initial_prompts (name, description, content, includes_permissions, is_default) VALUES
+			('permission_prompt', 'Default permission prompt', 'Always ask before creating or writing files or using any tools', true, true),
+			('go_language_prompt', 'Prefer Go language', 'Use the Go language as much as possible', false, false);
+		`,
+	},
 }
 
 // Migrate runs all pending database migrations

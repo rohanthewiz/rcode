@@ -257,11 +257,39 @@ async function loadMessages() {
   if (!currentSessionId) return;
 
   try {
-    const response = await fetch('/api/session/' + currentSessionId + '/messages');
-    const messages = await response.json();
+    // Fetch messages and prompts in parallel
+    const [messagesResponse, promptsResponse] = await Promise.all([
+      fetch('/api/session/' + currentSessionId + '/messages'),
+      fetch('/api/session/' + currentSessionId + '/prompts')
+    ]);
+
+    const messages = await messagesResponse.json();
+    const prompts = await promptsResponse.json();
 
     const messagesContainer = document.getElementById('messages');
     messagesContainer.innerHTML = '';
+
+    // Display initial prompts if any
+    if (prompts && prompts.length > 0) {
+      const promptsDiv = document.createElement('div');
+      promptsDiv.className = 'initial-prompts';
+      promptsDiv.innerHTML = `
+        <div class="prompts-header">
+          <span class="prompts-icon">📝</span>
+          <span class="prompts-title">Initial Prompts</span>
+        </div>
+        <div class="prompts-content">
+          ${prompts.map(prompt => `
+            <div class="prompt-item">
+              <div class="prompt-name">${prompt.name}</div>
+              <div class="prompt-content">${prompt.content}</div>
+              ${prompt.includes_permissions ? '<span class="prompt-badge">Includes Permissions</span>' : ''}
+            </div>
+          `).join('')}
+        </div>
+      `;
+      messagesContainer.appendChild(promptsDiv);
+    }
 
     messages.forEach(msg => {
       addMessageToUI(msg);

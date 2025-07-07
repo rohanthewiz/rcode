@@ -17,33 +17,47 @@ import (
 // Session represents a chat session (alias for db.Session for backward compatibility)
 type Session = db.Session
 
+// CreateSessionRequest represents a request to create a session
+type CreateSessionRequest struct {
+	Title            string `json:"title,omitempty"`
+	InitialPromptIDs []int  `json:"initial_prompt_ids,omitempty"`
+	ModelPreference  string `json:"model_preference,omitempty"`
+}
+
 // createSession creates a new chat session in the database
-func createSession() (*Session, error) {
+func createSession(req *CreateSessionRequest) (*Session, error) {
 	// Get database instance
 	database, err := db.GetDB()
 	if err != nil {
 		return nil, serr.Wrap(err, "failed to get database")
 	}
 
-	// Create session with default initial prompt
-	session, err := database.CreateSession(db.SessionOptions{
-		Title: "New Chat",
-		InitialPrompts: []string{
-			"Always ask before creating or writing files or using any tools",
-		},
-	})
+	// Prepare session options
+	opts := db.SessionOptions{
+		Title:            req.Title,
+		InitialPromptIDs: req.InitialPromptIDs,
+		ModelPreference:  req.ModelPreference,
+	}
+
+	// If no title provided, it will default to "New Chat" in CreateSession
+	// If no prompt IDs provided, it will use default prompts
+
+	// Create session (this will handle loading prompts and permissions)
+	session, err := database.CreateSession(opts)
 	if err != nil {
 		return nil, err
 	}
 
-	// Add the initial prompt as the first message
-	initialPrompt := strings.Join(session.InitialPrompts, "\n")
-	err = database.AddMessage(session.ID, providers.ChatMessage{
-		Role:    "user",
-		Content: initialPrompt,
-	}, "", nil)
-	if err != nil {
-		logger.LogErr(err, "failed to add initial message")
+	// Add the initial prompts as the first message if any exist
+	if len(session.InitialPrompts) > 0 {
+		initialPrompt := strings.Join(session.InitialPrompts, "\n")
+		err = database.AddMessage(session.ID, providers.ChatMessage{
+			Role:    "user",
+			Content: initialPrompt,
+		}, "", nil)
+		if err != nil {
+			logger.LogErr(err, "failed to add initial message")
+		}
 	}
 
 	return session, nil
@@ -104,7 +118,17 @@ func listSessionsHandler(c rweb.Context) error {
 }
 
 func createSessionHandler(c rweb.Context) error {
-	session, err := createSession()
+	// Parse request body if provided
+	var req CreateSessionRequest
+	body := c.Request().Body()
+	if len(body) > 0 {
+		if err := json.Unmarshal(body, &req); err != nil {
+			// If parsing fails, just use defaults
+			logger.LogErr(err, "failed to parse create session request")
+		}
+	}
+
+	session, err := createSession(&req)
 	if err != nil {
 		return c.WriteError(err, 500)
 	}

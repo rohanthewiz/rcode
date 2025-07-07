@@ -14,13 +14,13 @@ import (
 
 // Session represents a chat session in the database
 type Session struct {
-	ID               string     `json:"id"`
-	Title            string     `json:"title"`
-	CreatedAt        time.Time  `json:"created_at"`
-	UpdatedAt        time.Time  `json:"updated_at"`
-	InitialPrompts   []string   `json:"initial_prompts"`
-	ModelPreference  string     `json:"model_preference,omitempty"`
-	Metadata         JSONMap    `json:"metadata,omitempty"`
+	ID              string    `json:"id"`
+	Title           string    `json:"title"`
+	CreatedAt       time.Time `json:"created_at"`
+	UpdatedAt       time.Time `json:"updated_at"`
+	InitialPrompts  []string  `json:"initial_prompts"`
+	ModelPreference string    `json:"model_preference,omitempty"`
+	Metadata        JSONMap   `json:"metadata,omitempty"`
 }
 
 // JSONMap is a helper type for JSON columns
@@ -55,6 +55,7 @@ func (m JSONMap) Value() (driver.Value, error) {
 type SessionOptions struct {
 	Title            string
 	InitialPrompts   []string
+	InitialPromptIDs []int // IDs of managed prompts to use
 	ModelPreference  string
 	Metadata         JSONMap
 }
@@ -69,6 +70,65 @@ func (db *DB) CreateSession(opts SessionOptions) (*Session, error) {
 		opts.Title = "New Chat"
 	}
 
+	// Handle managed initial prompts if IDs are provided
+	var finalPrompts []string
+	if len(opts.InitialPromptIDs) > 0 {
+		// Load the managed prompts
+		for _, promptID := range opts.InitialPromptIDs {
+			prompt, err := db.GetInitialPrompt(promptID)
+			if err != nil {
+				logger.LogErr(err, "failed to load initial prompt", "id", fmt.Sprintf("%d", promptID))
+				continue
+			}
+			if prompt.IsActive {
+				finalPrompts = append(finalPrompts, prompt.Content)
+
+				// If prompt includes permissions, create default permissions for the session
+				if prompt.IncludesPermissions && prompt.PermissionTemplate != nil {
+					// Extract tool permissions from template
+					if toolPerms, ok := prompt.PermissionTemplate["tools"].(map[string]interface{}); ok {
+						for toolName, permType := range toolPerms {
+							if permTypeStr, ok := permType.(string); ok {
+								// Convert string to PermissionType
+								var pType PermissionType
+								switch permTypeStr {
+								case "allowed":
+									pType = PermissionAllowed
+								case "denied":
+									pType = PermissionDenied
+								case "ask":
+									pType = PermissionAsk
+								default:
+									logger.LogErr(nil, "invalid permission type", "type", permTypeStr)
+									continue
+								}
+
+								err := db.SetToolPermission(id, toolName, pType, nil, 0)
+								if err != nil {
+									logger.LogErr(err, "failed to set tool permission", "tool", toolName)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	} else if len(opts.InitialPrompts) == 0 {
+		// No prompts specified, use defaults
+		defaultPrompts, err := db.GetDefaultInitialPrompts()
+		if err != nil {
+			logger.LogErr(err, "failed to load default prompts")
+		} else {
+			for _, prompt := range defaultPrompts {
+				finalPrompts = append(finalPrompts, prompt.Content)
+				opts.InitialPromptIDs = append(opts.InitialPromptIDs, prompt.ID)
+			}
+		}
+	} else {
+		// Use provided prompts as-is
+		finalPrompts = opts.InitialPrompts
+	}
+
 	// Convert metadata to JSON
 	metadataJSON, err := json.Marshal(opts.Metadata)
 	if err != nil {
@@ -77,11 +137,11 @@ func (db *DB) CreateSession(opts SessionOptions) (*Session, error) {
 
 	// Build array literal for DuckDB
 	var promptsArray string
-	if len(opts.InitialPrompts) == 0 {
+	if len(finalPrompts) == 0 {
 		promptsArray = "[]"
 	} else {
-		quotedPrompts := make([]string, len(opts.InitialPrompts))
-		for i, p := range opts.InitialPrompts {
+		quotedPrompts := make([]string, len(finalPrompts))
+		for i, p := range finalPrompts {
 			// Escape single quotes and wrap in single quotes
 			escaped := strings.ReplaceAll(p, "'", "''")
 			quotedPrompts[i] = "'" + escaped + "'"
@@ -100,12 +160,20 @@ func (db *DB) CreateSession(opts SessionOptions) (*Session, error) {
 		return nil, serr.Wrap(err, "failed to create session")
 	}
 
+	// Associate managed prompts with the session
+	if len(opts.InitialPromptIDs) > 0 {
+		err = db.AssociatePromptsWithSession(id, opts.InitialPromptIDs)
+		if err != nil {
+			logger.LogErr(err, "failed to associate prompts with session")
+		}
+	}
+
 	session := &Session{
 		ID:              id,
 		Title:           opts.Title,
 		CreatedAt:       now,
 		UpdatedAt:       now,
-		InitialPrompts:  opts.InitialPrompts,
+		InitialPrompts:  finalPrompts,
 		ModelPreference: opts.ModelPreference,
 		Metadata:        opts.Metadata,
 	}

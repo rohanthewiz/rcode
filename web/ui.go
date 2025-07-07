@@ -61,6 +61,7 @@ func generateMainUI(isAuthenticated bool) string {
 								if isAuthenticated {
 									b.Span("class", "auth-status").T("Connected to Claude Pro/Max")
 									b.Span("id", "connection-status", "class", "connection-status").R()
+									b.Button("class", "btn-secondary", "onclick", "window.open('/prompts', '_blank')").T("Manage Prompts")
 									b.Button("id", "logout-btn", "class", "btn-secondary").T("Logout")
 								} else {
 									b.Button("class", "btn-primary", "onclick", "handleLogin()").T("Login with Claude Pro/Max")

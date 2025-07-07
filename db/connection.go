@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/marcboeker/go-duckdb"
+	_ "github.com/marcboeker/go-duckdb/v2"
 	"github.com/rohanthewiz/logger"
 	"github.com/rohanthewiz/serr"
 )
@@ -33,14 +33,14 @@ func GetDB() (*DB, error) {
 	}
 
 	dataDir := filepath.Join(homeDir, ".local", "share", "rcode")
-	
+
 	// Create directory if it doesn't exist
 	if err := os.MkdirAll(dataDir, 0700); err != nil {
 		return nil, serr.Wrap(err, "failed to create data directory")
 	}
 
 	dbPath := filepath.Join(dataDir, "rcode.db")
-	
+
 	// Open database connection
 	conn, err := sql.Open("duckdb", dbPath)
 	if err != nil {

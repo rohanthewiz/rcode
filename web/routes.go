@@ -29,9 +29,20 @@ func SetupRoutes(s *rweb.Server) {
 	s.Delete("/api/session/:id", deleteSessionHandler)
 	s.Post("/api/session/:id/message", sendMessageHandler)
 	s.Get("/api/session/:id/messages", getSessionMessagesHandler)
+	s.Get("/api/session/:id/prompts", getSessionPromptsHandler)
+
+	// Prompt management endpoints
+	s.Get("/api/prompts", listPromptsHandler)
+	s.Get("/api/prompts/:id", getPromptHandler)
+	s.Post("/api/prompts", createPromptHandler)
+	s.Put("/api/prompts/:id", updatePromptHandler)
+	s.Delete("/api/prompts/:id", deletePromptHandler)
 
 	// SSE endpoint for streaming events
 	s.Get("/events", eventsHandler)
+
+	// Prompt Manager UI
+	s.Get("/prompts", PromptManagerHandler)
 }
 
 // rootHandler serves the main web UI
