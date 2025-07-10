@@ -134,3 +134,17 @@ func BroadcastSessionList() {
 	}
 	sseHub.Broadcast(event)
 }
+
+// BroadcastToolUsage broadcasts a tool usage summary event
+func BroadcastToolUsage(sessionID string, toolName string, summary string) {
+	event := SSEEvent{
+		Type:      "tool_usage",
+		SessionID: sessionID,
+		Data: map[string]interface{}{
+			"tool":    toolName,
+			"summary": summary,
+		},
+	}
+	logger.Info("BroadcastToolUsage", "sessionID", sessionID, "tool", toolName, "summary", summary)
+	sseHub.Broadcast(event)
+}

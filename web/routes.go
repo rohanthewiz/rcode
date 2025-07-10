@@ -38,6 +38,14 @@ func SetupRoutes(s *rweb.Server) {
 	s.Put("/api/prompts/:id", updatePromptHandler)
 	s.Delete("/api/prompts/:id", deletePromptHandler)
 
+	// Context management endpoints
+	s.Get("/api/context", getProjectContextHandler)
+	s.Post("/api/context/initialize", initializeProjectContextHandler)
+	s.Post("/api/context/relevant-files", getRelevantFilesHandler)
+	s.Get("/api/context/changes", getChangeTrackingHandler)
+	s.Get("/api/context/stats", getContextStatsHandler)
+	s.Post("/api/context/suggest-tools", suggestToolsHandler)
+
 	// SSE endpoint for streaming events
 	s.Get("/events", eventsHandler)
 
