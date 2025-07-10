@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"time"
 
@@ -225,6 +226,21 @@ func sendMessageHandler(c rweb.Context) error {
 	// Create Anthropic client and tool registry
 	client := providers.NewAnthropicClient()
 	toolRegistry := tools.DefaultRegistry()
+	
+	// Initialize context if not already done
+	if !client.GetContextManager().IsInitialized() {
+		workDir, err := os.Getwd()
+		if err != nil {
+			logger.LogErr(err, "failed to get working directory")
+			workDir = "."
+		}
+		if err := client.InitializeContext(workDir); err != nil {
+			logger.LogErr(err, "failed to initialize context")
+		}
+	}
+	
+	// Create context-aware tool executor
+	contextExecutor := tools.NewContextAwareExecutor(toolRegistry, client.GetContextManager())
 
 	// Use the model from the request, or default to Claude Sonnet 4
 	model := msgReq.Model
@@ -239,6 +255,9 @@ func sendMessageHandler(c rweb.Context) error {
 
 	// Prepare request with tools
 	systemPrompt := "You are Claude Code, Anthropic's official CLI for Claude."
+	
+	// Enhance system prompt with context
+	systemPrompt = client.EnhanceSystemPromptWithContext(systemPrompt)
 
 	request := providers.CreateMessageRequest{
 		Model:     model,
@@ -280,8 +299,8 @@ func sendMessageHandler(c rweb.Context) error {
 				// Log tool usage (measure execution time)
 				startTime := time.Now()
 
-				// Execute the tool
-				result, err := toolRegistry.Execute(toolUse)
+				// Execute the tool with context awareness
+				result, err := contextExecutor.Execute(toolUse)
 				durationMs := int(time.Since(startTime).Milliseconds())
 
 				// Log tool usage to database

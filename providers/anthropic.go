@@ -12,6 +12,7 @@ import (
 	"github.com/rohanthewiz/serr"
 	"rcode/auth"
 	"rcode/config"
+	"rcode/context"
 )
 
 const (
@@ -22,13 +23,15 @@ const (
 
 // AnthropicClient handles communication with Claude API
 type AnthropicClient struct {
-	httpClient *http.Client
+	httpClient     *http.Client
+	contextManager *context.Manager
 }
 
 // NewAnthropicClient creates a new Anthropic API client
 func NewAnthropicClient() *AnthropicClient {
 	return &AnthropicClient{
-		httpClient: &http.Client{},
+		httpClient:     &http.Client{},
+		contextManager: context.NewManager(),
 	}
 }
 
@@ -285,4 +288,104 @@ func ConvertToAPIMessages(messages []ChatMessage) []Message {
 type ChatMessage struct {
 	Role    string      `json:"role"`
 	Content interface{} `json:"content"`
+}
+
+// SetContextManager sets the context manager for the client
+func (c *AnthropicClient) SetContextManager(cm *context.Manager) {
+	c.contextManager = cm
+}
+
+// GetContextManager returns the context manager
+func (c *AnthropicClient) GetContextManager() *context.Manager {
+	return c.contextManager
+}
+
+// InitializeContext initializes the project context
+func (c *AnthropicClient) InitializeContext(projectPath string) error {
+	if c.contextManager == nil {
+		return serr.New("context manager not initialized")
+	}
+	
+	_, err := c.contextManager.ScanProject(projectPath)
+	if err != nil {
+		return serr.Wrap(err, "failed to scan project")
+	}
+	
+	return nil
+}
+
+// EnhanceSystemPromptWithContext enhances the system prompt with project context
+func (c *AnthropicClient) EnhanceSystemPromptWithContext(basePrompt string) string {
+	if c.contextManager == nil || !c.contextManager.IsInitialized() {
+		return basePrompt
+	}
+	
+	ctx := c.contextManager.GetContext()
+	if ctx == nil {
+		return basePrompt
+	}
+	
+	// Build context information
+	var contextInfo strings.Builder
+	contextInfo.WriteString("\n\n## Project Context\n")
+	
+	// Project information
+	contextInfo.WriteString(fmt.Sprintf("- Language: %s\n", ctx.Language))
+	if ctx.Framework != "" {
+		contextInfo.WriteString(fmt.Sprintf("- Framework: %s\n", ctx.Framework))
+	}
+	contextInfo.WriteString(fmt.Sprintf("- Root Path: %s\n", ctx.RootPath))
+	
+	// Statistics
+	if ctx.Statistics.TotalFiles > 0 {
+		contextInfo.WriteString(fmt.Sprintf("- Total Files: %d\n", ctx.Statistics.TotalFiles))
+		contextInfo.WriteString(fmt.Sprintf("- Total Lines: %d\n", ctx.Statistics.TotalLines))
+	}
+	
+	// Recent files
+	if len(ctx.RecentFiles) > 0 {
+		contextInfo.WriteString("\nRecent files:\n")
+		for i, file := range ctx.RecentFiles {
+			if i >= 5 { // Limit to 5 recent files
+				break
+			}
+			contextInfo.WriteString(fmt.Sprintf("- %s\n", file))
+		}
+	}
+	
+	// Modified files
+	if len(ctx.ModifiedFiles) > 0 {
+		contextInfo.WriteString("\nModified files in this session:\n")
+		for file := range ctx.ModifiedFiles {
+			contextInfo.WriteString(fmt.Sprintf("- %s\n", file))
+		}
+	}
+	
+	return basePrompt + contextInfo.String()
+}
+
+// GetRelevantFiles returns files relevant to the current task
+func (c *AnthropicClient) GetRelevantFiles(task string, maxFiles int) ([]string, error) {
+	if c.contextManager == nil || !c.contextManager.IsInitialized() {
+		return nil, nil
+	}
+	
+	files, err := c.contextManager.PrioritizeFiles(task)
+	if err != nil {
+		return nil, serr.Wrap(err, "failed to prioritize files")
+	}
+	
+	// Limit to maxFiles
+	if len(files) > maxFiles {
+		files = files[:maxFiles]
+	}
+	
+	return files, nil
+}
+
+// TrackFileChange tracks a file change in the context
+func (c *AnthropicClient) TrackFileChange(filepath string, changeType context.ChangeType) {
+	if c.contextManager != nil {
+		c.contextManager.TrackChange(filepath, changeType)
+	}
 }
