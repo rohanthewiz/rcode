@@ -218,6 +218,10 @@ function handleServerEvent(event) {
     // Scroll to bottom
     const messagesContainer = document.getElementById('messages');
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  } else if (event.type === 'tool_usage' && event.sessionID === currentSessionId) {
+    console.log('Tool usage:', event.data);
+    // Add tool usage summary to UI
+    addToolUsageSummaryToUI(event.data);
   } else if (event.type === 'session_list_updated') {
     loadSessions();
   }
@@ -301,9 +305,40 @@ async function loadMessages() {
   }
 }
 
+// Add tool usage summary to UI
+function addToolUsageSummaryToUI(toolData) {
+  const messagesContainer = document.getElementById('messages');
+  
+  // Create or find the tools summary container
+  let toolsSummary = document.querySelector('.tools-summary.active');
+  if (!toolsSummary) {
+    toolsSummary = document.createElement('div');
+    toolsSummary.className = 'tools-summary active';
+    toolsSummary.innerHTML = '<div class="tools-header">🛠️ Tools Used</div><div class="tools-list"></div>';
+    messagesContainer.appendChild(toolsSummary);
+  }
+  
+  // Add the tool usage to the list
+  const toolsList = toolsSummary.querySelector('.tools-list');
+  const toolItem = document.createElement('div');
+  toolItem.className = 'tool-item';
+  toolItem.textContent = toolData.summary;
+  toolsList.appendChild(toolItem);
+  
+  // Scroll to bottom
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
 // Add message to UI
 function addMessageToUI(message) {
   const messagesContainer = document.getElementById('messages');
+  
+  // Mark any active tools summary as inactive
+  const activeToolsSummary = document.querySelector('.tools-summary.active');
+  if (activeToolsSummary) {
+    activeToolsSummary.classList.remove('active');
+  }
+  
   const messageDiv = document.createElement('div');
   messageDiv.className = 'message ' + message.role;
 

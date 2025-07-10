@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -356,6 +357,10 @@ func sendMessageHandler(c rweb.Context) error {
 					logger.LogErr(err, "tool execution failed")
 				}
 
+				// Create and broadcast tool usage summary
+				summary := createToolSummary(toolUse.Name, toolUse.Input, result.Content, err)
+				BroadcastToolUsage(sessionID, toolUse.Name, summary)
+
 				// Add tool result to results
 				toolResults = append(toolResults, result)
 			}
@@ -428,6 +433,129 @@ func sendMessageHandler(c rweb.Context) error {
 		})
 	}
 }
+
+// createToolSummary creates a concise summary of tool usage
+func createToolSummary(toolName string, input map[string]interface{}, result string, err error) string {
+	if err != nil {
+		return fmt.Sprintf("❌ Failed: %s", err.Error())
+	}
+
+	switch toolName {
+	case "write_file":
+		if path, ok := tools.GetString(input, "path"); ok {
+			// Count bytes written
+			if content, ok := tools.GetString(input, "content"); ok {
+				bytes := len([]byte(content))
+				return fmt.Sprintf("✓ Wrote %s (%d bytes)", filepath.Base(path), bytes)
+			}
+			return fmt.Sprintf("✓ Wrote %s", filepath.Base(path))
+		}
+
+	case "edit_file":
+		if path, ok := tools.GetString(input, "path"); ok {
+			if startLine, ok := tools.GetInt(input, "start_line"); ok {
+				if endLine, ok := tools.GetInt(input, "end_line"); ok && endLine > startLine {
+					return fmt.Sprintf("✓ Edited %s (lines %d-%d)", filepath.Base(path), startLine, endLine)
+				}
+				return fmt.Sprintf("✓ Edited %s (line %d)", filepath.Base(path), startLine)
+			}
+			return fmt.Sprintf("✓ Edited %s", filepath.Base(path))
+		}
+
+	case "read_file":
+		if path, ok := tools.GetString(input, "path"); ok {
+			// Extract line count from result if available
+			lines := strings.Count(result, "\n")
+			if lines > 0 {
+				return fmt.Sprintf("✓ Read %s (%d lines)", filepath.Base(path), lines)
+			}
+			return fmt.Sprintf("✓ Read %s", filepath.Base(path))
+		}
+
+	case "bash":
+		if cmd, ok := tools.GetString(input, "command"); ok {
+			// Truncate long commands
+			if len(cmd) > 50 {
+				cmd = cmd[:47] + "..."
+			}
+			return fmt.Sprintf("✓ Ran: %s", cmd)
+		}
+
+	case "search":
+		if pattern, ok := tools.GetString(input, "pattern"); ok {
+			// Count matches in result
+			matches := strings.Count(result, "Match")
+			if matches > 0 {
+				return fmt.Sprintf("✓ Found %d matches for '%s'", matches, pattern)
+			}
+			return fmt.Sprintf("✓ Searched for '%s'", pattern)
+		}
+
+	case "list_dir":
+		if path, ok := tools.GetString(input, "path"); ok {
+			// Count items in result
+			lines := strings.Split(result, "\n")
+			count := 0
+			for _, line := range lines {
+				if strings.TrimSpace(line) != "" {
+					count++
+				}
+			}
+			return fmt.Sprintf("✓ Listed %s (%d items)", filepath.Base(path), count)
+		}
+
+	case "make_dir":
+		if path, ok := tools.GetString(input, "path"); ok {
+			return fmt.Sprintf("✓ Created directory %s", filepath.Base(path))
+		}
+
+	case "remove":
+		if path, ok := tools.GetString(input, "path"); ok {
+			return fmt.Sprintf("✓ Removed %s", filepath.Base(path))
+		}
+
+	case "move":
+		if src, ok := tools.GetString(input, "source"); ok {
+			if dst, ok := tools.GetString(input, "destination"); ok {
+				return fmt.Sprintf("✓ Moved %s → %s", filepath.Base(src), filepath.Base(dst))
+			}
+		}
+
+	case "tree":
+		// Count lines in tree output
+		lines := strings.Count(result, "\n")
+		return fmt.Sprintf("✓ Generated tree (%d lines)", lines)
+
+	case "git_status":
+		// Check for clean/dirty status
+		if strings.Contains(result, "nothing to commit") {
+			return "✓ Git status: clean"
+		}
+		return "✓ Git status: changes detected"
+
+	case "git_diff":
+		// Count changed files
+		changes := strings.Count(result, "+++")
+		if changes > 0 {
+			return fmt.Sprintf("✓ Git diff: %d files changed", changes)
+		}
+		return "✓ Git diff: no changes"
+
+	case "git_log":
+		// Count commits shown
+		commits := strings.Count(result, "commit ")
+		return fmt.Sprintf("✓ Git log: %d commits", commits)
+
+	case "git_branch":
+		// Count branches
+		branches := strings.Count(result, "\n") + 1
+		return fmt.Sprintf("✓ Git branches: %d total", branches)
+	}
+
+	// Default summary
+	return fmt.Sprintf("✓ Executed %s", toolName)
+}
+
 
 // Add a handler to get messages for a session
 func getSessionMessagesHandler(c rweb.Context) error {

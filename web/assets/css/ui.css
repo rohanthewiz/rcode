@@ -447,6 +447,45 @@ main {
   background: var(--border);
 }
 
+/* Tools Summary */
+.tools-summary {
+  margin: 10px 0;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border-radius: 8px;
+  font-size: 13px;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+  border: 1px solid var(--border);
+}
+
+.tools-summary.active {
+  opacity: 1;
+}
+
+.tools-header {
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.tools-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tool-item {
+  color: var(--text-primary);
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  padding-left: 12px;
+  opacity: 0.9;
+}
+
 /* Thinking indicator */
 .thinking-dots {
   display: inline-block;
