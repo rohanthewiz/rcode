@@ -317,7 +317,7 @@ function addToolUsageSummaryToUI(toolData) {
   if (!toolsSummary) {
     toolsSummary = document.createElement('div');
     toolsSummary.className = 'tools-summary active';
-    toolsSummary.innerHTML = '<div class="tools-header">🛠️ Tools Used</div><div class="tools-list"></div>';
+    toolsSummary.innerHTML = '<div class="tools-header">🛠️ TOOL USE</div><div class="tools-list"></div>';
     
     // Insert before thinking indicator if it exists, otherwise append
     if (thinkingIndicator) {
@@ -551,7 +551,7 @@ async function sendMessage() {
       const messagesContainer = document.getElementById('messages');
       const toolsSummary = document.createElement('div');
       toolsSummary.className = 'tools-summary';
-      toolsSummary.innerHTML = '<div class="tools-header">🛠️ Tools Used</div><div class="tools-list"></div>';
+      toolsSummary.innerHTML = '<div class="tools-header">🛠️ TOOL USE</div><div class="tools-list"></div>';
       
       const toolsList = toolsSummary.querySelector('.tools-list');
       result.toolSummaries.forEach(summary => {
