@@ -211,14 +211,14 @@ function showConnectionError(message) {
 function handleServerEvent(event) {
   console.log('Received SSE event:', event);
 
-  if (event.type === 'message' && event.sessionID === currentSessionId) {
+  if (event.type === 'message' && event.sessionId === currentSessionId) {
     console.log('Adding assistant message to UI');
     // Add assistant message to UI
     addMessageToUI(event.data);
     // Scroll to bottom
     const messagesContainer = document.getElementById('messages');
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
-  } else if (event.type === 'tool_usage' && event.sessionID === currentSessionId) {
+  } else if (event.type === 'tool_usage' && event.sessionId === currentSessionId) {
     console.log('Tool usage:', event.data);
     // Add tool usage summary to UI
     addToolUsageSummaryToUI(event.data);

@@ -359,6 +359,7 @@ func sendMessageHandler(c rweb.Context) error {
 
 				// Create and broadcast tool usage summary
 				summary := createToolSummary(toolUse.Name, toolUse.Input, result.Content, err)
+				logger.Info("Broadcasting tool usage", "tool", toolUse.Name, "summary", summary)
 				BroadcastToolUsage(sessionID, toolUse.Name, summary)
 
 				// Add tool result to results

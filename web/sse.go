@@ -145,5 +145,6 @@ func BroadcastToolUsage(sessionID string, toolName string, summary string) {
 			"summary": summary,
 		},
 	}
+	logger.Info("BroadcastToolUsage", "sessionID", sessionID, "tool", toolName, "summary", summary)
 	sseHub.Broadcast(event)
 }
