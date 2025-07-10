@@ -14,10 +14,31 @@ Note: It is way better to use Claude Code, but if you want to see how deep the r
 
 ```bash
 # Run the server
-go run cmd/main.go
+go run main.go
 
 # Visit http://localhost:8000
 ```
+
+### Using a Proxy (Optional)
+
+If you need to access the Anthropic API through a proxy 
+(e.g., in environments where you cannot access api.anthropic.com),
+you can use the MSG_PROXY environment variable:
+
+```bash
+# Start the proxy server (on a server with access)
+cd proxy
+go run proxy.go
+
+# Run rcode with proxy configuration
+MSG_PROXY=http://the-server:8001 go run main.go
+```
+
+The proxy server will:
+- Listen on port 8001
+- Forward all requests to api.anthropic.com
+- Preserve OAuth tokens and headers
+- Support both regular and streaming responses
 
 ## Authentication
 

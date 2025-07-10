@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 
+	"rcode/config"
 	"rcode/db"
 	"rcode/web"
 
@@ -11,6 +12,17 @@ import (
 )
 
 func main() {
+	// Initialize configuration
+	config.Initialize()
+	cfg := config.Get()
+	
+	// Log API endpoint configuration
+	if cfg.AnthropicAPIURL != "https://api.anthropic.com/v1/messages" {
+		logger.Info("Using proxy for Anthropic API", "url", cfg.AnthropicAPIURL)
+	} else {
+		logger.Info("Using direct connection to Anthropic API")
+	}
+	
 	// Initialize database
 	database, err := db.GetDB()
 	if err != nil {

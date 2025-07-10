@@ -11,10 +11,10 @@ import (
 	"github.com/rohanthewiz/logger"
 	"github.com/rohanthewiz/serr"
 	"rcode/auth"
+	"rcode/config"
 )
 
 const (
-	anthropicAPIURL     = "https://api.anthropic.com/v1/messages"
 	anthropicBeta       = "oauth-2025-04-20"
 	anthropicVersion    = "2023-06-01"
 	claudeCodeUserAgent = "claude.ai/code"
@@ -116,12 +116,16 @@ func (c *AnthropicClient) SendMessage(request CreateMessageRequest) (*CreateMess
 		return nil, serr.Wrap(err, "failed to marshal request")
 	}
 
+	// Get API URL from config
+	apiURL := config.Get().AnthropicAPIURL
+	
 	// Log the request for debugging
 	logger.Info("Anthropic API Request ->" + string(requestBody))
 	logger.Info("Using model: " + request.Model)
-
+	logger.Info("API URL", "url", apiURL)
+	
 	// Create HTTP request
-	req, err := http.NewRequest("POST", anthropicAPIURL, bytes.NewReader(requestBody))
+	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(requestBody))
 	if err != nil {
 		return nil, serr.Wrap(err, "failed to create request")
 	}
@@ -185,8 +189,11 @@ func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent fu
 		return serr.Wrap(err, "failed to marshal request")
 	}
 
+	// Get API URL from config
+	apiURL := config.Get().AnthropicAPIURL
+	
 	// Create HTTP request
-	req, err := http.NewRequest("POST", anthropicAPIURL, bytes.NewReader(requestBody))
+	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(requestBody))
 	if err != nil {
 		return serr.Wrap(err, "failed to create request")
 	}
