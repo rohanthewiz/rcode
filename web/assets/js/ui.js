@@ -219,7 +219,7 @@ function handleServerEvent(event) {
     const messagesContainer = document.getElementById('messages');
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
   } else if (event.type === 'tool_usage' && event.sessionId === currentSessionId) {
-    console.log('Tool usage:', event.data);
+    console.log('Tool usage event received:', event.data);
     // Add tool usage summary to UI
     addToolUsageSummaryToUI(event.data);
   } else if (event.type === 'session_list_updated') {
@@ -309,13 +309,22 @@ async function loadMessages() {
 function addToolUsageSummaryToUI(toolData) {
   const messagesContainer = document.getElementById('messages');
   
+  // Find the thinking indicator if it exists
+  const thinkingIndicator = messagesContainer.querySelector('.message.thinking');
+  
   // Create or find the tools summary container
   let toolsSummary = document.querySelector('.tools-summary.active');
   if (!toolsSummary) {
     toolsSummary = document.createElement('div');
     toolsSummary.className = 'tools-summary active';
     toolsSummary.innerHTML = '<div class="tools-header">🛠️ Tools Used</div><div class="tools-list"></div>';
-    messagesContainer.appendChild(toolsSummary);
+    
+    // Insert before thinking indicator if it exists, otherwise append
+    if (thinkingIndicator) {
+      messagesContainer.insertBefore(toolsSummary, thinkingIndicator);
+    } else {
+      messagesContainer.appendChild(toolsSummary);
+    }
   }
   
   // Add the tool usage to the list
@@ -441,6 +450,7 @@ function addThinkingIndicator(id) {
 function removeThinkingIndicator(id) {
   const thinkingDiv = document.getElementById(id);
   if (thinkingDiv) {
+    console.log('Removing thinking indicator:', id);
     thinkingDiv.remove();
   }
 }
@@ -534,6 +544,25 @@ async function sendMessage() {
 
     const result = await response.json();
     console.log('Response data:', result);
+    
+    // Display tool summaries if any
+    if (result.toolSummaries && result.toolSummaries.length > 0) {
+      // Create tools summary container
+      const messagesContainer = document.getElementById('messages');
+      const toolsSummary = document.createElement('div');
+      toolsSummary.className = 'tools-summary';
+      toolsSummary.innerHTML = '<div class="tools-header">🛠️ Tools Used</div><div class="tools-list"></div>';
+      
+      const toolsList = toolsSummary.querySelector('.tools-list');
+      result.toolSummaries.forEach(summary => {
+        const toolItem = document.createElement('div');
+        toolItem.className = 'tool-item';
+        toolItem.textContent = summary;
+        toolsList.appendChild(toolItem);
+      });
+      
+      messagesContainer.appendChild(toolsSummary);
+    }
 
     // Add the assistant's response directly from the API response
     if (result.content) {

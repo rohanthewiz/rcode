@@ -214,6 +214,9 @@ func deleteSessionHandler(c rweb.Context) error {
 func sendMessageHandler(c rweb.Context) error {
 	sessionID := c.Request().Param("id")
 	logger.Info("Sending message to session: " + sessionID)
+	
+	// Track tool usage for this request
+	var toolSummaries []string
 
 	// Get database instance
 	database, err := db.GetDB()
@@ -361,6 +364,9 @@ func sendMessageHandler(c rweb.Context) error {
 				summary := createToolSummary(toolUse.Name, toolUse.Input, result.Content, err)
 				logger.Info("Broadcasting tool usage", "tool", toolUse.Name, "summary", summary)
 				BroadcastToolUsage(sessionID, toolUse.Name, summary)
+				
+				// Collect tool summaries for response
+				toolSummaries = append(toolSummaries, summary)
 
 				// Add tool result to results
 				toolResults = append(toolResults, result)
@@ -425,12 +431,13 @@ func sendMessageHandler(c rweb.Context) error {
 			"model":   response.Model,
 		})
 
-		// Return the assistant's response with model info
+		// Return the assistant's response with model info and tool summaries
 		return c.WriteJSON(map[string]interface{}{
-			"role":    "assistant",
-			"content": responseText,
-			"usage":   response.Usage,
-			"model":   response.Model,
+			"role":          "assistant",
+			"content":       responseText,
+			"usage":         response.Usage,
+			"model":         response.Model,
+			"toolSummaries": toolSummaries,
 		})
 	}
 }
