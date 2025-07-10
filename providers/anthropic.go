@@ -314,55 +314,6 @@ func (c *AnthropicClient) InitializeContext(projectPath string) error {
 	return nil
 }
 
-// EnhanceSystemPromptWithContext enhances the system prompt with project context
-func (c *AnthropicClient) EnhanceSystemPromptWithContext(basePrompt string) string {
-	if c.contextManager == nil || !c.contextManager.IsInitialized() {
-		return basePrompt
-	}
-	
-	ctx := c.contextManager.GetContext()
-	if ctx == nil {
-		return basePrompt
-	}
-	
-	// Build context information
-	var contextInfo strings.Builder
-	contextInfo.WriteString("\n\n## Project Context\n")
-	
-	// Project information
-	contextInfo.WriteString(fmt.Sprintf("- Language: %s\n", ctx.Language))
-	if ctx.Framework != "" {
-		contextInfo.WriteString(fmt.Sprintf("- Framework: %s\n", ctx.Framework))
-	}
-	contextInfo.WriteString(fmt.Sprintf("- Root Path: %s\n", ctx.RootPath))
-	
-	// Statistics
-	if ctx.Statistics.TotalFiles > 0 {
-		contextInfo.WriteString(fmt.Sprintf("- Total Files: %d\n", ctx.Statistics.TotalFiles))
-		contextInfo.WriteString(fmt.Sprintf("- Total Lines: %d\n", ctx.Statistics.TotalLines))
-	}
-	
-	// Recent files
-	if len(ctx.RecentFiles) > 0 {
-		contextInfo.WriteString("\nRecent files:\n")
-		for i, file := range ctx.RecentFiles {
-			if i >= 5 { // Limit to 5 recent files
-				break
-			}
-			contextInfo.WriteString(fmt.Sprintf("- %s\n", file))
-		}
-	}
-	
-	// Modified files
-	if len(ctx.ModifiedFiles) > 0 {
-		contextInfo.WriteString("\nModified files in this session:\n")
-		for file := range ctx.ModifiedFiles {
-			contextInfo.WriteString(fmt.Sprintf("- %s\n", file))
-		}
-	}
-	
-	return basePrompt + contextInfo.String()
-}
 
 // GetRelevantFiles returns files relevant to the current task
 func (c *AnthropicClient) GetRelevantFiles(task string, maxFiles int) ([]string, error) {

@@ -2,6 +2,7 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"strings"
 	"time"
@@ -17,6 +18,45 @@ import (
 
 // Session represents a chat session (alias for db.Session for backward compatibility)
 type Session = db.Session
+
+// getContextPrompt returns context information as an initial prompt
+func getContextPrompt() string {
+	cm := GetContextManager()
+	if cm == nil || !cm.IsInitialized() {
+		return ""
+	}
+	
+	ctx := cm.GetContext()
+	if ctx == nil {
+		return ""
+	}
+	
+	// Build context information as a user prompt
+	var contextInfo strings.Builder
+	contextInfo.WriteString("Project Context Information:\n")
+	contextInfo.WriteString(fmt.Sprintf("- Working in a %s project", ctx.Language))
+	if ctx.Framework != "" {
+		contextInfo.WriteString(fmt.Sprintf(" using %s framework", ctx.Framework))
+	}
+	contextInfo.WriteString(fmt.Sprintf("\n- Project root: %s", ctx.RootPath))
+	
+	if ctx.Statistics.TotalFiles > 0 {
+		contextInfo.WriteString(fmt.Sprintf("\n- Total files: %d (%d lines of code)", 
+			ctx.Statistics.TotalFiles, ctx.Statistics.TotalLines))
+	}
+	
+	// Add file type breakdown if available
+	if len(ctx.Statistics.FilesByLanguage) > 0 {
+		contextInfo.WriteString("\n- File types:")
+		for lang, count := range ctx.Statistics.FilesByLanguage {
+			if count > 0 {
+				contextInfo.WriteString(fmt.Sprintf(" %s(%d)", lang, count))
+			}
+		}
+	}
+	
+	return contextInfo.String()
+}
 
 // CreateSessionRequest represents a request to create a session
 type CreateSessionRequest struct {
@@ -52,6 +92,13 @@ func createSession(req *CreateSessionRequest) (*Session, error) {
 	// Add the initial prompts as the first message if any exist
 	if len(session.InitialPrompts) > 0 {
 		initialPrompt := strings.Join(session.InitialPrompts, "\n")
+		
+		// Add context information if available
+		contextInfo := getContextPrompt()
+		if contextInfo != "" {
+			initialPrompt = initialPrompt + "\n\n" + contextInfo
+		}
+		
 		err = database.AddMessage(session.ID, providers.ChatMessage{
 			Role:    "user",
 			Content: initialPrompt,
@@ -255,9 +302,6 @@ func sendMessageHandler(c rweb.Context) error {
 
 	// Prepare request with tools
 	systemPrompt := "You are Claude Code, Anthropic's official CLI for Claude."
-	
-	// Enhance system prompt with context
-	systemPrompt = client.EnhanceSystemPromptWithContext(systemPrompt)
 
 	request := providers.CreateMessageRequest{
 		Model:     model,
