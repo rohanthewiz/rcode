@@ -81,6 +81,7 @@ rcode/
    - Directory operations: list, tree, mkdir, rm, move
    - Search: regex-based file content search
    - Git integration: status, diff, log, branch
+   - Web operations: search (mock), fetch and convert pages
    - Bash command execution
    - Tool parameter validation and safety checks
 3. **Context Intelligence**:
@@ -139,7 +140,7 @@ Then visit http://localhost:8000
 - Context information is added as part of the initial user prompt, not the system prompt
 - OAuth headers: `Authorization: Bearer {token}`, `anthropic-beta: oauth-2025-04-20`
 - Messages use Anthropic's streaming API format
-- Comprehensive tool system with 14+ tools across file, directory, search, and git operations
+- Comprehensive tool system with 16 tools across file, directory, search, git, and web operations
 - Sessions persist in DuckDB at `~/.local/share/rcode/rcode.db`
 - Each session starts with configurable prompts (default includes permission requirements)
 - Tool usage summaries display as "🛠️ TOOL USE" with concise metrics
@@ -149,11 +150,12 @@ Then visit http://localhost:8000
 ### Recent Updates
 - Migrated from TypeScript to Go implementation
 - Switched to DuckDB for persistent session storage
-- Implemented comprehensive tool system with 14+ tools:
+- Implemented comprehensive tool system with 16 tools:
   - File operations: read, write, edit (line-based)
   - Directory operations: list, tree, mkdir, remove, move
   - Search: regex-based file content search
   - Git integration: status, diff, log, branch
+  - Web operations: search (mock), fetch with HTML-to-markdown conversion
 - Added context intelligence system:
   - Automatic language/framework detection (Go, JS/TS, Python, Rust, Java)
   - Smart file prioritization based on relevance
@@ -186,6 +188,18 @@ Then visit http://localhost:8000
 12. **git_diff** - Show git differences (staged/unstaged)
 13. **git_log** - Show git commit history
 14. **git_branch** - List git branches
+15. **web_search** - Search the web for information (mock implementation)
+16. **web_fetch** - Fetch and convert web page content to markdown
+
+### Web Tools Details
+- **web_search**: Currently returns mock results. Ready for integration with search APIs (Google, Bing, DuckDuckGo)
+- **web_fetch**: 
+  - Fetches content from HTTP/HTTPS URLs
+  - Converts HTML to readable markdown format
+  - Pretty-prints JSON responses
+  - Configurable timeout (1-120 seconds) and size limits (1KB-50MB)
+  - Follows redirects with safety checks
+  - Includes metadata (URL, status, content type, size)
 
 ### Tool Safety Features
 - Path validation ensures operations stay within project scope
@@ -195,6 +209,7 @@ Then visit http://localhost:8000
 - Context-aware execution tracking
 
 ## Next Steps
+- Integrate real search APIs for web_search tool (Google Custom Search, Bing, DuckDuckGo)
 - Enhance streaming response handling
 - Add provider abstraction for multiple AI models
 - Implement MCP protocol support
@@ -202,3 +217,4 @@ Then visit http://localhost:8000
 - Implement code formatting tools
 - Add test running capabilities
 - Enhance context window management
+- Add more sophisticated HTML-to-markdown conversion (tables, nested lists)
