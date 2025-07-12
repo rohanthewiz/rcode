@@ -57,5 +57,9 @@ func DefaultRegistry() *Registry {
 	webSearchTool := &WebSearchTool{}
 	registry.Register(webSearchTool.GetDefinition(), webSearchTool)
 
+	// Register web fetch tool
+	webFetchTool := &WebFetchTool{}
+	registry.Register(webFetchTool.GetDefinition(), webFetchTool)
+
 	return registry
 }

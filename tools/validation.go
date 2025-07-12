@@ -2,6 +2,7 @@ package tools
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -284,6 +285,42 @@ func (v *ToolValidator) initializeDefaultRules() {
 				Type:     "integer",
 				MinValue: 1,
 				MaxValue: 50,
+			},
+		},
+	}
+	
+	// web_fetch validation
+	v.rules["web_fetch"] = ValidationRules{
+		RequiredParams: []string{"url"},
+		ParamRules: map[string]ParamRule{
+			"url": {
+				Type:      "string",
+				MinLength: 10,
+				Pattern:   `^https?://`,
+			},
+			"timeout": {
+				Type:     "integer",
+				MinValue: 1,
+				MaxValue: 120,
+			},
+			"max_size": {
+				Type:     "integer",
+				MinValue: 1024,      // 1KB minimum
+				MaxValue: 52428800,  // 50MB maximum
+			},
+			"follow_redirects": {
+				Type: "boolean",
+			},
+		},
+		CustomRules: []CustomValidation{
+			func(params map[string]interface{}) error {
+				// Validate URL format
+				if urlStr, ok := GetString(params, "url"); ok {
+					if _, err := url.Parse(urlStr); err != nil {
+						return serr.Wrap(err, "invalid URL format")
+					}
+				}
+				return nil
 			},
 		},
 	}
