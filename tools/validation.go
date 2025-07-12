@@ -270,6 +270,23 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
+	
+	// web_search validation
+	v.rules["web_search"] = ValidationRules{
+		RequiredParams: []string{"query"},
+		ParamRules: map[string]ParamRule{
+			"query": {
+				Type:      "string",
+				MinLength: 1,
+				MaxLength: 500,
+			},
+			"max_results": {
+				Type:     "integer",
+				MinValue: 1,
+				MaxValue: 50,
+			},
+		},
+	}
 }
 
 // Validate validates tool parameters

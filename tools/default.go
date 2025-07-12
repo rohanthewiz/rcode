@@ -53,5 +53,9 @@ func DefaultRegistry() *Registry {
 	gitBranchTool := &GitBranchTool{}
 	registry.Register(gitBranchTool.GetDefinition(), gitBranchTool)
 
+	// Register web search tool
+	webSearchTool := &WebSearchTool{}
+	registry.Register(webSearchTool.GetDefinition(), webSearchTool)
+
 	return registry
 }
