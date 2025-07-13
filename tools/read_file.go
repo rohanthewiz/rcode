@@ -36,8 +36,14 @@ func (t *ReadFileTool) Execute(input map[string]interface{}) (string, error) {
 		return "", serr.New("path is required")
 	}
 
+	// Expand the path to handle ~ for home directory
+	expandedPath, err := ExpandPath(path)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand path")
+	}
+
 	// Read the file
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(expandedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return "", serr.New(fmt.Sprintf("File not found: %s", path))

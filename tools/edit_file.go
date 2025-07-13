@@ -54,6 +54,12 @@ func (t *EditFileTool) Execute(input map[string]interface{}) (string, error) {
 		return "", serr.New("path is required")
 	}
 
+	// Expand the path to handle ~ for home directory
+	expandedPath, err := ExpandPath(path)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand path")
+	}
+
 	startLine, ok := GetInt(input, "start_line")
 	if !ok || startLine < 1 {
 		return "", serr.New("start_line is required and must be >= 1")
@@ -78,7 +84,7 @@ func (t *EditFileTool) Execute(input map[string]interface{}) (string, error) {
 	}
 
 	// Read the original file
-	originalContent, err := os.ReadFile(path)
+	originalContent, err := os.ReadFile(expandedPath)
 	if err != nil {
 		return "", serr.Wrap(err, fmt.Sprintf("Failed to read file: %s", path))
 	}
@@ -132,7 +138,7 @@ func (t *EditFileTool) Execute(input map[string]interface{}) (string, error) {
 		modifiedContent += "\n"
 	}
 
-	err = os.WriteFile(path, []byte(modifiedContent), 0644)
+	err = os.WriteFile(expandedPath, []byte(modifiedContent), 0644)
 	if err != nil {
 		return "", serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path))
 	}

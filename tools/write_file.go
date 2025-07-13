@@ -45,14 +45,20 @@ func (t *WriteFileTool) Execute(input map[string]interface{}) (string, error) {
 		return "", serr.New("content is required")
 	}
 
+	// Expand the path to handle ~ for home directory
+	expandedPath, err := ExpandPath(path)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand path")
+	}
+
 	// Create directory if it doesn't exist
-	dir := filepath.Dir(path)
+	dir := filepath.Dir(expandedPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		return "", serr.Wrap(err, fmt.Sprintf("Failed to create directory: %s", dir))
 	}
 
 	// Write the file
-	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+	if err := os.WriteFile(expandedPath, []byte(content), 0644); err != nil {
 		return "", serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path))
 	}
 

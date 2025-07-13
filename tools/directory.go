@@ -50,6 +50,13 @@ func (t *ListDirTool) Execute(input map[string]interface{}) (string, error) {
 		path = "."
 	}
 
+	// Expand the path to handle ~ for home directory
+	expandedPath, err := ExpandPath(path)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand path")
+	}
+	path = expandedPath
+
 	showAll := false
 	if val, exists := input["all"]; exists {
 		if boolVal, ok := val.(bool); ok {
@@ -250,6 +257,13 @@ func (t *MakeDirTool) Execute(input map[string]interface{}) (string, error) {
 		return "", serr.New("path is required")
 	}
 
+	// Expand the path to handle ~ for home directory
+	expandedPath, err := ExpandPath(path)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand path")
+	}
+	path = expandedPath
+
 	createParents := false
 	if val, exists := input["parents"]; exists {
 		if boolVal, ok := val.(bool); ok {
@@ -266,7 +280,6 @@ func (t *MakeDirTool) Execute(input map[string]interface{}) (string, error) {
 	}
 
 	// Create directory
-	var err error
 	if createParents {
 		err = os.MkdirAll(path, 0755)
 	} else {
@@ -315,6 +328,13 @@ func (t *RemoveTool) Execute(input map[string]interface{}) (string, error) {
 	if !ok || path == "" {
 		return "", serr.New("path is required")
 	}
+
+	// Expand the path to handle ~ for home directory
+	expandedPath, err := ExpandPath(path)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand path")
+	}
+	path = expandedPath
 
 	recursive := false
 	if val, exists := input["recursive"]; exists {
@@ -401,6 +421,13 @@ func (t *TreeTool) Execute(input map[string]interface{}) (string, error) {
 	if !ok || path == "" {
 		path = "."
 	}
+
+	// Expand the path to handle ~ for home directory
+	expandedPath, err := ExpandPath(path)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand path")
+	}
+	path = expandedPath
 
 	maxDepth, ok := GetInt(input, "max_depth")
 	if !ok {
@@ -559,21 +586,32 @@ func (t *MoveTool) Execute(input map[string]interface{}) (string, error) {
 		return "", serr.New("destination is required")
 	}
 
+	// Expand paths to handle ~ for home directory
+	expandedSource, err := ExpandPath(source)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand source path")
+	}
+	
+	expandedDestination, err := ExpandPath(destination)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand destination path")
+	}
+
 	// Check if source exists
-	sourceInfo, err := os.Stat(source)
+	sourceInfo, err := os.Stat(expandedSource)
 	if err != nil {
 		return "", serr.Wrap(err, fmt.Sprintf("Cannot access source: %s", source))
 	}
 
 	// Check if destination exists
-	destInfo, err := os.Stat(destination)
+	destInfo, err := os.Stat(expandedDestination)
 	if err == nil && destInfo.IsDir() && !sourceInfo.IsDir() {
 		// Moving file into directory
-		destination = filepath.Join(destination, filepath.Base(source))
+		expandedDestination = filepath.Join(expandedDestination, filepath.Base(expandedSource))
 	}
 
 	// Perform the move
-	err = os.Rename(source, destination)
+	err = os.Rename(expandedSource, expandedDestination)
 	if err != nil {
 		return "", serr.Wrap(err, fmt.Sprintf("Failed to move %s to %s", source, destination))
 	}

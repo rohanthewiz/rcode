@@ -417,14 +417,20 @@ func (v *ToolValidator) validateParam(name string, value interface{}, rule Param
 			return serr.New(fmt.Sprintf("parameter '%s' must be a string path", name))
 		}
 		
+		// Expand the path to handle ~ for home directory
+		expandedPath, err := ExpandPath(path)
+		if err != nil {
+			return serr.Wrap(err, fmt.Sprintf("failed to expand path for parameter '%s'", name))
+		}
+		
 		if rule.MustExist {
-			if _, err := os.Stat(path); os.IsNotExist(err) {
+			if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
 				return serr.New(fmt.Sprintf("path '%s' does not exist", path))
 			}
 		}
 		
 		if rule.PathType != "" && rule.PathType != "any" {
-			info, err := os.Stat(path)
+			info, err := os.Stat(expandedPath)
 			if err == nil {
 				if rule.PathType == "file" && info.IsDir() {
 					return serr.New(fmt.Sprintf("path '%s' must be a file, not a directory", path))

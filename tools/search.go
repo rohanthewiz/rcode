@@ -70,6 +70,13 @@ func (t *SearchTool) Execute(input map[string]interface{}) (string, error) {
 		return "", serr.New("path is required")
 	}
 
+	// Expand the path to handle ~ for home directory
+	expandedPath, err := ExpandPath(searchPath)
+	if err != nil {
+		return "", serr.Wrap(err, "failed to expand path")
+	}
+	searchPath = expandedPath
+
 	pattern, ok := GetString(input, "pattern")
 	if !ok || pattern == "" {
 		return "", serr.New("pattern is required")
