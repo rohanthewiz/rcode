@@ -1,7 +1,7 @@
 # RCode Enhancement Plan - Stellar Agentic Coding Tool
 
 ## Session Context
-- **Date**: 2025-07-10
+- **Date**: 2025-07-10 (Updated: 2025-07-14)
 - **Goal**: Transform rcode into a stellar agentic coding tool
 - **Focus**: Effective agentic coding mode as main priority
 
@@ -27,8 +27,9 @@
 
 4. **Tool System Foundation**
    - Clean tool interface with registry pattern
-   - Basic tools implemented: read_file, write_file, bash
+   - Comprehensive tool set: file operations, directory management, search, Git integration, web tools
    - Proper error handling and result formatting
+   - Tool usage summaries with metrics
 
 5. **UI & Real-time Communication**
    - Server-sent events (SSE) for streaming responses
@@ -38,13 +39,13 @@
 
 ### Current Limitations
 
-1. **Limited Tool Set**
-   - Only 3 basic tools (read, write, bash)
-   - No file editing capabilities (only overwrite)
-   - No search/grep functionality
-   - No directory operations
-   - No git integration
-   - No project context awareness
+1. **Limited Tool Set** *(Partially Addressed)*
+   - ✅ File operations expanded (read, write, edit)
+   - ✅ Search/grep functionality implemented
+   - ✅ Directory operations (list, tree, mkdir, rm, move)
+   - ✅ Core Git integration (status, diff, log, branch, add, commit, push, pull, checkout, merge)
+   - ⏳ Advanced Git operations pending (stash, reset, rebase, fetch, clone, remote)
+   - ❌ No project context awareness yet
 
 2. **Basic Context Management**
    - No file watching or change detection
@@ -186,10 +187,11 @@ func (tp *TaskPlanner) Rollback(toStep int) error
 ## Implementation Priorities
 
 ### Week 1-2: Tool System Expansion
-- [ ] Implement Edit tool with line-based operations
-- [ ] Add Search/Grep tool with regex support
-- [ ] Create Directory operations tools
-- [ ] Basic Git integration (status, diff)
+- [x] Implement Edit tool with line-based operations
+- [x] Add Search/Grep tool with regex support
+- [x] Create Directory operations tools
+- [x] Basic Git integration (status, diff)
+- [x] Extended Git integration (add, commit, push, pull, checkout, merge)
 
 ### Week 3-4: Context Intelligence
 - [ ] Project scanner implementation
@@ -209,6 +211,66 @@ func (tp *TaskPlanner) Rollback(toStep int) error
 - [ ] Command palette
 - [ ] Keyboard shortcuts
 
+## Progress Updates
+
+### 2025-07-14: Git Integration Milestone
+Successfully implemented core Git workflow tools, expanding RCode's capabilities significantly:
+
+#### Implemented Git Tools:
+1. **git_add** - Stage files for commit
+   - Support for specific files, all changes (-A), or tracked only (-u)
+   - Safety checks for interactive modes
+   - Shows status after staging
+
+2. **git_commit** - Create commits
+   - Message support with validation
+   - Amend functionality (--amend)
+   - Auto-staging option (-a)
+   - Empty commit support
+   - Author override capability
+
+3. **git_push** - Push to remote
+   - Remote and branch specification
+   - Force push with prominent warnings
+   - Force with lease (safer alternative)
+   - Set upstream tracking (-u)
+   - Dry run mode for testing
+
+4. **git_pull** - Pull from remote
+   - Merge vs rebase options
+   - Various merge strategies
+   - Autostash functionality
+   - Comprehensive conflict detection and guidance
+
+5. **git_checkout** - Switch branches/restore files
+   - Branch switching with create option (-b)
+   - File restoration from HEAD
+   - Force checkout with warnings
+   - Orphan branch creation
+   - Detached HEAD support
+
+6. **git_merge** - Merge branches
+   - Multiple merge strategies
+   - Fast-forward control (--no-ff, --ff-only)
+   - Squash merges
+   - Conflict resolution workflow (--abort, --continue)
+   - Custom merge messages
+
+#### Remaining Git Tools (Future Work):
+- git_stash - Temporary change storage
+- git_reset - Reset with safety checks
+- git_rebase - Interactive/non-interactive rebasing
+- git_fetch - Fetch without merging
+- git_clone - Repository cloning
+- git_remote - Remote management
+
+#### Current Tool Count: 22 tools total
+- File operations: 5 (read, write, edit, search, etc.)
+- Directory operations: 5 (list, tree, mkdir, rm, move)
+- Git operations: 10 (status, diff, log, branch, add, commit, push, pull, checkout, merge)
+- System operations: 1 (bash)
+- Web operations: 2 (search, fetch)
+
 ## Success Metrics
 1. **Tool Coverage**: Support 80% of common coding operations
 2. **Context Accuracy**: 90% relevant file selection
@@ -217,11 +279,17 @@ func (tp *TaskPlanner) Rollback(toStep int) error
 5. **User Satisfaction**: Positive feedback on efficiency
 
 ## Next Session Tasks
-1. Review and refine the enhancement plan
-2. Begin implementation of Edit tool
-3. Design detailed schemas for new tools
-4. Create project scanner prototype
-5. Plan UI mockups for file explorer
+1. ✅ ~~Review and refine the enhancement plan~~
+2. ✅ ~~Implement Edit tool~~ (Completed)
+3. ✅ ~~Implement core Git tools~~ (Completed: add, commit, push, pull, checkout, merge)
+4. Complete remaining Git tools (stash, reset, rebase, fetch, clone, remote)
+5. Begin Context Intelligence implementation:
+   - Create project scanner prototype
+   - Implement language/framework detection
+   - Design file prioritization algorithm
+6. Enhance UI components:
+   - Plan file explorer mockups
+   - Design diff viewer interface
 
 ## Open Questions
 1. Should we support MCP (Model Context Protocol)?

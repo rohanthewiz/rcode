@@ -140,7 +140,7 @@ Then visit http://localhost:8000
 - Context information is added as part of the initial user prompt, not the system prompt
 - OAuth headers: `Authorization: Bearer {token}`, `anthropic-beta: oauth-2025-04-20`
 - Messages use Anthropic's streaming API format
-- Comprehensive tool system with 16 tools across file, directory, search, git, and web operations
+- Comprehensive tool system with 22 tools across file, directory, search, git, and web operations
 - Sessions persist in DuckDB at `~/.local/share/rcode/rcode.db`
 - Each session starts with configurable prompts (default includes permission requirements)
 - Tool usage summaries display as "🛠️ TOOL USE" with concise metrics
@@ -150,11 +150,11 @@ Then visit http://localhost:8000
 ### Recent Updates
 - Migrated from TypeScript to Go implementation
 - Switched to DuckDB for persistent session storage
-- Implemented comprehensive tool system with 16 tools:
+- Implemented comprehensive tool system with 22 tools:
   - File operations: read, write, edit (line-based)
   - Directory operations: list, tree, mkdir, remove, move
   - Search: regex-based file content search
-  - Git integration: status, diff, log, branch
+  - Git integration: status, diff, log, branch, add, commit, push, pull, checkout, merge
   - Web operations: search (mock), fetch with HTML-to-markdown conversion
 - Added context intelligence system:
   - Automatic language/framework detection (Go, JS/TS, Python, Rust, Java)
@@ -188,8 +188,14 @@ Then visit http://localhost:8000
 12. **git_diff** - Show git differences (staged/unstaged)
 13. **git_log** - Show git commit history
 14. **git_branch** - List git branches
-15. **web_search** - Search the web for information (mock implementation)
-16. **web_fetch** - Fetch and convert web page content to markdown
+15. **git_add** - Stage files for commit
+16. **git_commit** - Create commits with messages
+17. **git_push** - Push commits to remote repository
+18. **git_pull** - Pull and merge changes from remote
+19. **git_checkout** - Switch branches or restore files
+20. **git_merge** - Merge branches with conflict handling
+21. **web_search** - Search the web for information (mock implementation)
+22. **web_fetch** - Fetch and convert web page content to markdown
 
 ### Web Tools Details
 - **web_search**: Currently returns mock results. Ready for integration with search APIs (Google, Bing, DuckDuckGo)
@@ -213,7 +219,7 @@ Then visit http://localhost:8000
 - Enhance streaming response handling
 - Add provider abstraction for multiple AI models
 - Implement MCP protocol support
-- Add more git operations (commit, push, pull)
+- Add remaining git operations (stash, reset, rebase, fetch, clone, remote)
 - Implement code formatting tools
 - Add test running capabilities
 - Enhance context window management
