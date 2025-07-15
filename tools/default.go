@@ -53,6 +53,24 @@ func DefaultRegistry() *Registry {
 	gitBranchTool := &GitBranchTool{}
 	registry.Register(gitBranchTool.GetDefinition(), gitBranchTool)
 
+	gitAddTool := &GitAddTool{}
+	registry.Register(gitAddTool.GetDefinition(), gitAddTool)
+
+	gitCommitTool := &GitCommitTool{}
+	registry.Register(gitCommitTool.GetDefinition(), gitCommitTool)
+
+	gitPushTool := &GitPushTool{}
+	registry.Register(gitPushTool.GetDefinition(), gitPushTool)
+
+	gitPullTool := &GitPullTool{}
+	registry.Register(gitPullTool.GetDefinition(), gitPullTool)
+
+	gitCheckoutTool := &GitCheckoutTool{}
+	registry.Register(gitCheckoutTool.GetDefinition(), gitCheckoutTool)
+
+	gitMergeTool := &GitMergeTool{}
+	registry.Register(gitMergeTool.GetDefinition(), gitMergeTool)
+
 	// Register web search tool
 	webSearchTool := &WebSearchTool{}
 	registry.Register(webSearchTool.GetDefinition(), webSearchTool)
