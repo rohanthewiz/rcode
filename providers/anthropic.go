@@ -2,17 +2,20 @@ package providers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/rohanthewiz/logger"
 	"github.com/rohanthewiz/serr"
 	"rcode/auth"
 	"rcode/config"
-	"rcode/context"
+	contextpkg "rcode/context"
+	"rcode/tools"
 )
 
 const (
@@ -24,14 +27,14 @@ const (
 // AnthropicClient handles communication with Claude API
 type AnthropicClient struct {
 	httpClient     *http.Client
-	contextManager *context.Manager
+	contextManager *contextpkg.Manager
 }
 
 // NewAnthropicClient creates a new Anthropic API client
 func NewAnthropicClient() *AnthropicClient {
 	return &AnthropicClient{
 		httpClient:     &http.Client{},
-		contextManager: context.NewManager(),
+		contextManager: contextpkg.NewManager(),
 	}
 }
 
@@ -160,7 +163,30 @@ func (c *AnthropicClient) SendMessage(request CreateMessageRequest) (*CreateMess
 
 	// Check for errors
 	if resp.StatusCode != http.StatusOK {
-		return nil, serr.New(fmt.Sprintf("API error: %s - %s", resp.Status, string(body)))
+		apiErr := serr.New(fmt.Sprintf("API error: %d - %s", resp.StatusCode, string(body)))
+		
+		// Classify API errors for retry handling
+		switch resp.StatusCode {
+		case 429: // Rate limit
+			// Extract retry-after if available
+			retryAfter := 60 // default
+			if retryHeader := resp.Header.Get("Retry-After"); retryHeader != "" {
+				// Parse retry-after header
+				if seconds, err := time.ParseDuration(retryHeader + "s"); err == nil {
+					retryAfter = int(seconds.Seconds())
+				}
+			}
+			return nil, tools.NewRateLimitError(apiErr, retryAfter)
+		case 500, 502, 503, 504, 529: // Server errors including overloaded
+			return nil, tools.NewRetryableError(apiErr, "server error")
+		case 400, 401, 403, 404: // Client errors
+			return nil, tools.NewPermanentError(apiErr, "client error")
+		default:
+			if resp.StatusCode >= 500 {
+				return nil, tools.NewRetryableError(apiErr, "server error")
+			}
+			return nil, tools.NewPermanentError(apiErr, "client error")
+		}
 	}
 
 	// Parse response
@@ -173,6 +199,49 @@ func (c *AnthropicClient) SendMessage(request CreateMessageRequest) (*CreateMess
 	logger.Info("API Response model", "model", response.Model)
 
 	return &response, nil
+}
+
+// SendMessageWithRetry sends a message to Claude with automatic retry for transient errors
+func (c *AnthropicClient) SendMessageWithRetry(request CreateMessageRequest) (*CreateMessageResponse, error) {
+	// Define retry policy for API calls
+	retryPolicy := tools.RetryPolicy{
+		MaxAttempts:     5,
+		InitialDelay:    1 * time.Second,
+		MaxDelay:        60 * time.Second,
+		Multiplier:      2.0,
+		Jitter:          true,
+		RetryableErrors: tools.IsRetryableError,
+	}
+	
+	var response *CreateMessageResponse
+	
+	operation := func(ctx context.Context) error {
+		resp, err := c.SendMessage(request)
+		if err != nil {
+			return err
+		}
+		response = resp
+		return nil
+	}
+	
+	result := tools.Retry(context.Background(), retryPolicy, operation)
+	if result.LastError != nil {
+		// Log retry details if we had retries
+		if result.Attempts > 1 {
+			logger.LogErr(result.LastError, 
+				fmt.Sprintf("Failed to send message after %d attempts", result.Attempts))
+		}
+		return nil, result.LastError
+	}
+	
+	// Log successful retry if needed
+	if result.Attempts > 1 {
+		logger.Info("Message sent successfully after retries",
+			"attempts", result.Attempts,
+			"duration", result.TotalDuration)
+	}
+	
+	return response, nil
 }
 
 // StreamMessage sends a message to Claude and streams the response
@@ -218,7 +287,28 @@ func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent fu
 	// Check for errors
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return serr.New(fmt.Sprintf("API error: %s - %s", resp.Status, string(body)))
+		apiErr := serr.New(fmt.Sprintf("API error: %d - %s", resp.StatusCode, string(body)))
+		
+		// Classify API errors for retry handling
+		switch resp.StatusCode {
+		case 429: // Rate limit
+			retryAfter := 60 // default
+			if retryHeader := resp.Header.Get("Retry-After"); retryHeader != "" {
+				if seconds, err := time.ParseDuration(retryHeader + "s"); err == nil {
+					retryAfter = int(seconds.Seconds())
+				}
+			}
+			return tools.NewRateLimitError(apiErr, retryAfter)
+		case 500, 502, 503, 504, 529: // Server errors including overloaded
+			return tools.NewRetryableError(apiErr, "server error")
+		case 400, 401, 403, 404: // Client errors
+			return tools.NewPermanentError(apiErr, "client error")
+		default:
+			if resp.StatusCode >= 500 {
+				return tools.NewRetryableError(apiErr, "server error")
+			}
+			return tools.NewPermanentError(apiErr, "client error")
+		}
 	}
 
 	// Read SSE stream
@@ -259,6 +349,42 @@ func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent fu
 	return nil
 }
 
+// StreamMessageWithRetry sends a message to Claude and streams the response with retry
+func (c *AnthropicClient) StreamMessageWithRetry(request CreateMessageRequest, onEvent func(StreamEvent) error) error {
+	// Define retry policy for streaming API calls
+	retryPolicy := tools.RetryPolicy{
+		MaxAttempts:     5,
+		InitialDelay:    1 * time.Second,
+		MaxDelay:        60 * time.Second,
+		Multiplier:      2.0,
+		Jitter:          true,
+		RetryableErrors: tools.IsRetryableError,
+	}
+	
+	operation := func(ctx context.Context) error {
+		return c.StreamMessage(request, onEvent)
+	}
+	
+	result := tools.Retry(context.Background(), retryPolicy, operation)
+	if result.LastError != nil {
+		// Log retry details if we had retries
+		if result.Attempts > 1 {
+			logger.LogErr(result.LastError, 
+				fmt.Sprintf("Failed to stream message after %d attempts", result.Attempts))
+		}
+		return result.LastError
+	}
+	
+	// Log successful retry if needed
+	if result.Attempts > 1 {
+		logger.Info("Message streamed successfully after retries",
+			"attempts", result.Attempts,
+			"duration", result.TotalDuration)
+	}
+	
+	return nil
+}
+
 // ConvertToAPIMessages converts internal messages to API format
 func ConvertToAPIMessages(messages []ChatMessage) []Message {
 	apiMessages := make([]Message, len(messages))
@@ -291,12 +417,12 @@ type ChatMessage struct {
 }
 
 // SetContextManager sets the context manager for the client
-func (c *AnthropicClient) SetContextManager(cm *context.Manager) {
+func (c *AnthropicClient) SetContextManager(cm *contextpkg.Manager) {
 	c.contextManager = cm
 }
 
 // GetContextManager returns the context manager
-func (c *AnthropicClient) GetContextManager() *context.Manager {
+func (c *AnthropicClient) GetContextManager() *contextpkg.Manager {
 	return c.contextManager
 }
 
@@ -335,7 +461,7 @@ func (c *AnthropicClient) GetRelevantFiles(task string, maxFiles int) ([]string,
 }
 
 // TrackFileChange tracks a file change in the context
-func (c *AnthropicClient) TrackFileChange(filepath string, changeType context.ChangeType) {
+func (c *AnthropicClient) TrackFileChange(filepath string, changeType contextpkg.ChangeType) {
 	if c.contextManager != nil {
 		c.contextManager.TrackChange(filepath, changeType)
 	}

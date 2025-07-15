@@ -60,7 +60,8 @@ func (t *BashTool) Execute(input map[string]interface{}) (string, error) {
 
 	// Handle timeout
 	if ctx.Err() == context.DeadlineExceeded {
-		return string(output), serr.New(fmt.Sprintf("Command timed out after %dms", timeout))
+		// Timeout errors could be retryable if the system is just slow
+		return string(output), NewRetryableError(serr.New(fmt.Sprintf("Command timed out after %dms", timeout)), "timeout")
 	}
 
 	// Build result

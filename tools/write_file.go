@@ -54,12 +54,20 @@ func (t *WriteFileTool) Execute(input map[string]interface{}) (string, error) {
 	// Create directory if it doesn't exist
 	dir := filepath.Dir(expandedPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Failed to create directory: %s", dir))
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied creating directory: %s", dir)), "permission denied")
+		}
+		// Other errors might be temporary (disk full, system resources, etc)
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to create directory: %s", dir)))
 	}
 
 	// Write the file
 	if err := os.WriteFile(expandedPath, []byte(content), 0644); err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path))
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied writing file: %s", path)), "permission denied")
+		}
+		// Other errors might be temporary (disk full, file locked, etc)
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path)))
 	}
 
 	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), path), nil

@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,7 +111,8 @@ func (t *WebFetchTool) Execute(input map[string]interface{}) (string, error) {
 	// Create request
 	req, err := http.NewRequest("GET", urlStr, nil)
 	if err != nil {
-		return "", serr.Wrap(err, "failed to create request")
+		// This is typically a permanent error (invalid URL, etc)
+		return "", NewPermanentError(serr.Wrap(err, "failed to create request"), "invalid request")
 	}
 
 	// Set user agent to avoid blocking
@@ -120,20 +122,44 @@ func (t *WebFetchTool) Execute(input map[string]interface{}) (string, error) {
 	// Perform request
 	resp, err := client.Do(req)
 	if err != nil {
-		return "", serr.Wrap(err, "failed to fetch URL")
+		// Wrap network errors as retryable
+		return "", WrapNetworkError(serr.Wrap(err, "failed to fetch URL"))
 	}
 	defer resp.Body.Close()
 
 	// Check status code
 	if resp.StatusCode >= 400 {
-		return "", serr.New(fmt.Sprintf("HTTP error: %d %s", resp.StatusCode, resp.Status))
+		// Classify HTTP errors
+		httpErr := serr.New(fmt.Sprintf("HTTP error: %d %s", resp.StatusCode, resp.Status))
+		switch resp.StatusCode {
+		case 429: // Too Many Requests
+			// Extract retry-after header if available
+			retryAfter := 60 // default to 60 seconds
+			if retryHeader := resp.Header.Get("Retry-After"); retryHeader != "" {
+				// Try to parse as integer (seconds)
+				if seconds, err := strconv.Atoi(retryHeader); err == nil {
+					retryAfter = seconds
+				}
+			}
+			return "", NewRateLimitError(httpErr, retryAfter)
+		case 500, 502, 503, 504: // Server errors
+			return "", NewRetryableError(httpErr, "server error")
+		case 400, 401, 403, 404: // Client errors
+			return "", NewPermanentError(httpErr, "client error")
+		default:
+			if resp.StatusCode >= 500 {
+				return "", NewRetryableError(httpErr, "server error")
+			}
+			return "", NewPermanentError(httpErr, "client error")
+		}
 	}
 
 	// Read response body with size limit
 	limitedReader := io.LimitReader(resp.Body, int64(maxSize))
 	bodyBytes, err := io.ReadAll(limitedReader)
 	if err != nil {
-		return "", serr.Wrap(err, "failed to read response body")
+		// Network read errors are retryable
+		return "", WrapNetworkError(serr.Wrap(err, "failed to read response body"))
 	}
 
 	// Get content type

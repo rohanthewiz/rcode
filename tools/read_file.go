@@ -46,9 +46,15 @@ func (t *ReadFileTool) Execute(input map[string]interface{}) (string, error) {
 	content, err := os.ReadFile(expandedPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return "", serr.New(fmt.Sprintf("File not found: %s", path))
+			// File not found is permanent - the file doesn't exist
+			return "", NewPermanentError(serr.New(fmt.Sprintf("File not found: %s", path)), "file not found")
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Failed to read file: %s", path))
+		if os.IsPermission(err) {
+			// Permission errors are permanent - we don't have access
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied reading file: %s", path)), "permission denied")
+		}
+		// Other errors might be temporary (file locked, system resources, etc)
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to read file: %s", path)))
 	}
 
 	// Add line numbers like the TypeScript version

@@ -76,7 +76,8 @@ func (t *WebSearchTool) Execute(input map[string]interface{}) (string, error) {
 	// Perform the search
 	results, err := t.performSearch(query, maxResults)
 	if err != nil {
-		return "", serr.Wrap(err, "failed to perform search")
+		// Already classified in performSearch
+		return "", err
 	}
 
 	// Format results
@@ -106,7 +107,7 @@ func (t *WebSearchTool) performSearch(query string, maxResults int) (*WebSearchR
 
 	req, err := http.NewRequest("GET", searchURL, nil)
 	if err != nil {
-		return nil, serr.Wrap(err, "failed to create request")
+		return nil, NewPermanentError(serr.Wrap(err, "failed to create request"), "invalid request")
 	}
 
 	// Set user agent to avoid blocking
@@ -114,12 +115,25 @@ func (t *WebSearchTool) performSearch(query string, maxResults int) (*WebSearchR
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, serr.Wrap(err, "failed to perform search request")
+		return nil, WrapNetworkError(serr.Wrap(err, "failed to perform search request"))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, serr.New(fmt.Sprintf("search request failed with status: %d", resp.StatusCode))
+		httpErr := serr.New(fmt.Sprintf("search request failed with status: %d", resp.StatusCode))
+		switch resp.StatusCode {
+		case 429:
+			return nil, NewRateLimitError(httpErr, 60)
+		case 500, 502, 503, 504:
+			return nil, NewRetryableError(httpErr, "server error")
+		case 400, 401, 403, 404:
+			return nil, NewPermanentError(httpErr, "client error")
+		default:
+			if resp.StatusCode >= 500 {
+				return nil, NewRetryableError(httpErr, "server error")
+			}
+			return nil, NewPermanentError(httpErr, "client error")
+		}
 	}
 
 	// For now, we'll use a mock response since parsing HTML from DuckDuckGo 
@@ -171,13 +185,26 @@ func (t *WebSearchTool) performGoogleSearch(query string, maxResults int, apiKey
 
 	resp, err := client.Get(searchURL)
 	if err != nil {
-		return nil, serr.Wrap(err, "failed to perform Google search")
+		return nil, WrapNetworkError(serr.Wrap(err, "failed to perform Google search"))
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
-		return nil, serr.New(fmt.Sprintf("Google search failed with status %d: %s", resp.StatusCode, string(body)))
+		httpErr := serr.New(fmt.Sprintf("Google search failed with status %d: %s", resp.StatusCode, string(body)))
+		switch resp.StatusCode {
+		case 429:
+			return nil, NewRateLimitError(httpErr, 60)
+		case 500, 502, 503, 504:
+			return nil, NewRetryableError(httpErr, "server error")
+		case 400, 401, 403, 404:
+			return nil, NewPermanentError(httpErr, "client error")
+		default:
+			if resp.StatusCode >= 500 {
+				return nil, NewRetryableError(httpErr, "server error")
+			}
+			return nil, NewPermanentError(httpErr, "client error")
+		}
 	}
 
 	var googleResponse struct {
@@ -192,7 +219,8 @@ func (t *WebSearchTool) performGoogleSearch(query string, maxResults int, apiKey
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(&googleResponse); err != nil {
-		return nil, serr.Wrap(err, "failed to decode Google search response")
+		// JSON decode errors might be temporary (truncated response)
+		return nil, NewRetryableError(serr.Wrap(err, "failed to decode Google search response"), "decode error")
 	}
 
 	results := make([]WebSearchResult, 0, len(googleResponse.Items))

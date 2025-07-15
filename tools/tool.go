@@ -69,11 +69,13 @@ func (r *Registry) Execute(toolUse ToolUse) (*ToolResult, error) {
 
 	result, err := executor.Execute(toolUse.Input)
 	if err != nil {
+		// Return both the error result and the error itself
+		// This allows the enhanced registry to handle retries
 		return &ToolResult{
 			Type:      "tool_result",
 			ToolUseID: toolUse.ID,
 			Content:   "Error: " + err.Error(),
-		}, nil
+		}, err
 	}
 
 	return &ToolResult{

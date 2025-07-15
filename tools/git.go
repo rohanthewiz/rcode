@@ -68,7 +68,8 @@ func (t *GitStatusTool) Execute(input map[string]interface{}) (string, error) {
 		if strings.Contains(stderr.String(), "not a git repository") {
 			return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Git status failed: %s", stderr.String()))
+		// Git status errors might be temporary (index lock, etc)
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Git status failed: %s", stderr.String())))
 	}
 
 	output := stdout.String()
@@ -164,7 +165,8 @@ func (t *GitDiffTool) Execute(input map[string]interface{}) (string, error) {
 		if strings.Contains(stderr.String(), "not a git repository") {
 			return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Git diff failed: %s", stderr.String()))
+		// Git diff errors might be temporary (index lock, etc)
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Git diff failed: %s", stderr.String())))
 	}
 
 	output := stdout.String()
@@ -252,7 +254,8 @@ func (t *GitLogTool) Execute(input map[string]interface{}) (string, error) {
 		if strings.Contains(stderr.String(), "not a git repository") {
 			return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Git log failed: %s", stderr.String()))
+		// Git log errors are usually permanent
+		return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Git log failed: %s", stderr.String())), "git error")
 	}
 
 	output := stdout.String()
@@ -336,7 +339,8 @@ func (t *GitBranchTool) Execute(input map[string]interface{}) (string, error) {
 		if strings.Contains(stderr.String(), "not a git repository") {
 			return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Git branch failed: %s", stderr.String()))
+		// Git branch errors might be temporary (lock issues)
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Git branch failed: %s", stderr.String())))
 	}
 
 	output := stdout.String()
@@ -449,7 +453,7 @@ func (t *GitAddTool) Execute(input map[string]interface{}) (string, error) {
 		// Git add often exits with non-zero for warnings, check if there's actual error
 		errMsg := stderr.String()
 		if errMsg != "" && !strings.Contains(errMsg, "warning:") {
-			return "", serr.Wrap(err, fmt.Sprintf("Git add failed: %s", errMsg))
+			return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Git add failed: %s", errMsg)))
 		}
 	}
 
@@ -577,15 +581,16 @@ func (t *GitCommitTool) Execute(input map[string]interface{}) (string, error) {
 	if err != nil {
 		errMsg := stderr.String()
 		if strings.Contains(errMsg, "not a git repository") {
-			return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Not a git repository: %s", path)), "invalid repository")
 		}
 		if strings.Contains(errMsg, "nothing to commit") {
 			return "Nothing to commit, working tree clean", nil
 		}
 		if strings.Contains(errMsg, "no changes added to commit") {
-			return "", serr.New("No changes staged for commit. Use git_add first or use the 'all' option")
+			return "", NewPermanentError(serr.New("No changes staged for commit. Use git_add first or use the 'all' option"), "no changes")
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Git commit failed: %s", errMsg))
+		// Commit errors might be temporary (index lock, hooks failing, etc)
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Git commit failed: %s", errMsg)))
 	}
 
 	// Get the commit info
@@ -720,16 +725,22 @@ func (t *GitPushTool) Execute(input map[string]interface{}) (string, error) {
 	if err != nil {
 		errMsg := stderr.String()
 		if strings.Contains(errMsg, "not a git repository") {
-			return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Not a git repository: %s", path)), "invalid repository")
 		}
 		if strings.Contains(errMsg, "Could not read from remote repository") {
-			return "", serr.New("Failed to connect to remote repository. Check your authentication and network connection")
+			return "", NewRetryableError(serr.New("Failed to connect to remote repository. Check your authentication and network connection"), "network error")
+		}
+		if strings.Contains(errMsg, "Connection refused") || strings.Contains(errMsg, "Connection timed out") ||
+		   strings.Contains(errMsg, "Could not resolve host") || strings.Contains(errMsg, "Network is unreachable") {
+			return "", NewRetryableError(serr.New(fmt.Sprintf("Network error during push: %s", errMsg)), "network error")
 		}
 		if strings.Contains(errMsg, "failed to push") || strings.Contains(errMsg, "rejected") {
 			// Include the full error for push failures as they often contain important info
-			return "", serr.New(fmt.Sprintf("Push failed: %s", errMsg))
+			// Most push rejections are permanent (non-fast-forward, permissions, etc)
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Push failed: %s", errMsg)), "push rejected")
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Git push failed: %s", errMsg))
+		// Default to retryable for unknown errors as they might be transient
+		return "", NewRetryableError(serr.Wrap(err, fmt.Sprintf("Git push failed: %s", errMsg)), "unknown error")
 	}
 
 	// Combine stdout and stderr for push (git often puts progress to stderr)
@@ -857,10 +868,14 @@ func (t *GitPullTool) Execute(input map[string]interface{}) (string, error) {
 	if err != nil {
 		errMsg := stderr.String()
 		if strings.Contains(errMsg, "not a git repository") {
-			return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Not a git repository: %s", path)), "invalid repository")
 		}
 		if strings.Contains(errMsg, "Could not read from remote repository") {
-			return "", serr.New("Failed to connect to remote repository. Check your authentication and network connection")
+			return "", NewRetryableError(serr.New("Failed to connect to remote repository. Check your authentication and network connection"), "network error")
+		}
+		if strings.Contains(errMsg, "Connection refused") || strings.Contains(errMsg, "Connection timed out") ||
+		   strings.Contains(errMsg, "Could not resolve host") || strings.Contains(errMsg, "Network is unreachable") {
+			return "", NewRetryableError(serr.New(fmt.Sprintf("Network error during pull: %s", errMsg)), "network error")
 		}
 		if strings.Contains(errMsg, "Automatic merge failed") {
 			// Merge conflict - provide helpful information
@@ -880,9 +895,11 @@ func (t *GitPullTool) Execute(input map[string]interface{}) (string, error) {
 				conflictInfo += statusOut.String()
 			}
 			
-			return "", serr.New(conflictInfo)
+			// Merge conflicts are not retryable - they need manual intervention
+			return "", NewPermanentError(serr.New(conflictInfo), "merge conflict")
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Git pull failed: %s", errMsg))
+		// Default to retryable for unknown errors as they might be transient
+		return "", NewRetryableError(serr.Wrap(err, fmt.Sprintf("Git pull failed: %s", errMsg)), "unknown error")
 	}
 
 	// Combine output
@@ -1034,18 +1051,19 @@ func (t *GitCheckoutTool) Execute(input map[string]interface{}) (string, error) 
 	if err != nil {
 		errMsg := stderr.String()
 		if strings.Contains(errMsg, "not a git repository") {
-			return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Not a git repository: %s", path)), "invalid repository")
 		}
 		if strings.Contains(errMsg, "pathspec") && strings.Contains(errMsg, "did not match") {
-			return "", serr.New(fmt.Sprintf("Branch or file not found: %s", branch))
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Branch or file not found: %s", branch)), "not found")
 		}
 		if strings.Contains(errMsg, "Your local changes") {
-			return "", serr.New("Cannot checkout: You have uncommitted changes. Commit, stash, or use 'force' option")
+			return "", NewPermanentError(serr.New("Cannot checkout: You have uncommitted changes. Commit, stash, or use 'force' option"), "uncommitted changes")
 		}
 		if strings.Contains(errMsg, "already exists") {
 			return "", serr.New(fmt.Sprintf("Branch '%s' already exists. Use a different name or checkout the existing branch", branch))
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Git checkout failed: %s", errMsg))
+		// Checkout errors might be temporary (lock issues)
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Git checkout failed: %s", errMsg)))
 	}
 
 	// Build result message
@@ -1168,9 +1186,9 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 				return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
 			}
 			if strings.Contains(errMsg, "There is no merge to abort") {
-				return "", serr.New("No merge in progress to abort")
+				return "", NewPermanentError(serr.New("No merge in progress to abort"), "no merge")
 			}
-			return "", serr.Wrap(err, fmt.Sprintf("Failed to abort merge: %s", errMsg))
+			return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to abort merge: %s", errMsg)))
 		}
 		
 		return "Merge aborted successfully", nil
@@ -1190,12 +1208,12 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 				return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
 			}
 			if strings.Contains(errMsg, "There is no merge in progress") {
-				return "", serr.New("No merge in progress to continue")
+				return "", NewPermanentError(serr.New("No merge in progress to continue"), "no merge")
 			}
 			if strings.Contains(errMsg, "Committing is not possible") {
-				return "", serr.New("Cannot continue merge: conflicts still exist")
+				return "", NewPermanentError(serr.New("Cannot continue merge: conflicts still exist"), "conflicts")
 			}
-			return "", serr.Wrap(err, fmt.Sprintf("Failed to continue merge: %s", errMsg))
+			return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to continue merge: %s", errMsg)))
 		}
 		
 		result := stdout.String() + stderr.String()
@@ -1263,10 +1281,10 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 	if err != nil {
 		errMsg := stderr.String()
 		if strings.Contains(errMsg, "not a git repository") {
-			return "", serr.New(fmt.Sprintf("Not a git repository: %s", path))
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Not a git repository: %s", path)), "invalid repository")
 		}
 		if strings.Contains(errMsg, "not something we can merge") {
-			return "", serr.New(fmt.Sprintf("Cannot merge: '%s' is not a valid branch or commit", branch))
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Cannot merge: '%s' is not a valid branch or commit", branch)), "invalid branch")
 		}
 		if strings.Contains(errMsg, "Automatic merge failed") || strings.Contains(errMsg, "CONFLICT") {
 			// Merge conflict - provide helpful information
@@ -1287,12 +1305,13 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 				conflictInfo += statusOut.String()
 			}
 			
-			return "", serr.New(conflictInfo)
+			return "", NewPermanentError(serr.New(conflictInfo), "merge conflict")
 		}
 		if strings.Contains(errMsg, "Not possible to fast-forward") {
-			return "", serr.New("Cannot merge: Fast-forward not possible and ff_only was specified")
+			return "", NewPermanentError(serr.New("Cannot merge: Fast-forward not possible and ff_only was specified"), "ff not possible")
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Git merge failed: %s", errMsg))
+		// Merge errors might be temporary (lock issues)
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Git merge failed: %s", errMsg)))
 	}
 
 	// Build success message

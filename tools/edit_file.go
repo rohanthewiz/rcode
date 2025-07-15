@@ -86,7 +86,13 @@ func (t *EditFileTool) Execute(input map[string]interface{}) (string, error) {
 	// Read the original file
 	originalContent, err := os.ReadFile(expandedPath)
 	if err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Failed to read file: %s", path))
+		if os.IsNotExist(err) {
+			return "", NewPermanentError(serr.New(fmt.Sprintf("File not found: %s", path)), "file not found")
+		}
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied reading file: %s", path)), "permission denied")
+		}
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to read file: %s", path)))
 	}
 
 	// Split into lines
@@ -140,7 +146,10 @@ func (t *EditFileTool) Execute(input map[string]interface{}) (string, error) {
 
 	err = os.WriteFile(expandedPath, []byte(modifiedContent), 0644)
 	if err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path))
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied writing file: %s", path)), "permission denied")
+		}
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path)))
 	}
 
 	// Generate diff-like output for confirmation

@@ -108,13 +108,19 @@ func (t *SearchTool) Execute(input map[string]interface{}) (string, error) {
 	}
 	regex, err := regexp.Compile(regexFlags + pattern)
 	if err != nil {
-		return "", serr.Wrap(err, "Invalid regex pattern")
+		return "", NewPermanentError(serr.Wrap(err, "Invalid regex pattern"), "invalid pattern")
 	}
 
 	// Check if path exists
 	info, err := os.Stat(searchPath)
 	if err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Cannot access path: %s", searchPath))
+		if os.IsNotExist(err) {
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Path not found: %s", searchPath)), "path not found")
+		}
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied accessing path: %s", searchPath)), "permission denied")
+		}
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Cannot access path: %s", searchPath)))
 	}
 
 	var results []SearchResult

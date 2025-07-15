@@ -76,10 +76,16 @@ func (t *ListDirTool) Execute(input map[string]interface{}) (string, error) {
 	// Check if path exists and is a directory
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Cannot access path: %s", path))
+		if os.IsNotExist(err) {
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Path not found: %s", path)), "path not found")
+		}
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied accessing path: %s", path)), "permission denied")
+		}
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Cannot access path: %s", path)))
 	}
 	if !info.IsDir() {
-		return "", serr.New(fmt.Sprintf("Path is not a directory: %s", path))
+		return "", NewPermanentError(serr.New(fmt.Sprintf("Path is not a directory: %s", path)), "not a directory")
 	}
 
 	var output strings.Builder
@@ -92,7 +98,7 @@ func (t *ListDirTool) Execute(input map[string]interface{}) (string, error) {
 	}
 
 	if err != nil {
-		return "", serr.Wrap(err, "Error listing directory")
+		return "", WrapFileSystemError(serr.Wrap(err, "Error listing directory"))
 	}
 
 	return output.String(), nil
@@ -276,7 +282,7 @@ func (t *MakeDirTool) Execute(input map[string]interface{}) (string, error) {
 		if info.IsDir() {
 			return fmt.Sprintf("Directory already exists: %s", path), nil
 		}
-		return "", serr.New(fmt.Sprintf("Path exists but is not a directory: %s", path))
+		return "", NewPermanentError(serr.New(fmt.Sprintf("Path exists but is not a directory: %s", path)), "path conflict")
 	}
 
 	// Create directory
@@ -287,7 +293,14 @@ func (t *MakeDirTool) Execute(input map[string]interface{}) (string, error) {
 	}
 
 	if err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Failed to create directory: %s", path))
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied creating directory: %s", path)), "permission denied")
+		}
+		if os.IsExist(err) {
+			// Race condition - directory created between check and create
+			return fmt.Sprintf("Directory already exists: %s", path), nil
+		}
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to create directory: %s", path)))
 	}
 
 	return fmt.Sprintf("Directory created: %s", path), nil
@@ -349,7 +362,7 @@ func (t *RemoveTool) Execute(input map[string]interface{}) (string, error) {
 		dangerous := []string{"/", "/etc", "/usr", "/var", "/bin", "/sbin", "/home", "/Users"}
 		for _, d := range dangerous {
 			if abspath == d || abspath == d+"/" {
-				return "", serr.New(fmt.Sprintf("Refusing to remove dangerous path: %s", path))
+				return "", NewPermanentError(serr.New(fmt.Sprintf("Refusing to remove dangerous path: %s", path)), "dangerous operation")
 			}
 		}
 	}
@@ -360,7 +373,10 @@ func (t *RemoveTool) Execute(input map[string]interface{}) (string, error) {
 		if os.IsNotExist(err) {
 			return fmt.Sprintf("Path does not exist: %s", path), nil
 		}
-		return "", serr.Wrap(err, fmt.Sprintf("Cannot access path: %s", path))
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied accessing path: %s", path)), "permission denied")
+		}
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Cannot access path: %s", path)))
 	}
 
 	// Remove the path
@@ -371,7 +387,11 @@ func (t *RemoveTool) Execute(input map[string]interface{}) (string, error) {
 	}
 
 	if err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Failed to remove: %s", path))
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied removing: %s", path)), "permission denied")
+		}
+		// File busy errors are retryable
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to remove: %s", path)))
 	}
 
 	typeStr := "File"
@@ -451,10 +471,16 @@ func (t *TreeTool) Execute(input map[string]interface{}) (string, error) {
 	// Check if path exists and is a directory
 	info, err := os.Stat(path)
 	if err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Cannot access path: %s", path))
+		if os.IsNotExist(err) {
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Path not found: %s", path)), "path not found")
+		}
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied accessing path: %s", path)), "permission denied")
+		}
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Cannot access path: %s", path)))
 	}
 	if !info.IsDir() {
-		return "", serr.New(fmt.Sprintf("Path is not a directory: %s", path))
+		return "", NewPermanentError(serr.New(fmt.Sprintf("Path is not a directory: %s", path)), "not a directory")
 	}
 
 	var output strings.Builder
@@ -463,7 +489,7 @@ func (t *TreeTool) Execute(input map[string]interface{}) (string, error) {
 	stats := &treeStats{}
 	err = buildTree(&output, path, "", 0, maxDepth, showAll, dirsOnly, stats)
 	if err != nil {
-		return "", serr.Wrap(err, "Error building tree")
+		return "", WrapFileSystemError(serr.Wrap(err, "Error building tree"))
 	}
 
 	// Add summary
@@ -600,7 +626,13 @@ func (t *MoveTool) Execute(input map[string]interface{}) (string, error) {
 	// Check if source exists
 	sourceInfo, err := os.Stat(expandedSource)
 	if err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Cannot access source: %s", source))
+		if os.IsNotExist(err) {
+			return "", NewPermanentError(serr.New(fmt.Sprintf("Source not found: %s", source)), "source not found")
+		}
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied accessing source: %s", source)), "permission denied")
+		}
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Cannot access source: %s", source)))
 	}
 
 	// Check if destination exists
@@ -613,7 +645,14 @@ func (t *MoveTool) Execute(input map[string]interface{}) (string, error) {
 	// Perform the move
 	err = os.Rename(expandedSource, expandedDestination)
 	if err != nil {
-		return "", serr.Wrap(err, fmt.Sprintf("Failed to move %s to %s", source, destination))
+		if os.IsPermission(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Permission denied moving %s to %s", source, destination)), "permission denied")
+		}
+		if os.IsExist(err) {
+			return "", NewPermanentError(serr.Wrap(err, fmt.Sprintf("Destination already exists: %s", destination)), "destination exists")
+		}
+		// Cross-device moves and other errors might be temporary
+		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to move %s to %s", source, destination)))
 	}
 
 	return fmt.Sprintf("Moved: %s → %s", source, destination), nil

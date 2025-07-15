@@ -318,8 +318,8 @@ func sendMessageHandler(c rweb.Context) error {
 
 	// Keep trying until we get a final response (not a tool use)
 	for {
-		// Send message to Claude
-		response, err := client.SendMessage(request)
+		// Send message to Claude with retry for transient errors
+		response, err := client.SendMessageWithRetry(request)
 		if err != nil {
 			logger.LogErr(err, "failed to send message to Claude")
 			return c.WriteError(err, 500)
