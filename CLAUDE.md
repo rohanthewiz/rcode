@@ -27,7 +27,7 @@ rcode/
 │       └── css/
 │           └── ui.css        # Dark theme styles with tool summary styling
 ├── providers/
-│   └── anthropic.go          # Anthropic API client with context integration
+│   └── anthropic.go          # Anthropic API client with retry & context integration
 ├── tools/
 │   ├── tool.go               # Tool interface & registry
 │   ├── default.go            # Default tool implementations
@@ -37,10 +37,13 @@ rcode/
 │   ├── edit_file.go          # Line-based file editing tool
 │   ├── search.go             # Regex-based file search tool
 │   ├── directory.go          # Directory operations (list, tree, mkdir, rm, move)
-│   ├── git.go                # Git operations (status, diff, log, branch)
+│   ├── git.go                # Git operations (status, diff, log, branch, add, commit, push, pull, checkout, merge)
 │   ├── validation.go         # Tool parameter validation
-│   ├── enhanced_registry.go  # Enhanced registry with validation & metrics
-│   └── context_aware.go      # Context-aware tool execution
+│   ├── enhanced_registry.go  # Enhanced registry with validation, metrics & retry
+│   ├── context_aware.go      # Context-aware tool execution
+│   ├── retry.go              # Retry utility with exponential backoff
+│   ├── errors.go             # Error classification system
+│   └── web_*.go              # Web tools (search, fetch)
 ├── context/
 │   ├── types.go              # Core context data structures
 │   ├── manager.go            # Context manager with file tracking
@@ -80,21 +83,26 @@ rcode/
    - File operations: read, write, edit (line-based)
    - Directory operations: list, tree, mkdir, rm, move
    - Search: regex-based file content search
-   - Git integration: status, diff, log, branch
+   - Git integration: status, diff, log, branch, add, commit, push, pull, checkout, merge
    - Web operations: search (mock), fetch and convert pages
    - Bash command execution
    - Tool parameter validation and safety checks
-3. **Context Intelligence**:
+3. **Error Recovery System**:
+   - Automatic retry with exponential backoff for transient failures
+   - Error classification (retryable, permanent, rate limit)
+   - Per-tool retry policies (network vs filesystem)
+   - API 529 "Overloaded" errors handled transparently
+4. **Context Intelligence**:
    - Automatic project language/framework detection
    - Smart file prioritization for relevant context
    - Change tracking during sessions
    - Context-aware tool suggestions
-4. **Tool Usage Summaries**: Concise display of tool operations with metrics
-5. **Real-time Updates**: Server-sent events (SSE) with robust reconnection
-6. **Dark Theme**: Modern dark-themed UI with CSS variables
-7. **Session Management**: Persistent sessions with DuckDB storage
-8. **Auto-initialization**: Sessions start with permission prompt for tools/files
-9. **Connection Recovery**: Exponential backoff and manual reconnection for SSE
+5. **Tool Usage Summaries**: Concise display of tool operations with metrics
+6. **Real-time Updates**: Server-sent events (SSE) with robust reconnection
+7. **Dark Theme**: Modern dark-themed UI with CSS variables
+8. **Session Management**: Persistent sessions with DuckDB storage
+9. **Auto-initialization**: Sessions start with permission prompt for tools/files
+10. **Connection Recovery**: Exponential backoff and manual reconnection for SSE
 
 ## API Endpoints
 
@@ -156,6 +164,12 @@ Then visit http://localhost:8000
   - Search: regex-based file content search
   - Git integration: status, diff, log, branch, add, commit, push, pull, checkout, merge
   - Web operations: search (mock), fetch with HTML-to-markdown conversion
+- Added error recovery system (Phase 1 Complete):
+  - Retry utility with exponential backoff and jitter
+  - Error classification for intelligent retry decisions
+  - Per-tool retry policies based on operation type
+  - Anthropic API 529 "Overloaded" errors now retry automatically
+  - Comprehensive test coverage for reliability
 - Added context intelligence system:
   - Automatic language/framework detection (Go, JS/TS, Python, Rust, Java)
   - Smart file prioritization based on relevance
@@ -214,13 +228,28 @@ Then visit http://localhost:8000
 - Parameter type validation and constraints
 - Context-aware execution tracking
 
+### Error Recovery Features
+- **Retry Policies**:
+  - Network tools: 5 attempts, 500ms initial delay, 30s max
+  - Filesystem tools: 2 attempts, 50ms initial delay, 500ms max
+  - API calls: 5 attempts, 1s initial delay, 60s max
+- **Error Classification**:
+  - Network errors: connection refused, timeout, DNS failures
+  - Filesystem errors: EAGAIN, EBUSY, EINTR, lock issues
+  - API errors: 429 (rate limit), 5xx (server errors), 529 (overloaded)
+- **Automatic Recovery**: Transient failures handled transparently
+
 ## Next Steps
+- Begin Phase 2: Context Intelligence implementation
+  - Create project scanner for language/framework detection
+  - Implement smart file prioritization algorithm
+  - Build change tracking system
+  - Design context window optimization
 - Integrate real search APIs for web_search tool (Google Custom Search, Bing, DuckDuckGo)
-- Enhance streaming response handling
-- Add provider abstraction for multiple AI models
-- Implement MCP protocol support
 - Add remaining git operations (stash, reset, rebase, fetch, clone, remote)
 - Implement code formatting tools
 - Add test running capabilities
-- Enhance context window management
+- Enhance streaming response handling
+- Add provider abstraction for multiple AI models
+- Implement MCP protocol support
 - Add more sophisticated HTML-to-markdown conversion (tables, nested lists)
