@@ -1,3 +1,4 @@
+
 # RCode Go Server - Project Context
 
 ## Overview
@@ -197,11 +198,26 @@ The server can be configured using environment variables:
   - Per-tool retry policies based on operation type
   - Anthropic API 529 "Overloaded" errors now retry automatically
   - Comprehensive test coverage for reliability
-- Added context intelligence system:
-  - Automatic language/framework detection (Go, JS/TS, Python, Rust, Java)
-  - Smart file prioritization based on relevance
-  - Change tracking during sessions
-  - Context-aware tool execution
+- Added context intelligence system (Phase 2 Complete):
+  - Enhanced metadata extraction for code files:
+    - Imports, exports, functions, classes for multiple languages
+    - Language-specific parsing (Go, JS/TS, Python, Java, Rust)
+  - NLP-based keyword extraction with:
+    - Code pattern detection (camelCase, snake_case)
+    - Domain-specific term expansion
+    - Synonym mapping and action-object pairs
+  - Smart file prioritization:
+    - Metadata-aware scoring (functions, classes, exports)
+    - Language and framework detection
+    - Relevance-based file selection
+  - Accurate token counting:
+    - GPT-style tokenization approximation
+    - Language-specific token ratios
+    - Subword tokenization handling
+  - Enhanced change tracking:
+    - Detailed metadata for each change
+    - Tool-specific operation tracking
+    - Git operation awareness
 - Implemented tool parameter validation for safety
 - Added tool usage summaries in UI with metrics:
   - File operations show byte counts and line numbers
@@ -267,11 +283,16 @@ The server can be configured using environment variables:
 - **Automatic Recovery**: Transient failures handled transparently
 
 ## Next Steps
-- Begin Phase 2: Context Intelligence implementation
-  - Create project scanner for language/framework detection
-  - Implement smart file prioritization algorithm
-  - Build change tracking system
-  - Design context window optimization
+- Begin Phase 3: Agent Enhancement
+  - Task planning system for complex operations
+  - Multi-step execution with checkpoints
+  - Rollback capabilities for operations
+  - Learning from user feedback
+  - Code generation templates
+- Complete remaining Phase 2 items:
+  - Persist change history in database
+  - Add comprehensive test coverage
+  - Performance optimization for large projects
 - Integrate real search APIs for web_search tool (Google Custom Search, Bing, DuckDuckGo)
 - Add remaining git operations (stash, reset, rebase, fetch, clone, remote)
 - Implement code formatting tools

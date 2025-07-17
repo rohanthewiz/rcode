@@ -85,10 +85,12 @@ const (
 
 // FileChange represents a file change event
 type FileChange struct {
-	Path       string     `json:"path"`
-	Type       ChangeType `json:"type"`
-	Timestamp  time.Time  `json:"timestamp"`
-	OldPath    string     `json:"old_path,omitempty"` // for renames
+	Path       string                 `json:"path"`
+	Type       ChangeType             `json:"type"`
+	Timestamp  time.Time              `json:"timestamp"`
+	OldPath    string                 `json:"old_path,omitempty"` // for renames
+	Tool       string                 `json:"tool,omitempty"`      // which tool made the change
+	Details    map[string]interface{} `json:"details,omitempty"`   // additional tool-specific details
 }
 
 // TaskContext represents context for a specific task

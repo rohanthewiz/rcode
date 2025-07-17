@@ -92,6 +92,36 @@ func (m *Manager) TrackChange(filepath string, changeType ChangeType) {
 	m.changeTracker.Track(change)
 }
 
+// TrackChangeWithDetails records a file change with additional details
+func (m *Manager) TrackChangeWithDetails(change FileChange) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// Set timestamp if not provided
+	if change.Timestamp.IsZero() {
+		change.Timestamp = time.Now()
+	}
+
+	m.changes = append(m.changes, change)
+	
+	// Update modified files in context
+	if m.context != nil && m.context.ModifiedFiles != nil {
+		if change.Type == ChangeTypeDelete {
+			delete(m.context.ModifiedFiles, change.Path)
+		} else {
+			m.context.ModifiedFiles[change.Path] = change.Timestamp
+		}
+		
+		// Handle renames
+		if change.Type == ChangeTypeRename && change.OldPath != "" {
+			delete(m.context.ModifiedFiles, change.OldPath)
+		}
+	}
+
+	// Track in change tracker
+	m.changeTracker.Track(change)
+}
+
 // GetRelevantContext returns context relevant to a specific task
 func (m *Manager) GetRelevantContext(task string) (*TaskContext, error) {
 	m.mu.RLock()

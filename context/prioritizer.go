@@ -140,6 +140,24 @@ func (p *FilePrioritizer) scoreFile(node *FileNode, ctx *ProjectContext, taskCtx
 		importScore := p.scoreImports(node.Metadata.Imports, keywords)
 		score += importScore * p.weights.imports
 	}
+	
+	// Function/method relevance
+	if len(node.Metadata.Functions) > 0 {
+		funcScore := p.scoreFunctions(node.Metadata.Functions, keywords)
+		score += funcScore * p.weights.nameMatch // Use name match weight
+	}
+	
+	// Class/type relevance
+	if len(node.Metadata.Classes) > 0 {
+		classScore := p.scoreClasses(node.Metadata.Classes, keywords)
+		score += classScore * p.weights.nameMatch // Use name match weight
+	}
+	
+	// Export relevance (public API)
+	if len(node.Metadata.Exports) > 0 {
+		exportScore := p.scoreExports(node.Metadata.Exports, keywords)
+		score += exportScore * 1.2 // Slight boost for public API
+	}
 
 	// Size penalty (prefer smaller files)
 	if node.Size > 0 {
@@ -265,56 +283,415 @@ func (p *FilePrioritizer) scoreImports(imports []string, keywords []string) floa
 	return score
 }
 
+// scoreFunctions scores based on function name relevance
+func (p *FilePrioritizer) scoreFunctions(functions []string, keywords []string) float64 {
+	score := 0.0
+	
+	for _, function := range functions {
+		funcLower := strings.ToLower(function)
+		for _, keyword := range keywords {
+			keywordLower := strings.ToLower(keyword)
+			
+			// Exact match
+			if funcLower == keywordLower {
+				score += 2.0
+			} else if strings.Contains(funcLower, keywordLower) {
+				score += 1.0
+			}
+			
+			// Check camelCase splits
+			splits := splitCamelCase(function)
+			for _, split := range splits {
+				if split == keywordLower {
+					score += 0.5
+				}
+			}
+		}
+	}
+	
+	return score
+}
+
+// scoreClasses scores based on class/type name relevance
+func (p *FilePrioritizer) scoreClasses(classes []string, keywords []string) float64 {
+	score := 0.0
+	
+	for _, class := range classes {
+		classLower := strings.ToLower(class)
+		for _, keyword := range keywords {
+			keywordLower := strings.ToLower(keyword)
+			
+			// Exact match
+			if classLower == keywordLower {
+				score += 2.0
+			} else if strings.Contains(classLower, keywordLower) {
+				score += 1.0
+			}
+			
+			// Check camelCase splits
+			splits := splitCamelCase(class)
+			for _, split := range splits {
+				if split == keywordLower {
+					score += 0.5
+				}
+			}
+		}
+	}
+	
+	return score
+}
+
+// scoreExports scores based on exported symbols relevance
+func (p *FilePrioritizer) scoreExports(exports []string, keywords []string) float64 {
+	score := 0.0
+	
+	for _, export := range exports {
+		exportLower := strings.ToLower(export)
+		for _, keyword := range keywords {
+			keywordLower := strings.ToLower(keyword)
+			
+			// Exact match for exports gets higher score
+			if exportLower == keywordLower {
+				score += 2.5
+			} else if strings.Contains(exportLower, keywordLower) {
+				score += 1.5
+			}
+		}
+	}
+	
+	return score
+}
+
 // extractKeywords extracts relevant keywords from a task description
 func (p *FilePrioritizer) extractKeywords(task string) []string {
-	// Simple keyword extraction - can be improved with NLP
+	// Enhanced NLP-based keyword extraction
+	originalTask := task
 	task = strings.ToLower(task)
 	
-	// Remove common words
+	// Extended stop words list
+	stopWords := map[string]bool{
+		// Articles
+		"the": true, "a": true, "an": true,
+		// Conjunctions
+		"and": true, "or": true, "but": true, "nor": true, "yet": true, "so": true,
+		// Prepositions
+		"in": true, "on": true, "at": true, "to": true, "for": true, "of": true, 
+		"with": true, "by": true, "from": true, "up": true, "about": true, "into": true,
+		"through": true, "during": true, "before": true, "after": true, "above": true,
+		"below": true, "between": true, "under": true, "over": true,
+		// Pronouns
+		"i": true, "me": true, "my": true, "you": true, "your": true, "he": true,
+		"she": true, "it": true, "its": true, "we": true, "our": true, "they": true,
+		"their": true, "this": true, "that": true, "these": true, "those": true,
+		// Verbs (common)
+		"is": true, "are": true, "was": true, "were": true, "been": true, "be": true,
+		"have": true, "has": true, "had": true, "do": true, "does": true, "did": true,
+		"will": true, "would": true, "could": true, "should": true, "may": true, 
+		"might": true, "must": true, "can": true, "need": true, "want": true,
+		// Question words (but we'll extract them specially)
+		"how": true, "what": true, "where": true, "when": true, "why": true, "which": true,
+		// Common task words (we'll handle these specially)
+		"please": true, "help": true, "me": true, "find": true, "show": true,
+	}
+
+	// Extract code-like patterns first (camelCase, snake_case, etc.)
+	codePatterns := p.extractCodePatterns(originalTask)
+	
+	// Split into words and clean
+	words := strings.FieldsFunc(task, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' || r == '-')
+	})
+	
+	keywordMap := make(map[string]bool)
+	keywords := make([]string, 0)
+	
+	// Process each word
+	for _, word := range words {
+		// Skip if too short or stop word
+		if len(word) < 2 || stopWords[word] {
+			continue
+		}
+		
+		// Skip numbers
+		if isNumeric(word) {
+			continue
+		}
+		
+		// Add to keywords if not already present
+		if !keywordMap[word] {
+			keywordMap[word] = true
+			keywords = append(keywords, word)
+		}
+	}
+	
+	// Add code patterns
+	for _, pattern := range codePatterns {
+		if !keywordMap[strings.ToLower(pattern)] {
+			keywords = append(keywords, pattern)
+		}
+	}
+	
+	// Extract and expand domain-specific terms
+	domainKeywords := p.extractDomainKeywords(task)
+	for _, dk := range domainKeywords {
+		if !keywordMap[dk] {
+			keywords = append(keywords, dk)
+		}
+	}
+	
+	// Extract action-object pairs
+	actionPairs := p.extractActionObjectPairs(task)
+	for _, pair := range actionPairs {
+		if !keywordMap[pair] {
+			keywords = append(keywords, pair)
+		}
+	}
+	
+	// Add synonyms and related terms
+	expandedKeywords := p.expandKeywords(keywords)
+	for _, ek := range expandedKeywords {
+		if !keywordMap[ek] {
+			keywords = append(keywords, ek)
+		}
+	}
+	
+	return keywords
+}
+
+// extractCodePatterns extracts code-like patterns from text
+func (p *FilePrioritizer) extractCodePatterns(text string) []string {
+	patterns := make([]string, 0)
+	
+	// Regular expression patterns for code elements
+	// CamelCase: UserController, getData
+	camelCaseWords := strings.FieldsFunc(text, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9'))
+	})
+	
+	for _, word := range camelCaseWords {
+		if len(word) > 1 && containsUpperAndLower(word) {
+			patterns = append(patterns, word)
+			// Also add split version
+			splits := splitCamelCase(word)
+			patterns = append(patterns, splits...)
+		}
+	}
+	
+	// Snake_case and kebab-case
+	snakeKebabWords := strings.FieldsFunc(text, func(r rune) bool {
+		return !((r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || 
+		        (r >= '0' && r <= '9') || r == '_' || r == '-')
+	})
+	
+	for _, word := range snakeKebabWords {
+		if strings.Contains(word, "_") || strings.Contains(word, "-") {
+			patterns = append(patterns, word)
+			// Also add parts
+			parts := strings.FieldsFunc(word, func(r rune) bool {
+				return r == '_' || r == '-'
+			})
+			patterns = append(patterns, parts...)
+		}
+	}
+	
+	// File extensions
+	words := strings.Fields(text)
+	for _, word := range words {
+		if strings.Contains(word, ".") && len(word) > 2 {
+			ext := filepath.Ext(word)
+			if len(ext) > 1 && len(ext) < 6 {
+				patterns = append(patterns, strings.TrimPrefix(ext, "."))
+			}
+		}
+	}
+	
+	return patterns
+}
+
+// extractDomainKeywords extracts domain-specific keywords based on context
+func (p *FilePrioritizer) extractDomainKeywords(task string) []string {
+	keywords := make([]string, 0)
+	
+	// Development domain mappings
+	domainMappings := map[string][]string{
+		"api":          {"endpoint", "route", "handler", "rest", "graphql", "controller"},
+		"database":     {"db", "model", "schema", "migration", "query", "table", "sql"},
+		"auth":         {"authentication", "authorization", "login", "token", "jwt", "oauth", "session"},
+		"ui":           {"component", "view", "page", "template", "style", "css", "layout"},
+		"frontend":     {"react", "vue", "angular", "component", "state", "props", "dom"},
+		"backend":      {"server", "service", "middleware", "controller", "model"},
+		"test":         {"spec", "unit", "integration", "mock", "assert", "expect", "coverage"},
+		"performance":  {"optimize", "cache", "speed", "latency", "memory", "cpu"},
+		"security":     {"vulnerability", "encryption", "ssl", "https", "cors", "xss", "csrf"},
+		"deployment":   {"docker", "kubernetes", "ci", "cd", "pipeline", "build", "release"},
+		"logging":      {"log", "logger", "debug", "error", "trace", "monitoring"},
+		"config":       {"configuration", "settings", "environment", "env", "options", "yaml", "json"},
+		"validation":   {"validate", "validator", "check", "verify", "sanitize", "rules"},
+		"error":        {"exception", "handling", "catch", "throw", "stack", "trace"},
+		"async":        {"promise", "async", "await", "callback", "concurrent", "parallel"},
+		"cache":        {"redis", "memcached", "storage", "ttl", "invalidate"},
+		"search":       {"elasticsearch", "solr", "index", "query", "filter", "facet"},
+		"message":      {"queue", "pubsub", "kafka", "rabbitmq", "event", "broker"},
+		"payment":      {"stripe", "paypal", "checkout", "billing", "subscription", "invoice"},
+	}
+	
+	// Check each domain
+	for domain, terms := range domainMappings {
+		if strings.Contains(task, domain) {
+			keywords = append(keywords, terms...)
+		}
+	}
+	
+	// Programming language specific
+	if strings.Contains(task, "go") || strings.Contains(task, "golang") {
+		keywords = append(keywords, "goroutine", "channel", "interface", "struct", "package")
+	}
+	if strings.Contains(task, "javascript") || strings.Contains(task, "js") {
+		keywords = append(keywords, "function", "class", "module", "npm", "node")
+	}
+	if strings.Contains(task, "python") || strings.Contains(task, "py") {
+		keywords = append(keywords, "def", "class", "module", "pip", "django", "flask")
+	}
+	
+	return keywords
+}
+
+// extractActionObjectPairs extracts action-object pairs from task
+func (p *FilePrioritizer) extractActionObjectPairs(task string) []string {
+	pairs := make([]string, 0)
+	
+	// Common action verbs in development tasks
+	actionVerbs := map[string]bool{
+		"create": true, "add": true, "implement": true, "build": true,
+		"update": true, "modify": true, "change": true, "edit": true,
+		"fix": true, "repair": true, "debug": true, "resolve": true,
+		"remove": true, "delete": true, "clean": true, "refactor": true,
+		"optimize": true, "improve": true, "enhance": true,
+		"test": true, "validate": true, "check": true, "verify": true,
+		"integrate": true, "connect": true, "link": true,
+		"migrate": true, "upgrade": true, "deploy": true,
+		"configure": true, "setup": true, "install": true,
+	}
+	
+	words := strings.Fields(strings.ToLower(task))
+	for i, word := range words {
+		if actionVerbs[word] && i+1 < len(words) {
+			// Get the next word as potential object
+			obj := words[i+1]
+			if len(obj) > 2 && !isStopWord(obj) {
+				pairs = append(pairs, obj)
+				
+				// Also check for compound objects
+				if i+2 < len(words) && !isStopWord(words[i+2]) {
+					compound := obj + "_" + words[i+2]
+					pairs = append(pairs, compound)
+				}
+			}
+		}
+	}
+	
+	return pairs
+}
+
+// expandKeywords adds synonyms and related terms
+func (p *FilePrioritizer) expandKeywords(keywords []string) []string {
+	expanded := make([]string, 0)
+	
+	// Common synonyms and related terms in software development
+	synonyms := map[string][]string{
+		"api":        {"endpoint", "service"},
+		"function":   {"func", "method", "procedure"},
+		"class":      {"type", "struct", "object"},
+		"test":       {"spec", "testing"},
+		"config":     {"configuration", "settings"},
+		"auth":       {"authentication", "authorization"},
+		"db":         {"database", "storage"},
+		"error":      {"exception", "err"},
+		"handler":    {"controller", "processor"},
+		"route":      {"path", "endpoint"},
+		"model":      {"schema", "entity"},
+		"component":  {"widget", "element"},
+		"service":    {"provider", "manager"},
+		"util":       {"utility", "helper"},
+		"lib":        {"library", "package"},
+	}
+	
+	for _, keyword := range keywords {
+		if syns, exists := synonyms[keyword]; exists {
+			expanded = append(expanded, syns...)
+		}
+		
+		// Also check reverse mapping
+		for key, syns := range synonyms {
+			for _, syn := range syns {
+				if syn == keyword {
+					expanded = append(expanded, key)
+					break
+				}
+			}
+		}
+	}
+	
+	return expanded
+}
+
+// Helper functions for keyword extraction
+
+func containsUpperAndLower(s string) bool {
+	hasUpper := false
+	hasLower := false
+	for _, r := range s {
+		if r >= 'A' && r <= 'Z' {
+			hasUpper = true
+		}
+		if r >= 'a' && r <= 'z' {
+			hasLower = true
+		}
+		if hasUpper && hasLower {
+			return true
+		}
+	}
+	return false
+}
+
+func splitCamelCase(s string) []string {
+	var parts []string
+	var current []rune
+	
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			if len(current) > 0 {
+				parts = append(parts, strings.ToLower(string(current)))
+			}
+			current = []rune{r}
+		} else {
+			current = append(current, r)
+		}
+	}
+	
+	if len(current) > 0 {
+		parts = append(parts, strings.ToLower(string(current)))
+	}
+	
+	return parts
+}
+
+func isNumeric(s string) bool {
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+func isStopWord(word string) bool {
 	stopWords := map[string]bool{
 		"the": true, "a": true, "an": true, "and": true, "or": true,
 		"but": true, "in": true, "on": true, "at": true, "to": true,
 		"for": true, "of": true, "with": true, "is": true, "are": true,
-		"was": true, "were": true, "been": true, "be": true, "have": true,
-		"has": true, "had": true, "do": true, "does": true, "did": true,
-		"will": true, "would": true, "could": true, "should": true,
-		"may": true, "might": true, "must": true, "can": true,
-		"how": true, "what": true, "where": true, "when": true, "why": true,
-		"implement": true, "create": true, "add": true, "update": true,
-		"fix": true, "change": true, "modify": true, "edit": true,
 	}
-
-	// Split into words
-	words := strings.Fields(task)
-	keywords := make([]string, 0)
-	
-	for _, word := range words {
-		// Clean word
-		word = strings.Trim(word, ".,!?;:'\"")
-		
-		// Skip stop words and very short words
-		if len(word) < 3 || stopWords[word] {
-			continue
-		}
-		
-		keywords = append(keywords, word)
-	}
-
-	// Add compound keywords for common patterns
-	if strings.Contains(task, "api") {
-		keywords = append(keywords, "api", "endpoint", "route", "handler")
-	}
-	if strings.Contains(task, "database") || strings.Contains(task, "db") {
-		keywords = append(keywords, "database", "db", "model", "schema")
-	}
-	if strings.Contains(task, "auth") {
-		keywords = append(keywords, "auth", "authentication", "login", "token")
-	}
-	if strings.Contains(task, "ui") || strings.Contains(task, "frontend") {
-		keywords = append(keywords, "ui", "component", "view", "page")
-	}
-
-	return keywords
+	return stopWords[word]
 }
 
 // Helper functions

@@ -60,29 +60,118 @@ func (e *ContextAwareExecutor) postExecute(toolUse ToolUse, result *ToolResult, 
 		return
 	}
 
-	// Track file changes
+	// Track file changes with detailed information
 	switch toolUse.Name {
 	case "write_file":
 		if path, ok := GetString(toolUse.Input, "path"); ok {
-			e.contextManager.TrackChange(path, context.ChangeTypeCreate)
+			details := make(map[string]interface{})
+			if content, ok := GetString(toolUse.Input, "content"); ok {
+				details["size"] = len(content)
+				details["lines"] = countLines(content)
+			}
+			
+			change := context.FileChange{
+				Path:    path,
+				Type:    context.ChangeTypeCreate,
+				Tool:    toolUse.Name,
+				Details: details,
+			}
+			e.contextManager.TrackChangeWithDetails(change)
 			e.contextManager.AddRecentFile(path)
 		}
+		
 	case "edit_file":
 		if path, ok := GetString(toolUse.Input, "path"); ok {
-			e.contextManager.TrackChange(path, context.ChangeTypeModify)
+			details := make(map[string]interface{})
+			
+			// Extract edit details
+			if edits, ok := toolUse.Input["edits"].([]interface{}); ok {
+				details["edit_count"] = len(edits)
+				details["operations"] = extractEditOperations(edits)
+			} else if editType, ok := GetString(toolUse.Input, "edit_type"); ok {
+				details["edit_type"] = editType
+			}
+			
+			change := context.FileChange{
+				Path:    path,
+				Type:    context.ChangeTypeModify,
+				Tool:    toolUse.Name,
+				Details: details,
+			}
+			e.contextManager.TrackChangeWithDetails(change)
 			e.contextManager.AddRecentFile(path)
 		}
+		
 	case "remove":
 		if path, ok := GetString(toolUse.Input, "path"); ok {
-			e.contextManager.TrackChange(path, context.ChangeTypeDelete)
+			details := make(map[string]interface{})
+			if recursive, ok := toolUse.Input["recursive"].(bool); ok {
+				details["recursive"] = recursive
+			}
+			
+			change := context.FileChange{
+				Path:    path,
+				Type:    context.ChangeTypeDelete,
+				Tool:    toolUse.Name,
+				Details: details,
+			}
+			e.contextManager.TrackChangeWithDetails(change)
 		}
+		
 	case "move":
 		if source, ok := GetString(toolUse.Input, "source"); ok {
 			if dest, ok := GetString(toolUse.Input, "destination"); ok {
-				e.contextManager.TrackChange(source, context.ChangeTypeRename)
-				e.contextManager.TrackChange(dest, context.ChangeTypeCreate)
+				details := make(map[string]interface{})
+				details["destination"] = dest
+				
+				change := context.FileChange{
+					Path:    dest,
+					OldPath: source,
+					Type:    context.ChangeTypeRename,
+					Tool:    toolUse.Name,
+					Details: details,
+				}
+				e.contextManager.TrackChangeWithDetails(change)
+				e.contextManager.AddRecentFile(dest)
 			}
 		}
+		
+	case "make_dir":
+		if path, ok := GetString(toolUse.Input, "path"); ok {
+			details := make(map[string]interface{})
+			if parents, ok := toolUse.Input["parents"].(bool); ok {
+				details["create_parents"] = parents
+			}
+			
+			change := context.FileChange{
+				Path:    path,
+				Type:    context.ChangeTypeCreate,
+				Tool:    toolUse.Name,
+				Details: details,
+			}
+			e.contextManager.TrackChangeWithDetails(change)
+		}
+		
+	case "git_add", "git_commit", "git_push", "git_pull", "git_merge":
+		// Track git operations
+		details := make(map[string]interface{})
+		details["command"] = toolUse.Name
+		
+		// Extract relevant parameters
+		for key, value := range toolUse.Input {
+			if key == "files" || key == "message" || key == "branch" || key == "remote" {
+				details[key] = value
+			}
+		}
+		
+		// For git operations, track as a special change on the repository
+		change := context.FileChange{
+			Path:    ".git",
+			Type:    context.ChangeTypeModify,
+			Tool:    toolUse.Name,
+			Details: details,
+		}
+		e.contextManager.TrackChangeWithDetails(change)
 	}
 }
 
@@ -385,4 +474,37 @@ func calculatePriority(tool, task string) int {
 	}
 	
 	return priority
+}
+
+// countLines counts the number of lines in a string
+func countLines(s string) int {
+	if s == "" {
+		return 0
+	}
+	lines := 1
+	for _, ch := range s {
+		if ch == '\n' {
+			lines++
+		}
+	}
+	return lines
+}
+
+// extractEditOperations extracts operation types from edit list
+func extractEditOperations(edits []interface{}) []string {
+	operations := make([]string, 0)
+	operationMap := make(map[string]bool)
+	
+	for _, edit := range edits {
+		if editMap, ok := edit.(map[string]interface{}); ok {
+			if editType, ok := GetString(editMap, "edit_type"); ok {
+				if !operationMap[editType] {
+					operations = append(operations, editType)
+					operationMap[editType] = true
+				}
+			}
+		}
+	}
+	
+	return operations
 }
