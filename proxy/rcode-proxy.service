@@ -1,0 +1,30 @@
+[Unit]
+Description=RCode Proxy Server with HTTPS
+After=network.target
+
+[Service]
+Type=simple
+User=rcode
+Group=rcode
+WorkingDirectory=/opt/rcode-proxy
+ExecStart=/opt/rcode-proxy/proxy \
+    -cert=/etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem \
+    -key=/etc/letsencrypt/live/YOUR_DOMAIN/privkey.pem \
+    -http=:80 \
+    -https=:443 \
+    -tls-only
+Restart=always
+RestartSec=10
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=rcode-proxy
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/letsencrypt
+
+[Install]
+WantedBy=multi-user.target

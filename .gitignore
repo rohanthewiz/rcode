@@ -11,3 +11,9 @@ rcode_server
 .claude
 
 *.log
+
+# TLS certificates
+certs/
+*.crt
+*.key
+*.pem

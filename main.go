@@ -26,6 +26,11 @@ func main() {
 		logger.Info("Using direct connection to Anthropic API")
 	}
 
+	// Log TLS configuration
+	if cfg.TLSEnabled {
+		logger.Info("TLS enabled", "port", cfg.TLSPort, "cert", cfg.TLSCertFile, "key", cfg.TLSKeyFile)
+	}
+
 	done := make(chan struct{}) // done channel will signal when shutdown complete
 	shutdown.InitShutdownService(done)
 
@@ -53,10 +58,22 @@ func main() {
 	logger.Info("Database initialized successfully")
 
 	go func() {
-		s := rweb.NewServer(rweb.ServerOptions{
+		serverOpts := rweb.ServerOptions{
 			Address: ":8000",
 			Verbose: true,
-		})
+		}
+
+		// Configure TLS if enabled
+		if cfg.TLSEnabled {
+			serverOpts.TLS = rweb.TLSCfg{
+				UseTLS:   true,
+				TLSAddr:  cfg.TLSPort,
+				CertFile: cfg.TLSCertFile,
+				KeyFile:  cfg.TLSKeyFile,
+			}
+		}
+
+		s := rweb.NewServer(serverOpts)
 
 		// Add middleware for request logging
 		s.Use(rweb.RequestInfo)
@@ -64,8 +81,15 @@ func main() {
 
 		web.SetupRoutes(s)
 
-		log.Printf("Starting RCode server on :8000")
-		err = s.Run()
+		// Start server
+		if cfg.TLSEnabled {
+			log.Printf("Starting RCode server with TLS on %s (HTTP redirect on :8000)", cfg.TLSPort)
+			err = s.RunWithHttpsRedirect()
+		} else {
+			log.Printf("Starting RCode server on :8000")
+			err = s.Run()
+		}
+		
 		if err != nil {
 			logger.Err(err, "where", "at server exit")
 		}

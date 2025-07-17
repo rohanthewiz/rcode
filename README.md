@@ -9,6 +9,7 @@ Note: It is way better to use Claude Code, but if you want to see how deep the r
 - 📝 **Monaco Editor** - For graphical chat input editing
 - 💬 **Real-time Chat** - Server-sent events for live updates
 - 🎯 **Session Management** - Multiple chat sessions support
+- 🔒 **HTTPS Support** - Built-in TLS/SSL for secure connections
 
 ## Quick Start
 
@@ -18,6 +19,22 @@ go run main.go
 
 # Visit http://localhost:8000
 ```
+
+### Using HTTPS (Optional)
+
+To enable HTTPS:
+
+```bash
+# Generate self-signed certificates (for development)
+cd scripts && ./generate-certs.sh && cd ..
+
+# Run with TLS enabled
+RCODE_TLS_ENABLED=true go run main.go
+
+# Visit https://localhost:8443
+```
+
+See [docs/TLS.md](docs/TLS.md) for detailed TLS configuration options.
 
 ### Using a Proxy (Optional)
 

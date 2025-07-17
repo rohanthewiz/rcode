@@ -67,7 +67,7 @@ rcode/
 - **Error Handling**: github.com/rohanthewiz/serr
 - **Logging**: github.com/rohanthewiz/logger
 - **Database**: DuckDB (embedded)
-- **Server Port**: 8000
+- **Server Port**: 8000 (HTTP), 8443 (HTTPS)
 
 ## Authentication System
 - **OAuth Provider**: Anthropic (Claude.ai)
@@ -103,6 +103,7 @@ rcode/
 8. **Session Management**: Persistent sessions with DuckDB storage
 9. **Auto-initialization**: Sessions start with permission prompt for tools/files
 10. **Connection Recovery**: Exponential backoff and manual reconnection for SSE
+11. **HTTPS Support**: Built-in TLS/SSL with automatic HTTP-to-HTTPS redirect
 
 ## API Endpoints
 
@@ -132,16 +133,42 @@ rcode/
 ## Development Notes
 
 ### Running the Server
+
+#### HTTP Mode (default):
 ```bash
 go run main.go
 ```
 Then visit http://localhost:8000
+
+#### HTTPS Mode:
+```bash
+# Generate certificates first (for development)
+cd scripts && ./generate-certs.sh && cd ..
+
+# Run with TLS enabled
+RCODE_TLS_ENABLED=true go run main.go
+```
+Then visit https://localhost:8443
+
+The server will automatically redirect HTTP traffic to HTTPS when TLS is enabled.
 
 ### OAuth Flow
 1. User clicks login → Opens Claude.ai OAuth in new tab
 2. User authorizes → Gets code from Anthropic
 3. User pastes code → Server exchanges for tokens
 4. Tokens stored with automatic refresh capability
+
+### Configuration
+
+The server can be configured using environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MSG_PROXY` | Proxy URL for Anthropic API | Direct connection |
+| `RCODE_TLS_ENABLED` | Enable HTTPS ("true" to enable) | false |
+| `RCODE_TLS_PORT` | HTTPS port | :8443 |
+| `RCODE_TLS_CERT` | Path to TLS certificate | certs/localhost.crt |
+| `RCODE_TLS_KEY` | Path to TLS private key | certs/localhost.key |
 
 ### Important Implementation Details
 - System prompt remains exactly: "You are Claude Code, Anthropic's official CLI for Claude."
