@@ -76,6 +76,7 @@ func generateMainUI(isAuthenticated bool) string {
 								if isAuthenticated {
 									b.Span("class", "auth-status").T("Connected to Claude Pro/Max")
 									b.Span("id", "connection-status", "class", "connection-status").R()
+									b.Button("id", "plan-history-btn", "class", "btn-secondary").T("Plan History")
 									b.Button("class", "btn-secondary", "onclick", "window.open('/prompts', '_blank')").T("Manage Prompts")
 									b.Button("id", "logout-btn", "class", "btn-secondary").T("Logout")
 								} else {
@@ -163,6 +164,39 @@ func generateMainUI(isAuthenticated bool) string {
 			),
 			// Plan execution overlay
 			b.Div("class", "plan-overlay").R(),
+			// Plan History Panel
+			b.Div("id", "plan-history-panel", "class", "plan-history-panel").R(
+				b.Div("class", "panel-header").R(
+					b.H3().T("Plan History"),
+					b.Button("id", "close-history-btn", "class", "btn-close").T("×"),
+				),
+				b.Div("class", "panel-controls").R(
+					b.Input("type", "text", "id", "plan-search", "class", "plan-search", "placeholder", "Search plans..."),
+					b.Select("id", "plan-status-filter", "class", "plan-filter").R(
+						b.Option("value", "").T("All Status"),
+						b.Option("value", "completed").T("Completed"),
+						b.Option("value", "failed").T("Failed"),
+						b.Option("value", "executing").T("Running"),
+						b.Option("value", "pending").T("Pending"),
+					),
+				),
+				b.Div("id", "plan-history-list", "class", "plan-history-list").R(
+					b.Div("class", "loading").T("Loading plan history..."),
+				),
+				b.Div("class", "panel-footer").R(
+					b.Button("id", "load-more-plans", "class", "btn-secondary", "style", "display: none;").T("Load More"),
+				),
+			),
+			// Plan Details Modal
+			b.Div("id", "plan-details-modal", "class", "modal").R(
+				b.Div("class", "modal-content").R(
+					b.Div("class", "modal-header").R(
+						b.H3().T("Plan Details"),
+						b.Button("class", "btn-close", "onclick", "closePlanDetailsModal()").T("×"),
+					),
+					b.Div("id", "plan-details-content", "class", "modal-body").R(),
+				),
+			),
 			// Monaco Editor Scripts
 			b.Script("src", "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js").R(),
 			// b.Script().T(monacoLoaderJS),

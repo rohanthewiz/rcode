@@ -15,6 +15,7 @@ Note: It is way better to use Claude Code, but if you want to see how deep the r
 - 🔄 **Rollback System** - Checkpoint-based recovery with Git awareness
 - 📊 **Execution Metrics** - Performance tracking and reporting
 - 🎨 **Plan Mode UI** - Visual interface for creating and executing complex tasks
+- 📜 **Plan History** - Review, re-run, and manage previous task plans
 
 ## Quick Start
 
@@ -208,6 +209,85 @@ The UI updates in real-time as the plan executes:
 - `Ctrl/Cmd + P`: Toggle Plan Mode
 - `Ctrl/Cmd + Enter`: Create Plan (in Plan Mode) or Send Message (in Chat Mode)
 - `Esc`: Close plan execution window
+
+## Plan History
+
+RCode includes a comprehensive Plan History feature that allows you to review, re-run, and manage all your previously created task plans:
+
+### Accessing Plan History
+
+Click the **"Plan History"** button in the header to open the history panel. The panel slides in from the right side of the screen.
+
+### Features
+
+#### Search and Filter
+- **Search Bar**: Find plans by description using the search input
+- **Status Filter**: Filter plans by status:
+  - All Status (default)
+  - Completed
+  - Failed  
+  - Running
+  - Pending
+
+#### Plan List View
+Each plan in the history shows:
+- **Status Icon**: Visual indicator of the plan's current state
+- **Description**: The original task description
+- **Status Badge**: Colored badge showing the execution status
+- **Step Count**: Number of steps in the plan
+- **Created Time**: When the plan was created (shown as relative time)
+- **Duration**: Total execution time (if completed)
+
+#### Actions
+For each plan, you can:
+- **View Details**: Opens a modal with comprehensive plan information
+- **Re-run**: Clone and optionally execute the plan again
+- **Delete**: Permanently remove the plan from history
+
+### Plan Details Modal
+
+The details view provides:
+
+#### Overview Section
+- Complete task description
+- Current status with visual badge
+- Creation and completion timestamps
+
+#### Execution Statistics
+- **Executions**: Total number of times the plan was run
+- **Success Rate**: Percentage of successful executions
+- **Total Time**: Cumulative execution duration
+- **Total Steps**: Number of steps in the plan
+
+#### Steps Breakdown
+- Detailed view of each step with:
+  - Step description
+  - Tool used
+  - Execution status
+  - Error messages (if any)
+
+#### Additional Information
+- **Modified Files**: List of files changed during execution
+- **Git Operations**: Summary of git commands executed
+
+### Re-running Plans
+
+When you re-run a plan:
+1. The original plan is cloned with all steps reset to "pending"
+2. The plan history panel closes automatically
+3. The plan execution area opens with the cloned plan loaded
+4. You're prompted whether to execute immediately or review first
+
+### Pagination
+
+Plan history loads 20 items at a time. Use the **"Load More"** button at the bottom to fetch additional plans.
+
+### Real-time Updates
+
+The plan history updates automatically when:
+- New plans are created
+- Existing plans change status
+- Plans are deleted
 
 ## Technical Stack
 

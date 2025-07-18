@@ -341,6 +341,11 @@ function addToolUsageSummaryToUI(toolData) {
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
+// Helper function to quickly add a message
+function addMessage(role, content) {
+  addMessageToUI({ role: role, content: content });
+}
+
 // Add message to UI
 function addMessageToUI(message) {
   const messagesContainer = document.getElementById('messages');
@@ -646,6 +651,7 @@ async function logout() {
 // Plan Mode Management
 let isPlanMode = false;
 let currentPlan = null;
+let currentPlanId = null;
 let planSteps = new Map(); // Map of step ID to step data
 
 function initializePlanMode() {
@@ -1120,4 +1126,395 @@ document.addEventListener('DOMContentLoaded', function() {
   // initializeMonacoEditor();
 
   console.log('JavaScript Initialization complete');
+  
+  // Initialize Plan History
+  initializePlanHistory();
 });
+
+// Plan History functionality
+let planHistoryPage = 1;
+let planHistoryLoading = false;
+let planHistorySearch = '';
+let planHistoryStatus = '';
+
+function initializePlanHistory() {
+  const historyBtn = document.getElementById('plan-history-btn');
+  const historyPanel = document.getElementById('plan-history-panel');
+  const closeHistoryBtn = document.getElementById('close-history-btn');
+  const searchInput = document.getElementById('plan-search');
+  const statusFilter = document.getElementById('plan-status-filter');
+  const loadMoreBtn = document.getElementById('load-more-plans');
+  
+  if (!historyBtn || !historyPanel) {
+    console.log('Plan history elements not found');
+    return;
+  }
+  
+  // Toggle panel
+  historyBtn.addEventListener('click', () => {
+    historyPanel.classList.toggle('open');
+    if (historyPanel.classList.contains('open')) {
+      planHistoryPage = 1;
+      loadPlanHistory(true);
+    }
+  });
+  
+  // Close panel
+  closeHistoryBtn.addEventListener('click', () => {
+    historyPanel.classList.remove('open');
+  });
+  
+  // Search functionality
+  let searchTimeout;
+  searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    planHistorySearch = e.target.value;
+    searchTimeout = setTimeout(() => {
+      planHistoryPage = 1;
+      loadPlanHistory(true);
+    }, 300);
+  });
+  
+  // Filter functionality
+  statusFilter.addEventListener('change', (e) => {
+    planHistoryStatus = e.target.value;
+    planHistoryPage = 1;
+    loadPlanHistory(true);
+  });
+  
+  // Load more
+  loadMoreBtn.addEventListener('click', () => {
+    planHistoryPage++;
+    loadPlanHistory(false);
+  });
+}
+
+async function loadPlanHistory(reset = false) {
+  if (planHistoryLoading || !currentSessionId) return;
+  
+  planHistoryLoading = true;
+  const historyList = document.getElementById('plan-history-list');
+  const loadMoreBtn = document.getElementById('load-more-plans');
+  
+  if (reset) {
+    historyList.innerHTML = '<div class="loading">Loading plan history...</div>';
+  }
+  
+  try {
+    const params = new URLSearchParams({
+      page: planHistoryPage,
+      limit: 20
+    });
+    
+    if (planHistorySearch) {
+      params.append('search', planHistorySearch);
+    }
+    
+    if (planHistoryStatus) {
+      params.append('status', planHistoryStatus);
+    }
+    
+    const response = await fetch(`/api/session/${currentSessionId}/plans/history?${params}`);
+    if (!response.ok) {
+      throw new Error('Failed to load plan history');
+    }
+    
+    const data = await response.json();
+    
+    if (reset) {
+      historyList.innerHTML = '';
+    }
+    
+    if (data.plans.length === 0 && reset) {
+      historyList.innerHTML = '<div class="loading">No plans found</div>';
+    } else {
+      data.plans.forEach(plan => {
+        historyList.appendChild(createPlanHistoryItem(plan));
+      });
+    }
+    
+    // Show/hide load more button
+    if (data.page * data.limit < data.total) {
+      loadMoreBtn.style.display = 'block';
+    } else {
+      loadMoreBtn.style.display = 'none';
+    }
+    
+  } catch (error) {
+    console.error('Error loading plan history:', error);
+    if (reset) {
+      historyList.innerHTML = '<div class="loading">Error loading plan history</div>';
+    }
+  } finally {
+    planHistoryLoading = false;
+  }
+}
+
+function createPlanHistoryItem(plan) {
+  const item = document.createElement('div');
+  item.className = 'plan-history-item';
+  
+  const statusIcon = getStatusIcon(plan.status);
+  const timeAgo = formatTimeAgo(new Date(plan.created_at));
+  const duration = plan.duration ? formatDuration(plan.duration) : 'N/A';
+  
+  item.innerHTML = `
+    <div class="plan-item-header">
+      <span class="plan-icon">${statusIcon}</span>
+      <div class="plan-item-content">
+        <div class="plan-description">${escapeHtml(plan.description)}</div>
+        <div class="plan-metadata">
+          <span class="plan-status-badge ${plan.status}">${plan.status}</span>
+          <span class="plan-step-count">📋 ${plan.step_count} steps</span>
+          <span class="plan-time">⏱️ ${timeAgo}</span>
+          ${plan.duration ? `<span class="plan-duration">⏳ ${duration}</span>` : ''}
+        </div>
+        <div class="plan-actions">
+          <button class="plan-action-btn" onclick="viewPlanDetails('${plan.id}')">View Details</button>
+          <button class="plan-action-btn" onclick="rerunPlan('${plan.id}')">Re-run</button>
+          <button class="plan-action-btn" onclick="deletePlan('${plan.id}')">Delete</button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  return item;
+}
+
+async function viewPlanDetails(planId) {
+  try {
+    const response = await fetch(`/api/plan/${planId}/full`);
+    if (!response.ok) {
+      throw new Error('Failed to load plan details');
+    }
+    
+    const data = await response.json();
+    showPlanDetailsModal(data);
+  } catch (error) {
+    console.error('Error loading plan details:', error);
+    alert('Failed to load plan details');
+  }
+}
+
+function showPlanDetailsModal(data) {
+  const modal = document.getElementById('plan-details-modal');
+  const content = document.getElementById('plan-details-content');
+  
+  const plan = data.plan;
+  const stats = data.stats || {};
+  const metrics = data.metrics || {};
+  
+  content.innerHTML = `
+    <div class="plan-detail-section">
+      <h4>Plan Overview</h4>
+      <p><strong>Description:</strong> ${escapeHtml(plan.description)}</p>
+      <p><strong>Status:</strong> <span class="plan-status-badge ${plan.status}">${plan.status}</span></p>
+      <p><strong>Created:</strong> ${new Date(plan.created_at).toLocaleString()}</p>
+      ${plan.completed_at ? `<p><strong>Completed:</strong> ${new Date(plan.completed_at).toLocaleString()}</p>` : ''}
+    </div>
+    
+    <div class="plan-detail-section">
+      <h4>Execution Statistics</h4>
+      <div class="plan-metrics">
+        <div class="metric-card">
+          <div class="metric-value">${stats.execution_count || 0}</div>
+          <div class="metric-label">Executions</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${Math.round(stats.success_rate || 0)}%</div>
+          <div class="metric-label">Success Rate</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${formatDuration(stats.total_duration * 1000 || 0)}</div>
+          <div class="metric-label">Total Time</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${plan.steps.length}</div>
+          <div class="metric-label">Total Steps</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="plan-detail-section">
+      <h4>Steps</h4>
+      <div class="plan-steps-detailed">
+        ${plan.steps.map((step, index) => `
+          <div class="plan-step-detailed ${step.status}">
+            <div class="step-header">
+              <span class="step-name">Step ${index + 1}: ${escapeHtml(step.description)}</span>
+              <span class="step-status">${step.status}</span>
+            </div>
+            <div class="step-details">
+              <strong>Tool:</strong> ${step.tool}<br>
+              ${step.error ? `<strong>Error:</strong> ${escapeHtml(step.error)}` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    
+    ${data.modified_files && data.modified_files.length > 0 ? `
+      <div class="plan-detail-section">
+        <h4>Modified Files</h4>
+        <ul>
+          ${data.modified_files.map(file => `<li>${escapeHtml(file)}</li>`).join('')}
+        </ul>
+      </div>
+    ` : ''}
+    
+    ${data.git_operations && data.git_operations.length > 0 ? `
+      <div class="plan-detail-section">
+        <h4>Git Operations</h4>
+        <ul>
+          ${data.git_operations.map(op => `<li>${op.tool}: ${op.status}</li>`).join('')}
+        </ul>
+      </div>
+    ` : ''}
+  `;
+  
+  modal.classList.add('open');
+}
+
+function closePlanDetailsModal() {
+  const modal = document.getElementById('plan-details-modal');
+  modal.classList.remove('open');
+}
+
+async function rerunPlan(planId) {
+  if (!confirm('Are you sure you want to re-run this plan?')) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/api/plan/${planId}/clone`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to clone plan');
+    }
+    
+    const newPlan = await response.json();
+    
+    // Close history panel
+    document.getElementById('plan-history-panel').classList.remove('open');
+    
+    // Load and display the new plan
+    currentPlanId = newPlan.id;
+    await loadPlanDetails(newPlan.id);
+    showPlanExecutionArea();
+    
+    // Optionally auto-execute
+    if (confirm('Execute the cloned plan now?')) {
+      executePlan();
+    }
+    
+  } catch (error) {
+    console.error('Error re-running plan:', error);
+    alert('Failed to re-run plan');
+  }
+}
+
+async function deletePlan(planId) {
+  if (!confirm('Are you sure you want to delete this plan? This action cannot be undone.')) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/api/plan/${planId}`, {
+      method: 'DELETE'
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to delete plan');
+    }
+    
+    // Reload the history
+    planHistoryPage = 1;
+    loadPlanHistory(true);
+    
+  } catch (error) {
+    console.error('Error deleting plan:', error);
+    alert('Failed to delete plan');
+  }
+}
+
+function getStatusIcon(status) {
+  switch (status) {
+    case 'completed': return '✅';
+    case 'failed': return '❌';
+    case 'executing': return '⏳';
+    case 'pending': return '⏸️';
+    default: return '📋';
+  }
+}
+
+function formatTimeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+  
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+  
+  return date.toLocaleDateString();
+}
+
+function formatDuration(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+  
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  return `${hours}h ${minutes}m`;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Helper function to close plan details modal
+function closePlanDetailsModal() {
+  const modal = document.getElementById('plan-details-modal');
+  modal.classList.remove('open');
+}
+
+// Load plan details and prepare for execution
+async function loadPlanDetails(planId) {
+  try {
+    const response = await fetch(`/api/plan/${planId}/full`);
+    if (!response.ok) {
+      throw new Error(`Failed to load plan: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Extract the plan object from the response
+    const plan = data.plan;
+    
+    // Update currentPlan to reference the loaded plan
+    currentPlan = plan;
+    
+    // Display the plan in the execution area
+    displayPlan(plan);
+    
+    return plan;
+  } catch (error) {
+    console.error('Error loading plan details:', error);
+    alert('Failed to load plan details. Please try again.');
+    throw error;
+  }
+}
+
+// Show the plan execution area
+function showPlanExecutionArea() {
+  const planExecutionArea = document.getElementById('plan-execution-area');
+  if (planExecutionArea) {
+    planExecutionArea.style.display = 'flex';
+    document.body.classList.add('plan-executing');
+  }
+}

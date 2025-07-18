@@ -141,6 +141,142 @@ func (t *TaskPlanDB) GetSessionPlans(sessionID string) ([]*TaskPlan, error) {
 	return plans, nil
 }
 
+// GetSessionPlansWithFilter retrieves filtered plans for a session with pagination
+func (t *TaskPlanDB) GetSessionPlansWithFilter(sessionID, status, search string, limit, offset int) ([]*TaskPlan, int, error) {
+	// First, get the total count
+	countQuery := `
+		SELECT COUNT(*)
+		FROM task_plans
+		WHERE session_id = ?
+	`
+	args := []interface{}{sessionID}
+	
+	if status != "" {
+		countQuery += " AND status = ?"
+		args = append(args, status)
+	}
+	
+	if search != "" {
+		countQuery += " AND description LIKE ?"
+		args = append(args, "%"+search+"%")
+	}
+	
+	var total int
+	err := t.db.QueryRow(countQuery, args...).Scan(&total)
+	if err != nil {
+		return nil, 0, serr.Wrap(err, "failed to count plans")
+	}
+	
+	// Now get the paginated results
+	query := `
+		SELECT id, session_id, description, status, steps, context, checkpoints,
+		       created_at, updated_at, completed_at
+		FROM task_plans
+		WHERE session_id = ?
+	`
+	
+	// Reset args for the main query
+	args = []interface{}{sessionID}
+	
+	if status != "" {
+		query += " AND status = ?"
+		args = append(args, status)
+	}
+	
+	if search != "" {
+		query += " AND description LIKE ?"
+		args = append(args, "%"+search+"%")
+	}
+	
+	query += " ORDER BY created_at DESC LIMIT ? OFFSET ?"
+	args = append(args, limit, offset)
+	
+	rows, err := t.db.Query(query, args...)
+	if err != nil {
+		return nil, 0, serr.Wrap(err, "failed to query plans")
+	}
+	defer rows.Close()
+	
+	var plans []*TaskPlan
+	for rows.Next() {
+		var plan TaskPlan
+		var stepsJSON, contextJSON, checkpointsJSON string
+		var completedAt sql.NullTime
+		var status string
+		
+		err := rows.Scan(
+			&plan.ID, &plan.SessionID, &plan.Description, &status,
+			&stepsJSON, &contextJSON, &checkpointsJSON,
+			&plan.CreatedAt, &plan.UpdatedAt, &completedAt,
+		)
+		plan.Status = PlanStatus(status)
+		if err != nil {
+			return nil, 0, serr.Wrap(err, "failed to scan plan")
+		}
+		
+		if completedAt.Valid {
+			plan.CompletedAt = &completedAt.Time
+		}
+		
+		// Store raw JSON
+		plan.Steps = json.RawMessage(stepsJSON)
+		plan.Context = json.RawMessage(contextJSON)
+		plan.Checkpoints = json.RawMessage(checkpointsJSON)
+		
+		plans = append(plans, &plan)
+	}
+	
+	return plans, total, nil
+}
+
+// DeletePlan deletes a plan and all related data
+func (t *TaskPlanDB) DeletePlan(planID string) error {
+	// Use a transaction to ensure all related data is deleted
+	tx, err := t.db.Conn().Begin()
+	if err != nil {
+		return serr.Wrap(err, "failed to start transaction")
+	}
+	defer tx.Rollback()
+	
+	// Delete in order to respect foreign key constraints
+	// Delete logs
+	_, err = tx.Exec("DELETE FROM task_logs WHERE plan_id = ?", planID)
+	if err != nil {
+		return serr.Wrap(err, "failed to delete logs")
+	}
+	
+	// Delete metrics
+	_, err = tx.Exec("DELETE FROM task_metrics WHERE plan_id = ?", planID)
+	if err != nil {
+		return serr.Wrap(err, "failed to delete metrics")
+	}
+	
+	// Delete file snapshots
+	_, err = tx.Exec("DELETE FROM file_snapshots WHERE plan_id = ?", planID)
+	if err != nil {
+		return serr.Wrap(err, "failed to delete snapshots")
+	}
+	
+	// Delete executions
+	_, err = tx.Exec("DELETE FROM task_executions WHERE plan_id = ?", planID)
+	if err != nil {
+		return serr.Wrap(err, "failed to delete executions")
+	}
+	
+	// Finally, delete the plan itself
+	_, err = tx.Exec("DELETE FROM task_plans WHERE id = ?", planID)
+	if err != nil {
+		return serr.Wrap(err, "failed to delete plan")
+	}
+	
+	// Commit the transaction
+	if err := tx.Commit(); err != nil {
+		return serr.Wrap(err, "failed to commit transaction")
+	}
+	
+	return nil
+}
+
 // SaveExecution saves step execution result
 func (t *TaskPlanDB) SaveExecution(planID, stepID string, result *StepResult) error {
 	resultJSON, err := json.Marshal(result)
@@ -197,8 +333,13 @@ func (t *TaskPlanDB) GetExecutions(planID string) ([]*TaskExecution, error) {
 			return nil, serr.Wrap(err, "failed to scan execution")
 		}
 		
+		// Set alias fields
+		exec.StartTime = exec.StartedAt
+		exec.EndTime = exec.CompletedAt
+		
 		if completedAt.Valid {
 			exec.CompletedAt = &completedAt.Time
+			exec.EndTime = &completedAt.Time
 		}
 		if durationMs.Valid {
 			exec.DurationMs = int(durationMs.Int64)
@@ -449,6 +590,8 @@ type TaskExecution struct {
 	Result       json.RawMessage `json:"result,omitempty"`
 	StartedAt    time.Time       `json:"started_at"`
 	CompletedAt  *time.Time      `json:"completed_at,omitempty"`
+	StartTime    time.Time       `json:"start_time"`       // Alias for StartedAt
+	EndTime      *time.Time      `json:"end_time,omitempty"` // Alias for CompletedAt
 	DurationMs   int             `json:"duration_ms"`
 	Retries      int             `json:"retries"`
 	ErrorMessage string          `json:"error_message,omitempty"`

@@ -2,6 +2,9 @@ package web
 
 import (
 	"encoding/json"
+	"fmt"
+	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/rohanthewiz/element"
@@ -604,4 +607,302 @@ func planManagementUI(b *element.Builder) {
 		b.Div("id", "plans-list", "class", "plans-list").T("Loading plans..."),
 		b.Div("id", "plan-details", "class", "plan-details hidden"),
 	)
+}
+
+// listPlanHistoryHandler returns paginated plan history with search and filtering
+func listPlanHistoryHandler(c rweb.Context) error {
+	sessionID := c.Request().Param("id")
+	if sessionID == "" {
+		return c.WriteError(serr.New("session ID required"), 400)
+	}
+	
+	// Parse query parameters
+	page := 1
+	if pageStr := c.Request().Query("page"); pageStr != "" {
+		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
+			page = p
+		}
+	}
+	
+	limit := 20
+	if limitStr := c.Request().Query("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+	
+	status := c.Request().Query("status")
+	search := c.Request().Query("search")
+	
+	// Get plans from database with pagination
+	taskDB := db.GetTaskPlanDB()
+	offset := (page - 1) * limit
+	
+	// Get filtered plans
+	plans, total, err := taskDB.GetSessionPlansWithFilter(sessionID, status, search, limit, offset)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get plans"), 500)
+	}
+	
+	// Convert to response format with basic info only
+	responses := make([]map[string]interface{}, len(plans))
+	for i, plan := range plans {
+		// Count steps
+		var steps []planner.TaskStep
+		stepCount := 0
+		if err := json.Unmarshal(plan.Steps, &steps); err == nil {
+			stepCount = len(steps)
+		}
+		
+		// Calculate duration if completed
+		var duration *time.Duration
+		if plan.CompletedAt != nil {
+			d := plan.CompletedAt.Sub(plan.CreatedAt)
+			duration = &d
+		}
+		
+		responses[i] = map[string]interface{}{
+			"id":          plan.ID,
+			"description": plan.Description,
+			"status":      plan.Status,
+			"created_at":  plan.CreatedAt,
+			"step_count":  stepCount,
+			"duration":    duration,
+		}
+	}
+	
+	// Return paginated response
+	return c.WriteJSON(map[string]interface{}{
+		"plans":       responses,
+		"page":        page,
+		"limit":       limit,
+		"total":       total,
+		"total_pages": (total + limit - 1) / limit,
+	})
+}
+
+// getPlanFullDetailsHandler returns complete plan details including all steps
+func getPlanFullDetailsHandler(c rweb.Context) error {
+	planID := c.Request().Param("id")
+	if planID == "" {
+		return c.WriteError(serr.New("plan ID required"), 400)
+	}
+	
+	taskDB := db.GetTaskPlanDB()
+	plan, err := taskDB.GetPlan(planID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get plan"), 404)
+	}
+	
+	// Get executions
+	executions, err := taskDB.GetExecutions(planID)
+	if err != nil {
+		logger.LogErr(err, "failed to get executions", "plan_id", planID)
+		executions = []*db.TaskExecution{}
+	}
+	
+	// Get metrics
+	metrics, err := taskDB.GetMetrics(planID)
+	if err != nil {
+		logger.LogErr(err, "failed to get metrics", "plan_id", planID)
+	}
+	
+	// Unmarshal steps
+	var steps []planner.TaskStep
+	if err := json.Unmarshal(plan.Steps, &steps); err != nil {
+		logger.LogErr(err, "failed to unmarshal steps", "plan_id", planID)
+		steps = []planner.TaskStep{}
+	}
+	
+	// Unmarshal checkpoints
+	var checkpoints []planner.Checkpoint
+	if plan.Checkpoints != nil {
+		if err := json.Unmarshal(plan.Checkpoints, &checkpoints); err != nil {
+			logger.LogErr(err, "failed to unmarshal checkpoints", "plan_id", planID)
+		}
+	}
+	
+	// Calculate execution stats
+	var totalDuration time.Duration
+	successCount := 0
+	for _, exec := range executions {
+		if exec.EndTime != nil {
+			totalDuration += exec.EndTime.Sub(exec.StartTime)
+			if exec.Status == "completed" {
+				successCount++
+			}
+		}
+	}
+	
+	successRate := 0.0
+	if len(executions) > 0 {
+		successRate = float64(successCount) / float64(len(executions)) * 100
+	}
+	
+	// Get modified files from context
+	var ctx *planner.TaskContext
+	modifiedFiles := []string{}
+	if plan.Context != nil {
+		if err := json.Unmarshal(plan.Context, &ctx); err == nil {
+			modifiedFiles = ctx.ModifiedFiles
+		}
+	}
+	
+	// Get git operations from steps
+	gitOps := []map[string]interface{}{}
+	for _, step := range steps {
+		if step.Tool == "git_add" || step.Tool == "git_commit" || step.Tool == "git_push" || 
+		   step.Tool == "git_pull" || step.Tool == "git_checkout" || step.Tool == "git_merge" {
+			gitOps = append(gitOps, map[string]interface{}{
+				"tool":       step.Tool,
+				"parameters": step.Parameters,
+				"status":     step.Status,
+			})
+		}
+	}
+	
+	response := map[string]interface{}{
+		"plan": PlanResponse{
+			ID:          plan.ID,
+			SessionID:   plan.SessionID,
+			Description: plan.Description,
+			Status:      string(plan.Status),
+			Steps:       steps,
+			CreatedAt:   plan.CreatedAt,
+			UpdatedAt:   plan.UpdatedAt,
+			CompletedAt: plan.CompletedAt,
+		},
+		"executions":     executions,
+		"metrics":        metrics,
+		"checkpoints":    checkpoints,
+		"stats": map[string]interface{}{
+			"total_duration": totalDuration.Seconds(),
+			"success_rate":   successRate,
+			"execution_count": len(executions),
+		},
+		"modified_files": modifiedFiles,
+		"git_operations": gitOps,
+	}
+	
+	return c.WriteJSON(response)
+}
+
+// clonePlanHandler creates a copy of an existing plan for re-execution
+func clonePlanHandler(c rweb.Context) error {
+	planID := c.Request().Param("id")
+	if planID == "" {
+		return c.WriteError(serr.New("plan ID required"), 400)
+	}
+	
+	// Get original plan
+	taskDB := db.GetTaskPlanDB()
+	originalPlan, err := taskDB.GetPlan(planID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get plan"), 404)
+	}
+	
+	// Unmarshal steps
+	var steps []planner.TaskStep
+	if err := json.Unmarshal(originalPlan.Steps, &steps); err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to unmarshal steps"), 500)
+	}
+	
+	// Reset step statuses
+	for i := range steps {
+		steps[i].Status = planner.TaskStatusPending
+		steps[i].Error = ""
+		steps[i].Result = nil
+		steps[i].StartTime = nil
+		steps[i].EndTime = nil
+	}
+	
+	// Create new plan with same steps
+	newPlan := &db.TaskPlan{
+		ID:          generateID(),
+		SessionID:   originalPlan.SessionID,
+		Description: originalPlan.Description + " (cloned)",
+		Status:      db.PlanStatusPending,
+		CreatedAt:   time.Now(),
+		UpdatedAt:   time.Now(),
+	}
+	
+	// Marshal steps
+	stepsJSON, err := json.Marshal(steps)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to marshal steps"), 500)
+	}
+	newPlan.Steps = stepsJSON
+	
+	// Initialize empty context and checkpoints
+	ctx := &planner.TaskContext{
+		Variables:     make(map[string]interface{}),
+		Environment:   make(map[string]string),
+		Files:         make([]string, 0),
+		ModifiedFiles: make([]string, 0),
+	}
+	contextJSON, _ := json.Marshal(ctx)
+	newPlan.Context = contextJSON
+	
+	checkpointsJSON, _ := json.Marshal([]planner.Checkpoint{})
+	newPlan.Checkpoints = checkpointsJSON
+	
+	// Save new plan
+	if err := taskDB.SavePlan(newPlan); err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to save cloned plan"), 500)
+	}
+	
+	// Broadcast plan creation event
+	broadcastPlanEvent("plan_cloned", newPlan.SessionID, newPlan.ID, map[string]interface{}{
+		"original_id": planID,
+		"description": newPlan.Description,
+		"steps":       len(steps),
+	})
+	
+	// Return new plan details
+	response := PlanResponse{
+		ID:          newPlan.ID,
+		SessionID:   newPlan.SessionID,
+		Description: newPlan.Description,
+		Status:      string(newPlan.Status),
+		Steps:       steps,
+		CreatedAt:   newPlan.CreatedAt,
+		UpdatedAt:   newPlan.UpdatedAt,
+	}
+	
+	return c.WriteJSON(response)
+}
+
+// deletePlanHandler deletes a plan from history
+func deletePlanHandler(c rweb.Context) error {
+	planID := c.Request().Param("id")
+	if planID == "" {
+		return c.WriteError(serr.New("plan ID required"), 400)
+	}
+	
+	taskDB := db.GetTaskPlanDB()
+	
+	// Get plan to get session ID for event
+	plan, err := taskDB.GetPlan(planID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get plan"), 404)
+	}
+	
+	// Delete the plan
+	if err := taskDB.DeletePlan(planID); err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to delete plan"), 500)
+	}
+	
+	// Broadcast deletion event
+	broadcastPlanEvent("plan_deleted", plan.SessionID, planID, nil)
+	
+	return c.WriteJSON(map[string]string{
+		"status": "deleted",
+		"plan_id": planID,
+	})
+}
+
+// generateID generates a unique ID for plans
+func generateID() string {
+	// Simple implementation - in production, use UUID or similar
+	return fmt.Sprintf("plan_%d_%d", time.Now().Unix(), rand.Intn(10000))
 }
