@@ -148,3 +148,12 @@ func BroadcastToolUsage(sessionID string, toolName string, summary string) {
 	logger.Info("BroadcastToolUsage", "sessionID", sessionID, "tool", toolName, "summary", summary)
 	sseHub.Broadcast(event)
 }
+
+// broadcastJSON broadcasts a generic JSON event
+func broadcastJSON(eventType string, data interface{}) {
+	event := SSEEvent{
+		Type: eventType,
+		Data: data,
+	}
+	sseHub.Broadcast(event)
+}

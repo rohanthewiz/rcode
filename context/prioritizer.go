@@ -391,7 +391,7 @@ func (p *FilePrioritizer) extractKeywords(task string) []string {
 		// Question words (but we'll extract them specially)
 		"how": true, "what": true, "where": true, "when": true, "why": true, "which": true,
 		// Common task words (we'll handle these specially)
-		"please": true, "help": true, "me": true, "find": true, "show": true,
+		"please": true, "help": true, "find": true, "show": true,
 	}
 
 	// Extract code-like patterns first (camelCase, snake_case, etc.)

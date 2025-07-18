@@ -172,6 +172,95 @@ var migrations = []Migration{
 			('go_language_prompt', 'Prefer Go language', 'Use the Go language as much as possible', false, false);
 		`,
 	},
+	{
+		Version:     4,
+		Description: "Add task planning tables",
+		SQL: `
+			-- Create task_plans table for storing AI task plans
+			CREATE TABLE IF NOT EXISTS task_plans (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				description TEXT NOT NULL,
+				status TEXT NOT NULL CHECK (status IN ('pending', 'planning', 'executing', 'paused', 'completed', 'failed', 'cancelled')),
+				steps JSON NOT NULL,
+				context JSON,
+				checkpoints JSON,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				completed_at TIMESTAMP,
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
+			);
+			CREATE INDEX idx_task_plans_session ON task_plans(session_id);
+			CREATE INDEX idx_task_plans_status ON task_plans(status);
+
+			-- Create task_executions table for tracking step executions
+			CREATE SEQUENCE IF NOT EXISTS task_executions_id_seq;
+			CREATE TABLE IF NOT EXISTS task_executions (
+				id INTEGER PRIMARY KEY DEFAULT nextval('task_executions_id_seq'),
+				plan_id TEXT NOT NULL,
+				step_id TEXT NOT NULL,
+				status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'success', 'failed', 'skipped')),
+				result JSON,
+				started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				completed_at TIMESTAMP,
+				duration_ms INTEGER,
+				retries INTEGER DEFAULT 0,
+				error_message TEXT,
+				FOREIGN KEY (plan_id) REFERENCES task_plans(id)
+			);
+			CREATE INDEX idx_task_executions_plan ON task_executions(plan_id);
+			CREATE INDEX idx_task_executions_step ON task_executions(plan_id, step_id);
+
+			-- Create file_snapshots table for rollback support
+			CREATE SEQUENCE IF NOT EXISTS file_snapshots_id_seq;
+			CREATE TABLE IF NOT EXISTS file_snapshots (
+				id INTEGER PRIMARY KEY DEFAULT nextval('file_snapshots_id_seq'),
+				snapshot_id TEXT NOT NULL UNIQUE,
+				plan_id TEXT NOT NULL,
+				checkpoint_id TEXT,
+				file_path TEXT NOT NULL,
+				content TEXT NOT NULL,
+				hash TEXT NOT NULL,
+				file_mode INTEGER,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (plan_id) REFERENCES task_plans(id)
+			);
+			CREATE INDEX idx_file_snapshots_plan ON file_snapshots(plan_id);
+			CREATE INDEX idx_file_snapshots_checkpoint ON file_snapshots(checkpoint_id);
+			CREATE INDEX idx_file_snapshots_hash ON file_snapshots(hash);
+
+			-- Create task_metrics table for performance tracking
+			CREATE TABLE IF NOT EXISTS task_metrics (
+				plan_id TEXT PRIMARY KEY,
+				total_steps INTEGER NOT NULL DEFAULT 0,
+				completed_steps INTEGER NOT NULL DEFAULT 0,
+				failed_steps INTEGER NOT NULL DEFAULT 0,
+				skipped_steps INTEGER NOT NULL DEFAULT 0,
+				total_duration_ms INTEGER,
+				avg_step_duration_ms INTEGER,
+				total_retries INTEGER DEFAULT 0,
+				context_files_used INTEGER DEFAULT 0,
+				tools_used JSON,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (plan_id) REFERENCES task_plans(id)
+			);
+
+			-- Create task_logs table for detailed execution logging
+			CREATE SEQUENCE IF NOT EXISTS task_logs_id_seq;
+			CREATE TABLE IF NOT EXISTS task_logs (
+				id INTEGER PRIMARY KEY DEFAULT nextval('task_logs_id_seq'),
+				plan_id TEXT NOT NULL,
+				step_id TEXT,
+				level TEXT NOT NULL CHECK (level IN ('info', 'warning', 'error', 'debug')),
+				message TEXT NOT NULL,
+				metadata JSON,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (plan_id) REFERENCES task_plans(id)
+			);
+			CREATE INDEX idx_task_logs_plan ON task_logs(plan_id);
+			CREATE INDEX idx_task_logs_level ON task_logs(level);
+		`,
+	},
 }
 
 // Migrate runs all pending database migrations

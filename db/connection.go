@@ -19,6 +19,7 @@ type DB struct {
 
 // singleton instance
 var instance *DB
+var taskPlanDB *TaskPlanDB
 
 // GetDB returns the database instance, creating it if necessary
 func GetDB() (*DB, error) {
@@ -127,4 +128,20 @@ func (db *DB) Exec(query string, args ...interface{}) (sql.Result, error) {
 		return nil, serr.Wrap(err, fmt.Sprintf("exec failed: %s", query))
 	}
 	return result, nil
+}
+
+// GetTaskPlanDB returns the TaskPlanDB instance, creating it if necessary
+func GetTaskPlanDB() *TaskPlanDB {
+	if taskPlanDB != nil {
+		return taskPlanDB
+	}
+
+	db, err := GetDB()
+	if err != nil {
+		logger.LogErr(err, "failed to get database connection for TaskPlanDB")
+		return nil
+	}
+
+	taskPlanDB = NewTaskPlanDB(db)
+	return taskPlanDB
 }

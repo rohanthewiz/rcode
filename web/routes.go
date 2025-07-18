@@ -46,6 +46,14 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/context/stats", getContextStatsHandler)
 	s.Post("/api/context/suggest-tools", suggestToolsHandler)
 
+	// Task planning endpoints
+	s.Post("/api/session/:id/plan", createPlanHandler)
+	s.Get("/api/session/:id/plans", listPlansHandler)
+	s.Post("/api/plan/:id/execute", executePlanHandler)
+	s.Get("/api/plan/:id/status", getPlanStatusHandler)
+	s.Post("/api/plan/:id/rollback", rollbackPlanHandler)
+	s.Get("/api/plan/:id/checkpoints", listCheckpointsHandler)
+
 	// SSE endpoint for streaming events
 	s.Get("/events", eventsHandler)
 

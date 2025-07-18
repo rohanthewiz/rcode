@@ -12,25 +12,40 @@ import (
 
 // Planner handles task planning and execution
 type Planner struct {
-	mu         sync.RWMutex
-	tasks      map[string]*TaskPlanner
-	executor   *StepExecutor
-	analyzer   *TaskAnalyzer
-	templates  map[string]*TaskTemplate
-	logs       map[string][]ExecutionLog
-	options    PlannerOptions
+	mu              sync.RWMutex
+	tasks           map[string]*TaskPlanner
+	executor        *StepExecutor
+	analyzer        *TaskAnalyzer
+	templates       map[string]*TaskTemplate
+	logs            map[string][]ExecutionLog
+	options         PlannerOptions
+	snapshotManager *SnapshotManager
+	contextManager  interface{} // Will be *context.Manager but avoid import cycle
 }
 
 // NewPlanner creates a new task planner
 func NewPlanner(options PlannerOptions) *Planner {
-	return &Planner{
-		tasks:     make(map[string]*TaskPlanner),
-		executor:  NewStepExecutor(),
-		analyzer:  NewTaskAnalyzer(),
-		templates: make(map[string]*TaskTemplate),
-		logs:      make(map[string][]ExecutionLog),
-		options:   options,
+	// Create analyzer with context support if available
+	var analyzer *TaskAnalyzer
+	if options.ContextManager != nil {
+		analyzer = NewTaskAnalyzerWithContext(options.ContextManager)
+	} else {
+		analyzer = NewTaskAnalyzer()
 	}
+	
+	planner := &Planner{
+		tasks:          make(map[string]*TaskPlanner),
+		executor:       NewStepExecutor(),
+		analyzer:       analyzer,
+		templates:      make(map[string]*TaskTemplate),
+		logs:           make(map[string][]ExecutionLog),
+		options:        options,
+		contextManager: options.ContextManager,
+	}
+	
+	// Snapshot manager will be initialized via factory or SetSnapshotStore
+	
+	return planner
 }
 
 // CreatePlan creates a new task plan from a description
@@ -362,7 +377,19 @@ func (p *Planner) createCheckpoint(task *TaskPlanner) error {
 		}
 	}
 
-	// TODO: Implement file snapshots for rollback
+	// Create file snapshots for rollback
+	if p.snapshotManager != nil && len(task.Context.ModifiedFiles) > 0 {
+		err := p.snapshotManager.CreateSnapshot(task.ID, checkpoint.ID, task.Context.ModifiedFiles)
+		if err != nil {
+			p.logWarning(task.ID, "", fmt.Sprintf("Failed to create file snapshots: %v", err))
+		} else {
+			// Store snapshot references in checkpoint
+			checkpoint.State.FileSnapshots = make(map[string]string)
+			for _, file := range task.Context.ModifiedFiles {
+				checkpoint.State.FileSnapshots[file] = checkpoint.ID
+			}
+		}
+	}
 
 	task.Checkpoints = append(task.Checkpoints, checkpoint)
 	p.logInfo(task.ID, "", fmt.Sprintf("Created checkpoint: %s", checkpoint.ID))
@@ -424,7 +451,19 @@ func (p *Planner) RollbackToCheckpoint(taskID, checkpointID string) error {
 	// Remove newer checkpoints
 	task.Checkpoints = task.Checkpoints[:checkpointIndex+1]
 
-	// TODO: Restore file snapshots
+	// Restore file snapshots
+	if p.snapshotManager != nil && len(checkpoint.State.FileSnapshots) > 0 {
+		if err := p.snapshotManager.RestoreSnapshot(checkpointID); err != nil {
+			p.logWarning(taskID, "", fmt.Sprintf("Failed to restore file snapshots: %v", err))
+		} else {
+			// Update modified files list to match checkpoint state
+			task.Context.ModifiedFiles = make([]string, 0, len(checkpoint.State.FileSnapshots))
+			for file := range checkpoint.State.FileSnapshots {
+				task.Context.ModifiedFiles = append(task.Context.ModifiedFiles, file)
+			}
+			p.logInfo(taskID, "", "Successfully restored file snapshots")
+		}
+	}
 
 	task.Status = TaskStatusPaused
 	p.logInfo(taskID, "", fmt.Sprintf("Rolled back to checkpoint: %s", checkpointID))
