@@ -53,6 +53,8 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/plan/:id/status", getPlanStatusHandler)
 	s.Post("/api/plan/:id/rollback", rollbackPlanHandler)
 	s.Get("/api/plan/:id/checkpoints", listCheckpointsHandler)
+	s.Get("/api/plan/:id/analyze", analyzePlanHandler)
+	s.Get("/api/plan/:id/git-operations", getGitOperationsHandler)
 
 	// SSE endpoint for streaming events
 	s.Get("/events", eventsHandler)

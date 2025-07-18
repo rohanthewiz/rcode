@@ -199,6 +199,62 @@ func executePlanHandler(c rweb.Context) error {
 		
 		broadcastPlanEvent("plan_executing", dbPlan.SessionID, planID, nil)
 		
+		// Convert DB plan to planner.TaskPlanner
+		var steps []planner.TaskStep
+		if err := json.Unmarshal(dbPlan.Steps, &steps); err != nil {
+			logger.LogErr(err, "failed to unmarshal steps", "plan_id", planID)
+			return
+		}
+		
+		var checkpoints []planner.Checkpoint
+		if dbPlan.Checkpoints != nil {
+			if err := json.Unmarshal(dbPlan.Checkpoints, &checkpoints); err != nil {
+				logger.LogErr(err, "failed to unmarshal checkpoints", "plan_id", planID)
+			}
+		}
+		
+		var ctx *planner.TaskContext
+		if dbPlan.Context != nil {
+			if err := json.Unmarshal(dbPlan.Context, &ctx); err != nil {
+				logger.LogErr(err, "failed to unmarshal context", "plan_id", planID)
+				ctx = &planner.TaskContext{
+					Variables:     make(map[string]interface{}),
+					Environment:   make(map[string]string),
+					Files:         make([]string, 0),
+					ModifiedFiles: make([]string, 0),
+				}
+			}
+		} else {
+			ctx = &planner.TaskContext{
+				Variables:     make(map[string]interface{}),
+				Environment:   make(map[string]string),
+				Files:         make([]string, 0),
+				ModifiedFiles: make([]string, 0),
+			}
+		}
+		
+		// Create planner.TaskPlanner from DB data
+		plan := &planner.TaskPlanner{
+			ID:          dbPlan.ID,
+			SessionID:   dbPlan.SessionID,
+			Description: dbPlan.Description,
+			Status:      planner.TaskStatus(dbPlan.Status),
+			Steps:       steps,
+			CurrentStep: 0,
+			Checkpoints: checkpoints,
+			Context:     ctx,
+			StartTime:   dbPlan.CreatedAt, // Use CreatedAt as StartTime
+			CreatedAt:   dbPlan.CreatedAt,
+			UpdatedAt:   dbPlan.UpdatedAt,
+			CompletedAt: dbPlan.CompletedAt,
+		}
+		
+		// Load the plan into the planner's memory
+		if err := taskPlanner.LoadPlan(plan); err != nil {
+			logger.LogErr(err, "failed to load plan into planner", "plan_id", planID)
+			return
+		}
+		
 		// Execute the plan
 		if err := taskPlanner.ExecutePlan(planID); err != nil {
 			logger.LogErr(err, "plan execution failed", "plan_id", planID)
@@ -309,6 +365,59 @@ func rollbackPlanHandler(c rweb.Context) error {
 	factory := planner.NewPlannerFactory()
 	taskPlanner := factory.CreatePlanner(plannerOpts)
 	
+	// Convert DB plan to planner.TaskPlanner and load it
+	var steps []planner.TaskStep
+	if err := json.Unmarshal(dbPlan.Steps, &steps); err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to unmarshal steps"), 500)
+	}
+	
+	var checkpoints []planner.Checkpoint
+	if dbPlan.Checkpoints != nil {
+		if err := json.Unmarshal(dbPlan.Checkpoints, &checkpoints); err != nil {
+			return c.WriteError(serr.Wrap(err, "failed to unmarshal checkpoints"), 500)
+		}
+	}
+	
+	var ctx *planner.TaskContext
+	if dbPlan.Context != nil {
+		if err := json.Unmarshal(dbPlan.Context, &ctx); err != nil {
+			ctx = &planner.TaskContext{
+				Variables:     make(map[string]interface{}),
+				Environment:   make(map[string]string),
+				Files:         make([]string, 0),
+				ModifiedFiles: make([]string, 0),
+			}
+		}
+	} else {
+		ctx = &planner.TaskContext{
+			Variables:     make(map[string]interface{}),
+			Environment:   make(map[string]string),
+			Files:         make([]string, 0),
+			ModifiedFiles: make([]string, 0),
+		}
+	}
+	
+	// Create planner.TaskPlanner from DB data
+	plan := &planner.TaskPlanner{
+		ID:          dbPlan.ID,
+		SessionID:   dbPlan.SessionID,
+		Description: dbPlan.Description,
+		Status:      planner.TaskStatus(dbPlan.Status),
+		Steps:       steps,
+		CurrentStep: 0,
+		Checkpoints: checkpoints,
+		Context:     ctx,
+		StartTime:   dbPlan.CreatedAt, // Use CreatedAt as StartTime
+		CreatedAt:   dbPlan.CreatedAt,
+		UpdatedAt:   dbPlan.UpdatedAt,
+		CompletedAt: dbPlan.CompletedAt,
+	}
+	
+	// Load the plan into the planner's memory
+	if err := taskPlanner.LoadPlan(plan); err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to load plan"), 500)
+	}
+	
 	// Perform rollback
 	if err := taskPlanner.RollbackToCheckpoint(planID, req.CheckpointID); err != nil {
 		return c.WriteError(serr.Wrap(err, "rollback failed"), 500)
@@ -362,6 +471,126 @@ func broadcastPlanEvent(eventType, sessionID, planID string, data interface{}) {
 	
 	// Use existing SSE broadcast function
 	broadcastJSON(eventType, event)
+}
+
+// analyzePlanHandler analyzes the parallelizability of a plan
+func analyzePlanHandler(c rweb.Context) error {
+	planID := c.Request().Param("id")
+	if planID == "" {
+		return c.WriteError(serr.New("plan ID required"), 400)
+	}
+	
+	// Get plan from database
+	taskDB := db.GetTaskPlanDB()
+	dbPlan, err := taskDB.GetPlan(planID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get plan"), 404)
+	}
+	
+	// Create planner instance using factory
+	contextMgr := context.NewManager()
+	plannerOpts := planner.PlannerOptions{
+		MaxConcurrentSteps: 5, // Enable parallel analysis
+		EnableCheckpoints:  true,
+		CheckpointInterval: 5,
+		ContextManager:     contextMgr,
+	}
+	factory := planner.NewPlannerFactory()
+	taskPlanner := factory.CreatePlanner(plannerOpts)
+	
+	// Convert DB plan to planner.TaskPlanner
+	var steps []planner.TaskStep
+	if err := json.Unmarshal(dbPlan.Steps, &steps); err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to unmarshal steps"), 500)
+	}
+	
+	var checkpoints []planner.Checkpoint
+	if dbPlan.Checkpoints != nil {
+		if err := json.Unmarshal(dbPlan.Checkpoints, &checkpoints); err != nil {
+			logger.LogErr(err, "failed to unmarshal checkpoints", "plan_id", planID)
+		}
+	}
+	
+	var ctx *planner.TaskContext
+	if dbPlan.Context != nil {
+		if err := json.Unmarshal(dbPlan.Context, &ctx); err != nil {
+			ctx = &planner.TaskContext{
+				Variables:     make(map[string]interface{}),
+				Environment:   make(map[string]string),
+				Files:         make([]string, 0),
+				ModifiedFiles: make([]string, 0),
+			}
+		}
+	} else {
+		ctx = &planner.TaskContext{
+			Variables:     make(map[string]interface{}),
+			Environment:   make(map[string]string),
+			Files:         make([]string, 0),
+			ModifiedFiles: make([]string, 0),
+		}
+	}
+	
+	// Create planner.TaskPlanner from DB data
+	plan := &planner.TaskPlanner{
+		ID:          dbPlan.ID,
+		SessionID:   dbPlan.SessionID,
+		Description: dbPlan.Description,
+		Status:      planner.TaskStatus(dbPlan.Status),
+		Steps:       steps,
+		CurrentStep: 0,
+		Checkpoints: checkpoints,
+		Context:     ctx,
+		StartTime:   dbPlan.CreatedAt,
+		CreatedAt:   dbPlan.CreatedAt,
+		UpdatedAt:   dbPlan.UpdatedAt,
+		CompletedAt: dbPlan.CompletedAt,
+	}
+	
+	// Load the plan and analyze
+	if err := taskPlanner.LoadPlan(plan); err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to load plan"), 500)
+	}
+	
+	analysis, err := taskPlanner.AnalyzeParallelizability(planID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to analyze plan"), 500)
+	}
+	
+	return c.WriteJSON(analysis)
+}
+
+// getGitOperationsHandler returns Git operations for a plan
+func getGitOperationsHandler(c rweb.Context) error {
+	planID := c.Request().Param("id")
+	if planID == "" {
+		return c.WriteError(serr.New("plan ID required"), 400)
+	}
+	
+	// Get plan from database to verify it exists
+	taskDB := db.GetTaskPlanDB()
+	_, err := taskDB.GetPlan(planID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "plan not found"), 404)
+	}
+	
+	// Create planner instance using factory
+	contextMgr := context.NewManager()
+	plannerOpts := planner.PlannerOptions{
+		MaxConcurrentSteps: 3,
+		EnableCheckpoints:  true,
+		CheckpointInterval: 5,
+		ContextManager:     contextMgr,
+	}
+	factory := planner.NewPlannerFactory()
+	taskPlanner := factory.CreatePlanner(plannerOpts)
+	
+	// Get Git operations
+	gitOps, err := taskPlanner.GetGitOperations(planID)
+	if err != nil {
+		return c.WriteError(serr.Wrap(err, "failed to get git operations"), 500)
+	}
+	
+	return c.WriteJSON(gitOps)
 }
 
 // planManagementUI renders the plan management UI
