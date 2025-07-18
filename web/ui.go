@@ -56,6 +56,21 @@ func generateMainUI(isAuthenticated bool) string {
 				b.Header().R(
 					b.Div("class", "header-content").R(
 						b.H1().T("RCode"),
+						b.Div("class", "header-center").R(
+							func() any {
+								if isAuthenticated {
+									// Plan Mode Toggle
+									b.Div("class", "plan-mode-toggle").R(
+										b.Label("class", "switch").R(
+											b.Input("type", "checkbox", "id", "plan-mode-switch"),
+											b.Span("class", "slider round").R(),
+										),
+										b.Label("for", "plan-mode-switch", "class", "plan-mode-label").T("Plan Mode"),
+									)
+								}
+								return nil
+							}(),
+						),
 						b.Div("class", "header-right").R(
 							func() any {
 								if isAuthenticated {
@@ -91,6 +106,26 @@ func generateMainUI(isAuthenticated bool) string {
 									b.Button("class", "btn-primary large", "onclick", "handleLogin()").T("Login with Claude Pro/Max"),
 								)
 							} else {
+								// Plan execution area (hidden by default)
+								b.Div("id", "plan-execution-area", "class", "plan-execution-area", "style", "display: none;").R(
+									b.Div("class", "plan-header").R(
+										b.H3().T("Task Plan Execution"),
+										b.Button("id", "close-plan-btn", "class", "btn-secondary").T("×"),
+									),
+									b.Div("id", "plan-progress", "class", "plan-progress").R(
+										b.Div("class", "progress-bar").R(
+											b.Div("id", "progress-fill", "class", "progress-fill", "style", "width: 0%").R(),
+										),
+										b.Span("id", "progress-text", "class", "progress-text").T("0 / 0 steps"),
+									),
+									b.Div("id", "plan-steps", "class", "plan-steps").R(),
+									b.Div("class", "plan-controls").R(
+										b.Button("id", "execute-plan-btn", "class", "btn-primary").T("Execute Plan"),
+										b.Button("id", "pause-plan-btn", "class", "btn-secondary", "disabled", "disabled").T("Pause"),
+										b.Button("id", "rollback-plan-btn", "class", "btn-warning", "disabled", "disabled").T("Rollback"),
+										b.Button("id", "view-metrics-btn", "class", "btn-secondary").T("View Metrics"),
+									),
+								)
 								// Messages container
 								b.Div("id", "messages", "class", "messages").R()
 								// Input area
@@ -107,10 +142,16 @@ func generateMainUI(isAuthenticated bool) string {
 											b.Option("value", "claude-3-haiku-20240307").T("Claude 3 Haiku (Fast)"),
 										),
 									),
+									// Plan mode indicator
+									b.Div("id", "plan-mode-indicator", "class", "plan-mode-indicator", "style", "display: none;").R(
+										b.Span("class", "plan-icon").T("📋"),
+										b.Span().T("Plan Mode Active - Describe a complex task to create a plan"),
+									),
 									// Monaco editor container
 									b.Div("id", "monaco-container", "style", "height: 150px; border: 1px solid var(--border); border-radius: 4px; margin-bottom: 1rem;").R(),
 									b.Div("class", "input-controls").R(
 										b.Button("id", "send-btn", "class", "btn-primary").T("Send"),
+										b.Button("id", "create-plan-btn", "class", "btn-primary", "style", "display: none;").T("Create Plan"),
 										b.Button("id", "clear-btn", "class", "btn-secondary").T("Clear"),
 									),
 								)
@@ -120,6 +161,8 @@ func generateMainUI(isAuthenticated bool) string {
 					),
 				),
 			),
+			// Plan execution overlay
+			b.Div("class", "plan-overlay").R(),
 			// Monaco Editor Scripts
 			b.Script("src", "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js").R(),
 			// b.Script().T(monacoLoaderJS),

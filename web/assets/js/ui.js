@@ -224,6 +224,9 @@ function handleServerEvent(event) {
     addToolUsageSummaryToUI(event.data);
   } else if (event.type === 'session_list_updated') {
     loadSessions();
+  } else if (event.type && event.type.startsWith('plan_') && event.session_id === currentSessionId) {
+    // Handle plan-related events
+    handlePlanEvent(event);
   }
 }
 
@@ -640,12 +643,352 @@ async function logout() {
   }
 }
 
+// Plan Mode Management
+let isPlanMode = false;
+let currentPlan = null;
+let planSteps = new Map(); // Map of step ID to step data
+
+function initializePlanMode() {
+  const planModeSwitch = document.getElementById('plan-mode-switch');
+  const planModeIndicator = document.getElementById('plan-mode-indicator');
+  const sendBtn = document.getElementById('send-btn');
+  const createPlanBtn = document.getElementById('create-plan-btn');
+  const planExecutionArea = document.getElementById('plan-execution-area');
+  const closePlanBtn = document.getElementById('close-plan-btn');
+  
+  if (!planModeSwitch) return;
+  
+  // Toggle plan mode
+  planModeSwitch.addEventListener('change', function() {
+    isPlanMode = this.checked;
+    document.body.classList.toggle('plan-mode', isPlanMode);
+    
+    if (isPlanMode) {
+      planModeIndicator.style.display = 'block';
+      sendBtn.style.display = 'none';
+      createPlanBtn.style.display = 'inline-block';
+      if (editor) {
+        editor.updateOptions({ placeholder: 'Describe a complex task to create a plan...' });
+      }
+    } else {
+      planModeIndicator.style.display = 'none';
+      sendBtn.style.display = 'inline-block';
+      createPlanBtn.style.display = 'none';
+      if (editor) {
+        editor.updateOptions({ placeholder: 'Type a message...' });
+      }
+    }
+  });
+  
+  // Create plan button
+  if (createPlanBtn) {
+    createPlanBtn.addEventListener('click', createPlan);
+  }
+  
+  // Close plan execution area
+  if (closePlanBtn) {
+    closePlanBtn.addEventListener('click', function() {
+      planExecutionArea.style.display = 'none';
+      document.body.classList.remove('plan-executing');
+    });
+  }
+  
+  // Plan control buttons
+  const executePlanBtn = document.getElementById('execute-plan-btn');
+  const pausePlanBtn = document.getElementById('pause-plan-btn');
+  const rollbackPlanBtn = document.getElementById('rollback-plan-btn');
+  const viewMetricsBtn = document.getElementById('view-metrics-btn');
+  
+  if (executePlanBtn) {
+    executePlanBtn.addEventListener('click', executePlan);
+  }
+  
+  if (pausePlanBtn) {
+    pausePlanBtn.addEventListener('click', pausePlan);
+  }
+  
+  if (rollbackPlanBtn) {
+    rollbackPlanBtn.addEventListener('click', showRollbackDialog);
+  }
+  
+  if (viewMetricsBtn) {
+    viewMetricsBtn.addEventListener('click', viewPlanMetrics);
+  }
+}
+
+async function createPlan() {
+  const content = editor.getValue().trim();
+  if (!content || !currentSessionId) return;
+  
+  try {
+    const response = await fetch(`/api/session/${currentSessionId}/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        description: content,
+        auto_execute: false 
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to create plan');
+    }
+    
+    const plan = await response.json();
+    currentPlan = plan;
+    
+    // Clear the editor
+    editor.setValue('');
+    
+    // Show the plan in the messages area
+    addMessage('assistant', `📋 **Task Plan Created**\n\nI've created a plan with ${plan.steps.length} steps to: ${plan.description}`);
+    
+    // Show plan execution area
+    displayPlan(plan);
+    
+  } catch (error) {
+    console.error('Error creating plan:', error);
+    addMessage('assistant', '❌ Failed to create task plan. Please try again.');
+  }
+}
+
+function displayPlan(plan) {
+  const planExecutionArea = document.getElementById('plan-execution-area');
+  const planStepsContainer = document.getElementById('plan-steps');
+  const progressText = document.getElementById('progress-text');
+  
+  // Clear previous steps
+  planStepsContainer.innerHTML = '';
+  planSteps.clear();
+  
+  // Update progress text
+  progressText.textContent = `0 / ${plan.steps.length} steps`;
+  
+  // Display each step
+  plan.steps.forEach((step, index) => {
+    const stepElement = createStepElement(step, index + 1);
+    planStepsContainer.appendChild(stepElement);
+    planSteps.set(step.id, { element: stepElement, data: step });
+  });
+  
+  // Show the plan execution area
+  planExecutionArea.style.display = 'flex';
+  document.body.classList.add('plan-executing');
+  
+  // Enable/disable buttons based on plan status
+  updatePlanControls(plan.status);
+}
+
+function createStepElement(step, number) {
+  const stepDiv = document.createElement('div');
+  stepDiv.className = 'plan-step';
+  stepDiv.id = `step-${step.id}`;
+  
+  stepDiv.innerHTML = `
+    <div class="step-header">
+      <div class="step-info">
+        <span class="step-number">${number}</span>
+        <span class="step-title">${step.description}</span>
+      </div>
+      <span class="step-status ${step.status || 'pending'}">${step.status || 'pending'}</span>
+    </div>
+    <div class="step-details">
+      <span class="step-tool">Tool: ${step.tool}</span>
+    </div>
+    <div class="step-output" style="display: none;"></div>
+    <div class="step-metrics" style="display: none;"></div>
+  `;
+  
+  return stepDiv;
+}
+
+async function executePlan() {
+  if (!currentPlan) return;
+  
+  try {
+    const response = await fetch(`/api/plan/${currentPlan.id}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to execute plan');
+    }
+    
+    // Update controls
+    document.getElementById('execute-plan-btn').disabled = true;
+    document.getElementById('pause-plan-btn').disabled = false;
+    document.getElementById('rollback-plan-btn').disabled = false;
+    
+    addMessage('assistant', '🚀 Plan execution started...');
+    
+  } catch (error) {
+    console.error('Error executing plan:', error);
+    addMessage('assistant', '❌ Failed to execute plan. Please try again.');
+  }
+}
+
+function pausePlan() {
+  // TODO: Implement pause functionality
+  console.log('Pause plan - not yet implemented');
+}
+
+function showRollbackDialog() {
+  // TODO: Show checkpoint selection dialog
+  console.log('Rollback - not yet implemented');
+}
+
+async function viewPlanMetrics() {
+  if (!currentPlan) return;
+  
+  try {
+    const response = await fetch(`/api/plan/${currentPlan.id}/status`);
+    if (!response.ok) throw new Error('Failed to get metrics');
+    
+    const status = await response.json();
+    
+    // Display metrics in a message
+    let metricsText = `📊 **Plan Execution Metrics**\n\n`;
+    metricsText += `Total Steps: ${status.total_steps}\n`;
+    metricsText += `Completed: ${status.completed_steps}\n`;
+    metricsText += `Failed: ${status.failed_steps}\n`;
+    if (status.metrics && status.metrics.total_duration) {
+      metricsText += `Duration: ${formatDuration(status.metrics.total_duration)}\n`;
+    }
+    
+    addMessage('assistant', metricsText);
+    
+  } catch (error) {
+    console.error('Error getting metrics:', error);
+  }
+}
+
+function updatePlanControls(status) {
+  const executeBtn = document.getElementById('execute-plan-btn');
+  const pauseBtn = document.getElementById('pause-plan-btn');
+  const rollbackBtn = document.getElementById('rollback-plan-btn');
+  
+  switch (status) {
+    case 'pending':
+      executeBtn.disabled = false;
+      pauseBtn.disabled = true;
+      rollbackBtn.disabled = true;
+      break;
+    case 'executing':
+      executeBtn.disabled = true;
+      pauseBtn.disabled = false;
+      rollbackBtn.disabled = false;
+      break;
+    case 'completed':
+    case 'failed':
+      executeBtn.disabled = true;
+      pauseBtn.disabled = true;
+      rollbackBtn.disabled = false;
+      break;
+  }
+}
+
+// Handle plan-related SSE events
+function handlePlanEvent(event) {
+  switch (event.type) {
+    case 'plan_created':
+      handlePlanCreated(event.data);
+      break;
+    case 'step_progress':
+      handleStepProgress(event.data);
+      break;
+    case 'plan_completed':
+      handlePlanCompleted(event.data);
+      break;
+  }
+}
+
+function handlePlanCreated(data) {
+  console.log('Plan created:', data);
+  // Plan creation is already handled in createPlan()
+}
+
+function handleStepProgress(data) {
+  const stepInfo = planSteps.get(data.step_id);
+  if (!stepInfo) return;
+  
+  const { element } = stepInfo;
+  const statusElement = element.querySelector('.step-status');
+  const outputElement = element.querySelector('.step-output');
+  
+  // Update step status
+  element.className = `plan-step ${data.status}`;
+  statusElement.className = `step-status ${data.status}`;
+  statusElement.textContent = data.status;
+  
+  // Show output if available
+  if (data.output) {
+    outputElement.style.display = 'block';
+    outputElement.textContent = typeof data.output === 'string' ? data.output : JSON.stringify(data.output, null, 2);
+  }
+  
+  // Update progress bar
+  updateProgressBar();
+  
+  // Show metrics if step completed
+  if (data.status === 'completed' && data.metrics) {
+    const metricsElement = element.querySelector('.step-metrics');
+    metricsElement.style.display = 'flex';
+    metricsElement.innerHTML = `
+      <span>Duration: ${formatDuration(data.metrics.duration)}</span>
+      ${data.metrics.retry_count > 0 ? `<span>Retries: ${data.metrics.retry_count}</span>` : ''}
+    `;
+  }
+}
+
+function handlePlanCompleted(data) {
+  updatePlanControls(data.status);
+  
+  if (data.status === 'completed') {
+    addMessage('assistant', '✅ Plan execution completed successfully!');
+  } else if (data.status === 'failed') {
+    addMessage('assistant', '❌ Plan execution failed. You can try to rollback to a previous checkpoint.');
+  }
+}
+
+function updateProgressBar() {
+  const progressFill = document.getElementById('progress-fill');
+  const progressText = document.getElementById('progress-text');
+  
+  let completed = 0;
+  let total = planSteps.size;
+  
+  planSteps.forEach(step => {
+    const status = step.element.querySelector('.step-status').textContent;
+    if (status === 'completed' || status === 'failed') {
+      completed++;
+    }
+  });
+  
+  const percentage = total > 0 ? (completed / total) * 100 : 0;
+  progressFill.style.width = `${percentage}%`;
+  progressText.textContent = `${completed} / ${total} steps`;
+}
+
+function formatDuration(duration) {
+  // Duration is in nanoseconds, convert to readable format
+  const ms = duration / 1000000;
+  if (ms < 1000) return `${ms.toFixed(0)}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = s / 60;
+  return `${m.toFixed(1)}m`;
+}
+
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', function() {
   console.log('DOM loaded, initializing...');
 
   // Configure marked.js
   configureMarked();
+
+  // Initialize Plan Mode
+  initializePlanMode();
 
   // Initialize model selector
   const modelSelector = document.getElementById('model-selector');
