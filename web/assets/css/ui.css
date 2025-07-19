@@ -1281,3 +1281,252 @@ body.plan-mode header {
 body.plan-executing .plan-overlay {
   display: block;
 }
+
+/* File Explorer Styles */
+.sidebar-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+
+.sidebar-tab {
+  flex: 1;
+  padding: 0.75rem;
+  text-align: center;
+  cursor: pointer;
+  color: var(--text-secondary);
+  background: transparent;
+  border: none;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.sidebar-tab:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.sidebar-tab.active {
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+.sidebar-tab.active::after {
+  content: '';
+  position: absolute;
+  bottom: -1px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: var(--accent);
+}
+
+.sidebar-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.tab-content {
+  display: none;
+  height: 100%;
+  overflow-y: auto;
+}
+
+.tab-content.active {
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-footer {
+  padding: 1rem;
+  border-top: 1px solid var(--border);
+}
+
+#files-tab.active ~ .sidebar-footer {
+  display: none;
+}
+
+/* File Search */
+.file-search {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.5rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* File Tree */
+.file-explorer {
+  padding: 0.5rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.file-tree {
+  font-size: 0.875rem;
+}
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-node:hover {
+  background: var(--bg-tertiary);
+}
+
+.tree-node.selected {
+  background: var(--accent);
+  color: var(--text-primary);
+}
+
+.tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* File icons */
+.folder-icon::before { content: "📁"; }
+.folder-open-icon::before { content: "📂"; }
+.file-icon::before { content: "📄"; }
+.file-icon-go::before { content: "🔵"; }
+.file-icon-javascript::before { content: "🟨"; }
+.file-icon-typescript::before { content: "🔷"; }
+.file-icon-python::before { content: "🐍"; }
+.file-icon-java::before { content: "☕"; }
+.file-icon-ruby::before { content: "💎"; }
+.file-icon-rust::before { content: "🦀"; }
+.file-icon-html::before { content: "🌐"; }
+.file-icon-css::before { content: "🎨"; }
+.file-icon-json::before { content: "📊"; }
+.file-icon-markdown::before { content: "📝"; }
+.file-icon-image::before { content: "🖼️"; }
+.file-icon-video::before { content: "🎥"; }
+.file-icon-audio::before { content: "🎵"; }
+.file-icon-archive::before { content: "📦"; }
+.file-icon-git::before { content: "🔀"; }
+.file-icon-env::before { content: "🔐"; }
+.file-icon-database::before { content: "🗄️"; }
+.file-icon-shell::before { content: "🖥️"; }
+
+.node-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-size {
+  margin-left: auto;
+  padding-left: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+.tree-children {
+  margin-left: 1rem;
+}
+
+.empty-state {
+  padding: 2rem;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+/* File Viewer */
+.file-viewer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+  display: none;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.file-viewer.active {
+  display: flex;
+}
+
+.file-tabs {
+  display: flex;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.file-tab {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s ease;
+}
+
+.file-tab:hover {
+  background: var(--bg-tertiary);
+}
+
+.file-tab.active {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--bg-primary);
+}
+
+.tab-name {
+  margin-right: 0.5rem;
+}
+
+.tab-close {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: background 0.1s ease;
+}
+
+.tab-close:hover {
+  background: var(--bg-tertiary);
+}
+
+.file-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+#file-viewer-editor {
+  width: 100%;
+  height: 100%;
+}

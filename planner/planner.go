@@ -220,10 +220,8 @@ func (p *Planner) executeStep(task *TaskPlanner, step *TaskStep) error {
 	p.logInfo(task.ID, step.ID, fmt.Sprintf("Executing step: %s", step.Description))
 
 	// Start step metrics
-	var stepMetric *StepMetric
 	if p.metricsCollector != nil {
-		var err error
-		stepMetric, err = p.metricsCollector.StartStepExecution(task.ID, step.ID, step.Tool)
+		_, err := p.metricsCollector.StartStepExecution(task.ID, step.ID, step.Tool)
 		if err != nil {
 			p.logWarning(task.ID, step.ID, "Failed to start step metrics: "+err.Error())
 		}

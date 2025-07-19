@@ -227,6 +227,11 @@ function handleServerEvent(event) {
   } else if (event.type && event.type.startsWith('plan_') && event.session_id === currentSessionId) {
     // Handle plan-related events
     handlePlanEvent(event);
+  } else if (event.type && (event.type === 'file_opened' || event.type === 'file_changed' || event.type === 'file_tree_update')) {
+    // Handle file explorer events
+    if (window.FileExplorer && window.FileExplorer.handleFileEvent) {
+      window.FileExplorer.handleFileEvent(event);
+    }
   }
 }
 

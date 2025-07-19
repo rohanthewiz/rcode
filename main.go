@@ -57,6 +57,15 @@ func main() {
 
 	logger.Info("Database initialized successfully")
 
+	// Initialize file explorer service with current directory
+	if err := web.InitFileExplorer("."); err != nil {
+		log.Fatalf("Failed to initialize file explorer: %v", err)
+	}
+	logger.Info("File explorer initialized successfully")
+
+	// Initialize file change notifier for SSE broadcasts
+	web.InitFileChangeNotifier()
+
 	go func() {
 		serverOpts := rweb.ServerOptions{
 			Address: ":8000",

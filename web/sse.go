@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sync"
+	"time"
 
 	"github.com/rohanthewiz/logger"
 	"github.com/rohanthewiz/rweb"
@@ -156,4 +157,39 @@ func broadcastJSON(eventType string, data interface{}) {
 		Data: data,
 	}
 	sseHub.Broadcast(event)
+}
+
+// BroadcastFileEvent broadcasts file-related events
+func BroadcastFileEvent(eventType string, data interface{}) {
+	event := SSEEvent{
+		Type: eventType,
+		Data: data,
+	}
+	sseHub.Broadcast(event)
+}
+
+// BroadcastFileOpened broadcasts when a file is opened
+func BroadcastFileOpened(sessionID string, filePath string) {
+	BroadcastFileEvent("file_opened", map[string]interface{}{
+		"sessionId": sessionID,
+		"path":      filePath,
+		"timestamp": fmt.Sprintf("%d", time.Now().Unix()),
+	})
+}
+
+// BroadcastFileChanged broadcasts when a file is modified
+func BroadcastFileChanged(filePath string, changeType string) {
+	BroadcastFileEvent("file_changed", map[string]interface{}{
+		"path":       filePath,
+		"changeType": changeType, // "created", "modified", "deleted", "renamed"
+		"timestamp":  fmt.Sprintf("%d", time.Now().Unix()),
+	})
+}
+
+// BroadcastFileTreeUpdate broadcasts when the file tree needs refresh
+func BroadcastFileTreeUpdate(path string) {
+	BroadcastFileEvent("file_tree_update", map[string]interface{}{
+		"path":      path,
+		"timestamp": fmt.Sprintf("%d", time.Now().Unix()),
+	})
 }

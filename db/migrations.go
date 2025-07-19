@@ -261,6 +261,36 @@ var migrations = []Migration{
 			CREATE INDEX idx_task_logs_level ON task_logs(level);
 		`,
 	},
+	{
+		Version:     5,
+		Description: "Add file tracking tables",
+		SQL: `
+			-- Create file_access table to track files opened in sessions
+			CREATE TABLE IF NOT EXISTS file_access (
+				id INTEGER PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				accessed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				access_type TEXT NOT NULL DEFAULT 'open', -- 'open', 'edit', 'create', 'delete'
+				FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+			);
+			CREATE INDEX idx_file_access_session ON file_access(session_id);
+			CREATE INDEX idx_file_access_path ON file_access(file_path);
+			CREATE INDEX idx_file_access_time ON file_access(accessed_at);
+
+			-- Create session_files table for currently open files in a session
+			CREATE TABLE IF NOT EXISTS session_files (
+				session_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				last_viewed_at TIMESTAMP,
+				is_active BOOLEAN DEFAULT TRUE,
+				PRIMARY KEY (session_id, file_path),
+				FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+			);
+			CREATE INDEX idx_session_files_active ON session_files(session_id, is_active);
+		`,
+	},
 }
 
 // Migrate runs all pending database migrations

@@ -16,6 +16,7 @@ Note: It is way better to use Claude Code, but if you want to see how deep the r
 - 📊 **Execution Metrics** - Performance tracking and reporting
 - 🎨 **Plan Mode UI** - Visual interface for creating and executing complex tasks
 - 📜 **Plan History** - Review, re-run, and manage previous task plans
+- 📁 **File Explorer** - Visual file browser with tabbed interface and real-time updates
 
 ## Quick Start
 
@@ -288,6 +289,65 @@ The plan history updates automatically when:
 - New plans are created
 - Existing plans change status
 - Plans are deleted
+
+## File Explorer
+
+RCode includes a comprehensive file explorer that provides visual access to your project files with real-time synchronization:
+
+### Accessing the File Explorer
+
+The file explorer is integrated into the sidebar with a tabbed interface:
+- **Sessions Tab**: Shows your chat sessions (default view)
+- **Files Tab**: Shows the project file tree
+
+Click the "Files" tab to switch to the file explorer view.
+
+### Features
+
+#### File Tree Navigation
+- **Expand/Collapse**: Click folder icons to explore the directory structure
+- **File Icons**: Visual indicators for different file types (Go, JavaScript, Python, etc.)
+- **Ignore Patterns**: Respects `.gitignore` and `.rcodeIgnore` files
+- **Smart Sorting**: Directories first, then files alphabetically
+
+#### File Operations
+- **Double-click to Open**: Opens files in a read-only Monaco editor
+- **Syntax Highlighting**: Automatic language detection
+- **Multiple Files**: Open multiple files in tabs
+- **File Search**: Quick search by filename
+
+#### Real-time Updates
+The file explorer automatically refreshes when:
+- Files are created, modified, or deleted by AI tools
+- Directories are created or removed
+- Git operations affect the file structure
+
+#### Session Integration
+- **File Tracking**: All opened files are tracked per session
+- **Recent Files**: Access recently viewed files quickly
+- **Persistent State**: File access history is stored in the database
+
+### File Viewer
+
+When you open a file:
+- **Monaco Editor**: Full syntax highlighting with theme support
+- **Read-only Mode**: Files are displayed for viewing (editing through AI chat)
+- **Tab Management**: Switch between multiple open files
+- **Auto-close**: Close files individually or all at once
+
+### Keyboard Navigation (Coming Soon)
+- Arrow keys for tree navigation
+- Enter to open files
+- Ctrl/Cmd+P for quick file search
+
+### API Endpoints
+
+The file explorer provides these endpoints:
+- `GET /api/files/tree` - Get directory tree structure
+- `GET /api/files/content/:path` - Get file content
+- `POST /api/files/search` - Search for files
+- `POST /api/session/:id/files/open` - Track file opening
+- `GET /api/session/:id/files/recent` - Get recent files
 
 ## Technical Stack
 

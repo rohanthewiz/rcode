@@ -67,6 +67,15 @@ func SetupRoutes(s *rweb.Server) {
 
 	// Prompt Manager UI
 	s.Get("/prompts", PromptManagerHandler)
+
+	// File Explorer endpoints
+	s.Get("/api/files/tree", getFileTreeHandler)
+	s.Get("/api/files/content/:path", getFileContentHandler)
+	s.Post("/api/files/search", searchFilesHandler)
+	s.Post("/api/session/:id/files/open", openFileHandler)
+	s.Post("/api/session/:id/files/close", closeFileInSessionHandler)
+	s.Get("/api/session/:id/files/recent", getRecentFilesHandler)
+	s.Get("/api/session/:id/files/open", getSessionOpenFilesHandler)
 }
 
 // rootHandler serves the main web UI

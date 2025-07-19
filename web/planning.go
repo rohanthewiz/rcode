@@ -618,21 +618,21 @@ func listPlanHistoryHandler(c rweb.Context) error {
 	
 	// Parse query parameters
 	page := 1
-	if pageStr := c.Request().Query("page"); pageStr != "" {
+	if pageStr := c.Request().QueryParam("page"); pageStr != "" {
 		if p, err := strconv.Atoi(pageStr); err == nil && p > 0 {
 			page = p
 		}
 	}
 	
 	limit := 20
-	if limitStr := c.Request().Query("limit"); limitStr != "" {
+	if limitStr := c.Request().QueryParam("limit"); limitStr != "" {
 		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
 			limit = l
 		}
 	}
 	
-	status := c.Request().Query("status")
-	search := c.Request().Query("search")
+	status := c.Request().QueryParam("status")
+	search := c.Request().QueryParam("search")
 	
 	// Get plans from database with pagination
 	taskDB := db.GetTaskPlanDB()
@@ -755,7 +755,7 @@ func getPlanFullDetailsHandler(c rweb.Context) error {
 		   step.Tool == "git_pull" || step.Tool == "git_checkout" || step.Tool == "git_merge" {
 			gitOps = append(gitOps, map[string]interface{}{
 				"tool":       step.Tool,
-				"parameters": step.Parameters,
+				"parameters": step.Params,
 				"status":     step.Status,
 			})
 		}
@@ -809,8 +809,7 @@ func clonePlanHandler(c rweb.Context) error {
 	
 	// Reset step statuses
 	for i := range steps {
-		steps[i].Status = planner.TaskStatusPending
-		steps[i].Error = ""
+		steps[i].Status = planner.StepStatusPending
 		steps[i].Result = nil
 		steps[i].StartTime = nil
 		steps[i].EndTime = nil

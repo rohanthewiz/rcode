@@ -15,6 +15,9 @@ var uiJS string
 //go:embed assets/js/login.js
 var loginJS string
 
+//go:embed assets/js/fileExplorer.js
+var fileExplorerJS string
+
 // //go:embed assets/js/monacoLoader.js
 // var monacoLoaderJS string
 
@@ -89,13 +92,24 @@ func generateMainUI(isAuthenticated bool) string {
 				),
 				// Main content area
 				b.Main().R(
-					// Sidebar
+					// Sidebar with tabs
 					b.Aside("id", "sidebar").R(
-						b.Div("class", "sidebar-header").R(
-							b.H3().T("Sessions"),
-							b.Button("id", "new-session-btn", "class", "btn-primary").T("New Session"),
+						// Render the tabbed interface
+						func() any {
+							// For initial render, we'll show empty sessions and file tree
+							// These will be populated via JavaScript after page load
+							tabs := FileExplorerTabs{
+								ActiveTab: "sessions",
+								Sessions:  []SessionInfo{},
+								FileTree:  []FileNode{},
+							}
+							element.RenderComponents(b, tabs)
+							return nil
+						}(),
+						// New session button (will be shown/hidden based on active tab)
+						b.Div("class", "sidebar-footer").R(
+							b.Button("id", "new-session-btn", "class", "btn-primary", "style", "width: 100%;").T("New Session"),
 						),
-						b.Div("id", "session-list", "class", "session-list").R(),
 					),
 					// Chat area
 					b.Section("id", "chat-area").R(
@@ -223,5 +237,16 @@ func generateJavaScript(isAuthenticated bool) string {
 		`
 	}
 
-	return uiJS
+	// Include file explorer for authenticated users
+	return fileExplorerJS + "\n\n" + uiJS + `
+		// Initialize file explorer after UI is ready
+		document.addEventListener('DOMContentLoaded', function() {
+			// Initialize file explorer after a short delay to ensure Monaco is loaded
+			setTimeout(() => {
+				if (window.FileExplorer) {
+					window.FileExplorer.init();
+				}
+			}, 500);
+		});
+	`
 }

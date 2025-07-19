@@ -152,6 +152,9 @@ func (t *EditFileTool) Execute(input map[string]interface{}) (string, error) {
 		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path)))
 	}
 
+	// Notify file change
+	NotifyFileChange(path, "modified")
+
 	// Generate diff-like output for confirmation
 	var diffOutput strings.Builder
 	diffOutput.WriteString(fmt.Sprintf("File edited: %s\n", path))

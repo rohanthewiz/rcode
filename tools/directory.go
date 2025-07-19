@@ -303,6 +303,9 @@ func (t *MakeDirTool) Execute(input map[string]interface{}) (string, error) {
 		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to create directory: %s", path)))
 	}
 
+	// Notify file change
+	NotifyFileChange(path, "created")
+
 	return fmt.Sprintf("Directory created: %s", path), nil
 }
 
@@ -393,6 +396,9 @@ func (t *RemoveTool) Execute(input map[string]interface{}) (string, error) {
 		// File busy errors are retryable
 		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to remove: %s", path)))
 	}
+
+	// Notify file change
+	NotifyFileChange(path, "deleted")
 
 	typeStr := "File"
 	if info.IsDir() {
@@ -654,6 +660,10 @@ func (t *MoveTool) Execute(input map[string]interface{}) (string, error) {
 		// Cross-device moves and other errors might be temporary
 		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to move %s to %s", source, destination)))
 	}
+
+	// Notify file changes
+	NotifyFileChange(source, "deleted")
+	NotifyFileChange(destination, "created")
 
 	return fmt.Sprintf("Moved: %s → %s", source, destination), nil
 }
