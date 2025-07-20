@@ -32,6 +32,9 @@ rcode/
 ├── tools/
 │   ├── tool.go               # Tool interface & registry
 │   ├── default.go            # Default tool implementations
+│   ├── plugin.go             # Plugin interface definitions
+│   ├── loader.go             # Plugin loader implementation
+│   ├── sandbox.go            # Capability-based sandboxing
 │   ├── read_file.go          # File reading tool
 │   ├── write_file.go         # File writing tool
 │   ├── bash.go               # Bash command tool
@@ -44,7 +47,9 @@ rcode/
 │   ├── context_aware.go      # Context-aware tool execution
 │   ├── retry.go              # Retry utility with exponential backoff
 │   ├── errors.go             # Error classification system
-│   └── web_*.go              # Web tools (search, fetch)
+│   ├── web_*.go              # Web tools (search, fetch)
+│   ├── plugin_template/      # Template for custom tools
+│   └── plugin_examples/      # Example custom tools
 ├── context/
 │   ├── types.go              # Core context data structures
 │   ├── manager.go            # Context manager with file tracking
@@ -88,6 +93,7 @@ rcode/
    - Web operations: search (mock), fetch and convert pages
    - Bash command execution
    - Tool parameter validation and safety checks
+   - **Custom Tools Support**: Dynamic plugin system for user-defined tools
 3. **Error Recovery System**:
    - Automatic retry with exponential backoff for transient failures
    - Error classification (retryable, permanent, rate limit)
@@ -170,6 +176,8 @@ The server can be configured using environment variables:
 | `RCODE_TLS_PORT` | HTTPS port | :8443 |
 | `RCODE_TLS_CERT` | Path to TLS certificate | certs/localhost.crt |
 | `RCODE_TLS_KEY` | Path to TLS private key | certs/localhost.key |
+| `RCODE_CUSTOM_TOOLS_ENABLED` | Enable custom tool plugins | false |
+| `RCODE_CUSTOM_TOOLS_PATHS` | Colon-separated plugin directories | ~/.rcode/tools:/usr/local/lib/rcode/tools |
 
 ### Important Implementation Details
 - System prompt remains exactly: "You are Claude Code, Anthropic's official CLI for Claude."
@@ -227,6 +235,13 @@ The server can be configured using environment variables:
 - Context information now added as initial user prompt
 - Enhanced UI with tool summary display during execution
 - Fixed SSE event handling for proper sessionId matching
+- **Implemented Custom Tool Support**:
+  - Dynamic plugin system using Go's plugin architecture
+  - Capability-based security model for sandboxing
+  - Path restrictions and resource limits
+  - Plugin template and examples provided
+  - Hot-loadable at startup via environment variables
+  - Comprehensive documentation in docs/CUSTOM_TOOLS.md
 
 ## Tool System Details
 

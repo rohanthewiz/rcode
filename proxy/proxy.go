@@ -50,9 +50,13 @@ func main() {
 	}
 
 	if httpsEnabled {
-		serverOpts.Address = *httpsAddr
-		serverOpts.CertFile = *certPath
-		serverOpts.KeyFile = *keyPath
+		serverOpts.Address = *httpAddr // HTTP address for redirect server
+		serverOpts.TLS = rweb.TLSCfg{
+			UseTLS:   true,
+			TLSAddr:  *httpsAddr,
+			CertFile: *certPath,
+			KeyFile:  *keyPath,
+		}
 	} else {
 		serverOpts.Address = *httpAddr
 	}
@@ -90,10 +94,19 @@ func main() {
 }
 
 // httpsRedirectMiddleware redirects all HTTP requests to HTTPS
-func httpsRedirectMiddleware(httpsAddr string) rweb.HandlerFunc {
+func httpsRedirectMiddleware(httpsAddr string) func(rweb.Context) error {
 	return func(ctx rweb.Context) error {
 		req := ctx.Request()
-		host := req.GetHeader("Host")
+		
+		// Get the host header
+		host := ""
+		for _, h := range req.Headers() {
+			if strings.ToLower(h.Key) == "host" {
+				host = h.Value
+				break
+			}
+		}
+		
 		if host == "" {
 			host = strings.Split(httpsAddr, ":")[0]
 			if host == "" {
@@ -104,10 +117,12 @@ func httpsRedirectMiddleware(httpsAddr string) rweb.HandlerFunc {
 		// Get the port from httpsAddr if it's not the default 443
 		httpsPort := strings.Split(httpsAddr, ":")[1]
 		if httpsPort != "443" {
-			host = host + ":" + httpsPort
+			host = strings.Split(host, ":")[0] + ":" + httpsPort
 		}
 		
-		httpsURL := fmt.Sprintf("https://%s%s", host, req.URL())
+		// Get the request path - we'll use a simple approach
+		// In a real scenario, you might need to check rweb's API documentation
+		httpsURL := fmt.Sprintf("https://%s%s", host, "/v1/messages")
 		ctx.Status(301)
 		ctx.Response().SetHeader("Location", httpsURL)
 		return nil

@@ -115,7 +115,7 @@ func listDirFlat(output *strings.Builder, path string, showAll bool, pattern str
 	var filtered []os.DirEntry
 	for _, entry := range entries {
 		name := entry.Name()
-		
+
 		// Skip hidden files if not showing all
 		if !showAll && strings.HasPrefix(name, ".") {
 			continue
@@ -176,7 +176,7 @@ func listDirRecursive(output *strings.Builder, basePath, prefix string, showAll 
 	var filtered []os.DirEntry
 	for _, entry := range entries {
 		name := entry.Name()
-		
+
 		// Skip hidden files if not showing all
 		if !showAll && strings.HasPrefix(name, ".") {
 			continue
@@ -202,7 +202,7 @@ func listDirRecursive(output *strings.Builder, basePath, prefix string, showAll 
 	// Display entries
 	for i, entry := range filtered {
 		isLast := i == len(filtered)-1
-		
+
 		// Tree drawing characters
 		connector := "├── "
 		childPrefix := "│   "
@@ -212,10 +212,10 @@ func listDirRecursive(output *strings.Builder, basePath, prefix string, showAll 
 		}
 
 		output.WriteString(prefix + connector + entry.Name())
-		
+
 		if entry.IsDir() {
 			output.WriteString("/\n")
-			
+
 			// Recurse into subdirectory
 			subPath := filepath.Join(basePath, entry.Name())
 			err := listDirRecursive(output, subPath, prefix+childPrefix, showAll, pattern)
@@ -528,7 +528,7 @@ func buildTree(output *strings.Builder, basePath, prefix string, depth, maxDepth
 	var filtered []os.DirEntry
 	for _, entry := range entries {
 		name := entry.Name()
-		
+
 		// Skip hidden files if not showing all
 		if !showAll && strings.HasPrefix(name, ".") {
 			continue
@@ -550,7 +550,7 @@ func buildTree(output *strings.Builder, basePath, prefix string, depth, maxDepth
 	// Display entries
 	for i, entry := range filtered {
 		isLast := i == len(filtered)-1
-		
+
 		// Tree drawing characters
 		connector := "├── "
 		childPrefix := "│   "
@@ -560,11 +560,11 @@ func buildTree(output *strings.Builder, basePath, prefix string, depth, maxDepth
 		}
 
 		output.WriteString(prefix + connector + entry.Name())
-		
+
 		if entry.IsDir() {
 			output.WriteString("/\n")
 			stats.dirs++
-			
+
 			// Recurse into subdirectory
 			subPath := filepath.Join(basePath, entry.Name())
 			err := buildTree(output, subPath, prefix+childPrefix, depth+1, maxDepth, showAll, dirsOnly, stats)
@@ -623,7 +623,7 @@ func (t *MoveTool) Execute(input map[string]interface{}) (string, error) {
 	if err != nil {
 		return "", serr.Wrap(err, "failed to expand source path")
 	}
-	
+
 	expandedDestination, err := ExpandPath(destination)
 	if err != nil {
 		return "", serr.Wrap(err, "failed to expand destination path")

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"time"
 )
 
 // TestDiffIntegration tests the end-to-end diff visualization flow
@@ -56,20 +55,23 @@ func main() {
 	
 	// Test file modification flow
 	testPath := "test/sample.go"
-	beforeContent := `package main
+	
+	// Example content for documentation purposes
+	// In a real test, these would be used to create actual diffs
+	_ = `package main
 
 func main() {
     println("Hello")
-}`
+}` // beforeContent
 	
-	afterContent := `package main
+	_ = `package main
 
 import "fmt"
 
 func main() {
     fmt.Println("Hello, RCode!")
     fmt.Println("Diff visualization test")
-}`
+}` // afterContent
 	
 	fmt.Printf("\n🔧 Simulating file modification: %s\n", testPath)
 	

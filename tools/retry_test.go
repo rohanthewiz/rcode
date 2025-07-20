@@ -41,7 +41,7 @@ func TestRetryWithSuccess(t *testing.T) {
 func TestRetryWithPermanentError(t *testing.T) {
 	attempts := 0
 	permanentErr := NewPermanentError(errors.New("permanent error"), "test")
-	
+
 	operation := func(ctx context.Context) error {
 		attempts++
 		return permanentErr
@@ -70,7 +70,7 @@ func TestRetryWithPermanentError(t *testing.T) {
 func TestRetryWithContextCancellation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	attempts := 0
-	
+
 	operation := func(ctx context.Context) error {
 		attempts++
 		if attempts == 2 {
@@ -106,7 +106,7 @@ func TestExponentialBackoff(t *testing.T) {
 	attempts := 0
 	startTime := time.Now()
 	var attemptTimes []time.Duration
-	
+
 	operation := func(ctx context.Context) error {
 		attempts++
 		attemptTimes = append(attemptTimes, time.Since(startTime))
@@ -146,11 +146,11 @@ func TestExponentialBackoff(t *testing.T) {
 	for i := 1; i < len(attemptTimes); i++ {
 		actualDelay := attemptTimes[i] - attemptTimes[i-1]
 		expectedDelay := expectedDelays[i-1]
-		
+
 		// Allow 20% tolerance for timing
 		minDelay := expectedDelay * 8 / 10
 		maxDelay := expectedDelay * 12 / 10
-		
+
 		if actualDelay < minDelay || actualDelay > maxDelay {
 			t.Errorf("Attempt %d: expected delay ~%v, got %v", i+1, expectedDelay, actualDelay)
 		}
@@ -160,9 +160,9 @@ func TestExponentialBackoff(t *testing.T) {
 // TestRetryableErrorClassification tests error classification
 func TestRetryableErrorClassification(t *testing.T) {
 	tests := []struct {
-		name       string
-		err        error
-		retryable  bool
+		name      string
+		err       error
+		retryable bool
 	}{
 		{
 			name:      "retryable error",
@@ -209,7 +209,7 @@ func TestRetryableErrorClassification(t *testing.T) {
 // TestJitter tests that jitter adds randomness to delays
 func TestJitter(t *testing.T) {
 	delays := make([]time.Duration, 5)
-	
+
 	for i := 0; i < 5; i++ {
 		attempts := 0
 		operation := func(ctx context.Context) error {

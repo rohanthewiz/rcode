@@ -27,13 +27,13 @@ func NewContextAwareExecutor(registry *Registry, contextManager *context.Manager
 func (e *ContextAwareExecutor) Execute(toolUse ToolUse) (*ToolResult, error) {
 	// Pre-execution context updates
 	e.preExecute(toolUse)
-	
+
 	// Execute the tool
 	result, err := e.registry.Execute(toolUse)
-	
+
 	// Post-execution context updates
 	e.postExecute(toolUse, result, err)
-	
+
 	return result, err
 }
 
@@ -69,7 +69,7 @@ func (e *ContextAwareExecutor) postExecute(toolUse ToolUse, result *ToolResult, 
 				details["size"] = len(content)
 				details["lines"] = countLines(content)
 			}
-			
+
 			change := context.FileChange{
 				Path:    path,
 				Type:    context.ChangeTypeCreate,
@@ -79,11 +79,11 @@ func (e *ContextAwareExecutor) postExecute(toolUse ToolUse, result *ToolResult, 
 			e.contextManager.TrackChangeWithDetails(change)
 			e.contextManager.AddRecentFile(path)
 		}
-		
+
 	case "edit_file":
 		if path, ok := GetString(toolUse.Input, "path"); ok {
 			details := make(map[string]interface{})
-			
+
 			// Extract edit details
 			if edits, ok := toolUse.Input["edits"].([]interface{}); ok {
 				details["edit_count"] = len(edits)
@@ -91,7 +91,7 @@ func (e *ContextAwareExecutor) postExecute(toolUse ToolUse, result *ToolResult, 
 			} else if editType, ok := GetString(toolUse.Input, "edit_type"); ok {
 				details["edit_type"] = editType
 			}
-			
+
 			change := context.FileChange{
 				Path:    path,
 				Type:    context.ChangeTypeModify,
@@ -101,14 +101,14 @@ func (e *ContextAwareExecutor) postExecute(toolUse ToolUse, result *ToolResult, 
 			e.contextManager.TrackChangeWithDetails(change)
 			e.contextManager.AddRecentFile(path)
 		}
-		
+
 	case "remove":
 		if path, ok := GetString(toolUse.Input, "path"); ok {
 			details := make(map[string]interface{})
 			if recursive, ok := toolUse.Input["recursive"].(bool); ok {
 				details["recursive"] = recursive
 			}
-			
+
 			change := context.FileChange{
 				Path:    path,
 				Type:    context.ChangeTypeDelete,
@@ -117,13 +117,13 @@ func (e *ContextAwareExecutor) postExecute(toolUse ToolUse, result *ToolResult, 
 			}
 			e.contextManager.TrackChangeWithDetails(change)
 		}
-		
+
 	case "move":
 		if source, ok := GetString(toolUse.Input, "source"); ok {
 			if dest, ok := GetString(toolUse.Input, "destination"); ok {
 				details := make(map[string]interface{})
 				details["destination"] = dest
-				
+
 				change := context.FileChange{
 					Path:    dest,
 					OldPath: source,
@@ -135,14 +135,14 @@ func (e *ContextAwareExecutor) postExecute(toolUse ToolUse, result *ToolResult, 
 				e.contextManager.AddRecentFile(dest)
 			}
 		}
-		
+
 	case "make_dir":
 		if path, ok := GetString(toolUse.Input, "path"); ok {
 			details := make(map[string]interface{})
 			if parents, ok := toolUse.Input["parents"].(bool); ok {
 				details["create_parents"] = parents
 			}
-			
+
 			change := context.FileChange{
 				Path:    path,
 				Type:    context.ChangeTypeCreate,
@@ -151,19 +151,19 @@ func (e *ContextAwareExecutor) postExecute(toolUse ToolUse, result *ToolResult, 
 			}
 			e.contextManager.TrackChangeWithDetails(change)
 		}
-		
+
 	case "git_add", "git_commit", "git_push", "git_pull", "git_merge":
 		// Track git operations
 		details := make(map[string]interface{})
 		details["command"] = toolUse.Name
-		
+
 		// Extract relevant parameters
 		for key, value := range toolUse.Input {
 			if key == "files" || key == "message" || key == "branch" || key == "remote" {
 				details[key] = value
 			}
 		}
-		
+
 		// For git operations, track as a special change on the repository
 		change := context.FileChange{
 			Path:    ".git",
@@ -178,9 +178,9 @@ func (e *ContextAwareExecutor) postExecute(toolUse ToolUse, result *ToolResult, 
 // SuggestTools suggests tools based on the current context and task
 func (e *ContextAwareExecutor) SuggestTools(task string) []ToolSuggestion {
 	suggestions := make([]ToolSuggestion, 0)
-	
+
 	taskLower := strings.ToLower(task)
-	
+
 	// Basic pattern matching for tool suggestions
 	patterns := []struct {
 		keywords []string
@@ -228,7 +228,7 @@ func (e *ContextAwareExecutor) SuggestTools(task string) []ToolSuggestion {
 			reason:   "Task involves git operations",
 		},
 	}
-	
+
 	// Check each pattern
 	for _, pattern := range patterns {
 		for _, keyword := range pattern.keywords {
@@ -242,7 +242,7 @@ func (e *ContextAwareExecutor) SuggestTools(task string) []ToolSuggestion {
 			}
 		}
 	}
-	
+
 	// Sort by priority
 	for i := 0; i < len(suggestions)-1; i++ {
 		for j := i + 1; j < len(suggestions); j++ {
@@ -251,7 +251,7 @@ func (e *ContextAwareExecutor) SuggestTools(task string) []ToolSuggestion {
 			}
 		}
 	}
-	
+
 	return suggestions
 }
 
@@ -260,17 +260,17 @@ func (e *ContextAwareExecutor) EnhanceToolParams(toolName string, params map[str
 	if e.contextManager == nil || !e.contextManager.IsInitialized() {
 		return params
 	}
-	
+
 	enhanced := make(map[string]interface{})
 	for k, v := range params {
 		enhanced[k] = v
 	}
-	
+
 	ctx := e.contextManager.GetContext()
 	if ctx == nil {
 		return enhanced
 	}
-	
+
 	// Enhance parameters based on tool and context
 	switch toolName {
 	case "search":
@@ -278,7 +278,7 @@ func (e *ContextAwareExecutor) EnhanceToolParams(toolName string, params map[str
 		if _, hasPath := enhanced["path"]; !hasPath {
 			enhanced["path"] = ctx.RootPath
 		}
-		
+
 		// Add file pattern based on language
 		if _, hasPattern := enhanced["file_pattern"]; !hasPattern {
 			switch ctx.Language {
@@ -290,14 +290,14 @@ func (e *ContextAwareExecutor) EnhanceToolParams(toolName string, params map[str
 				enhanced["file_pattern"] = "*.py"
 			}
 		}
-		
+
 	case "bash":
 		// Add context-aware command suggestions
 		if cmd, ok := enhanced["command"].(string); ok {
 			enhanced["command"] = e.enhanceCommand(cmd, ctx)
 		}
 	}
-	
+
 	return enhanced
 }
 
@@ -309,7 +309,7 @@ func (e *ContextAwareExecutor) enhanceCommand(cmd string, ctx *context.ProjectCo
 		"${LANGUAGE}":     ctx.Language,
 		"${FRAMEWORK}":    ctx.Framework,
 	}
-	
+
 	// Language-specific replacements
 	switch ctx.Language {
 	case "go":
@@ -325,13 +325,13 @@ func (e *ContextAwareExecutor) enhanceCommand(cmd string, ctx *context.ProjectCo
 		replacements["${BUILD_CMD}"] = "python setup.py build"
 		replacements["${RUN_CMD}"] = "python main.py"
 	}
-	
+
 	// Apply replacements
 	result := cmd
 	for placeholder, value := range replacements {
 		result = strings.ReplaceAll(result, placeholder, value)
 	}
-	
+
 	return result
 }
 
@@ -340,14 +340,14 @@ func (e *ContextAwareExecutor) GetContextualHelp(toolName string) string {
 	if e.contextManager == nil || !e.contextManager.IsInitialized() {
 		return ""
 	}
-	
+
 	ctx := e.contextManager.GetContext()
 	if ctx == nil {
 		return ""
 	}
-	
+
 	var help strings.Builder
-	
+
 	switch toolName {
 	case "search":
 		help.WriteString(fmt.Sprintf("Search in %s project", ctx.Language))
@@ -355,7 +355,7 @@ func (e *ContextAwareExecutor) GetContextualHelp(toolName string) string {
 			help.WriteString(fmt.Sprintf(" (%s)", ctx.Framework))
 		}
 		help.WriteString("\nCommon patterns:\n")
-		
+
 		switch ctx.Language {
 		case "go":
 			help.WriteString("- Function definitions: `func\\s+\\w+`\n")
@@ -370,7 +370,7 @@ func (e *ContextAwareExecutor) GetContextualHelp(toolName string) string {
 			help.WriteString("- Class definitions: `class\\s+\\w+`\n")
 			help.WriteString("- Imports: `import\\s+\\w+`\n")
 		}
-		
+
 	case "bash":
 		help.WriteString("Available context variables:\n")
 		help.WriteString("- ${PROJECT_ROOT}: Project root directory\n")
@@ -378,7 +378,7 @@ func (e *ContextAwareExecutor) GetContextualHelp(toolName string) string {
 		help.WriteString("- ${TEST_CMD}: Language-specific test command\n")
 		help.WriteString("- ${BUILD_CMD}: Language-specific build command\n")
 	}
-	
+
 	return help.String()
 }
 
@@ -387,14 +387,14 @@ func (e *ContextAwareExecutor) ValidateToolUse(toolUse ToolUse) error {
 	if e.contextManager == nil || !e.contextManager.IsInitialized() {
 		return nil // No context, no validation
 	}
-	
+
 	// Validate file paths are within project
 	if path, ok := GetString(toolUse.Input, "path"); ok {
 		if !e.isPathInProject(path) {
 			return serr.New(fmt.Sprintf("path '%s' is outside project scope", path))
 		}
 	}
-	
+
 	// Additional tool-specific validations
 	switch toolUse.Name {
 	case "remove":
@@ -404,7 +404,7 @@ func (e *ContextAwareExecutor) ValidateToolUse(toolUse ToolUse) error {
 			}
 		}
 	}
-	
+
 	return nil
 }
 
@@ -414,12 +414,12 @@ func (e *ContextAwareExecutor) isPathInProject(path string) bool {
 	if ctx == nil {
 		return true // No context, allow all
 	}
-	
+
 	absPath, err := filepath.Abs(path)
 	if err != nil {
 		return false
 	}
-	
+
 	return strings.HasPrefix(absPath, ctx.RootPath)
 }
 
@@ -431,13 +431,13 @@ func (e *ContextAwareExecutor) isCriticalFile(path string) bool {
 		"requirements.txt", "Cargo.toml", "pom.xml", "build.gradle",
 		".git", ".gitignore", "README.md", "LICENSE",
 	}
-	
+
 	for _, critical := range criticalFiles {
 		if basename == critical {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -451,12 +451,12 @@ type ToolSuggestion struct {
 // calculatePriority calculates priority for a tool suggestion
 func calculatePriority(tool, task string) int {
 	priority := 50 // Base priority
-	
+
 	// Boost priority for exact tool mentions
 	if strings.Contains(strings.ToLower(task), tool) {
 		priority += 30
 	}
-	
+
 	// Tool-specific priority adjustments
 	switch tool {
 	case "read_file":
@@ -472,7 +472,7 @@ func calculatePriority(tool, task string) int {
 			priority += 20
 		}
 	}
-	
+
 	return priority
 }
 
@@ -494,7 +494,7 @@ func countLines(s string) int {
 func extractEditOperations(edits []interface{}) []string {
 	operations := make([]string, 0)
 	operationMap := make(map[string]bool)
-	
+
 	for _, edit := range edits {
 		if editMap, ok := edit.(map[string]interface{}); ok {
 			if editType, ok := GetString(editMap, "edit_type"); ok {
@@ -505,6 +505,6 @@ func extractEditOperations(edits []interface{}) []string {
 			}
 		}
 	}
-	
+
 	return operations
 }

@@ -228,7 +228,22 @@ func suggestToolsHandler(c rweb.Context) error {
 	
 	// Create context-aware executor
 	cm := GetContextManager()
-	toolRegistry := tools.DefaultRegistry()
+	
+	// Get working directory
+	workDir, err := os.Getwd()
+	if err != nil {
+		logger.LogErr(err, "failed to get working directory for tools")
+		workDir = "."
+	}
+	
+	// Create tool registry with custom tools support
+	toolRegistry, err := tools.DefaultRegistryWithPlugins(workDir)
+	if err != nil {
+		logger.LogErr(err, "failed to create tool registry with plugins")
+		// Fall back to default registry
+		toolRegistry = tools.DefaultRegistry()
+	}
+	
 	contextExecutor := tools.NewContextAwareExecutor(toolRegistry, cm)
 	
 	// Get tool suggestions

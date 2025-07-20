@@ -274,9 +274,8 @@ func sendMessageHandler(c rweb.Context) error {
 		return c.WriteError(serr.Wrap(err, "failed to get messages"), 500)
 	}
 
-	// Create Anthropic client and tool registry
+	// Create Anthropic client
 	client := providers.NewAnthropicClient()
-	toolRegistry := tools.DefaultRegistry()
 	
 	// Initialize context if not already done
 	if !client.GetContextManager().IsInitialized() {
@@ -288,6 +287,19 @@ func sendMessageHandler(c rweb.Context) error {
 		if err := client.InitializeContext(workDir); err != nil {
 			logger.LogErr(err, "failed to initialize context")
 		}
+	}
+	
+	// Create tool registry with custom tools support
+	workDir, err := os.Getwd()
+	if err != nil {
+		logger.LogErr(err, "failed to get working directory for tools")
+		workDir = "."
+	}
+	toolRegistry, err := tools.DefaultRegistryWithPlugins(workDir)
+	if err != nil {
+		logger.LogErr(err, "failed to create tool registry with plugins")
+		// Fall back to default registry
+		toolRegistry = tools.DefaultRegistry()
 	}
 	
 	// Create context-aware tool executor

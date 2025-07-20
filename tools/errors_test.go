@@ -15,20 +15,20 @@ func TestErrorTypes(t *testing.T) {
 	t.Run("RetryableError", func(t *testing.T) {
 		baseErr := errors.New("base error")
 		err := NewRetryableError(baseErr, "network issue")
-		
+
 		if !IsRetryableError(err) {
 			t.Error("Expected RetryableError to be retryable")
 		}
-		
+
 		var retryable *RetryableError
 		if !errors.As(err, &retryable) {
 			t.Error("Expected error to be RetryableError type")
 		}
-		
+
 		if !errors.Is(err, baseErr) {
 			t.Error("Expected error to wrap base error")
 		}
-		
+
 		expectedMsg := "retryable error (network issue): base error"
 		if err.Error() != expectedMsg {
 			t.Errorf("Expected error message %q, got %q", expectedMsg, err.Error())
@@ -38,16 +38,16 @@ func TestErrorTypes(t *testing.T) {
 	t.Run("PermanentError", func(t *testing.T) {
 		baseErr := errors.New("base error")
 		err := NewPermanentError(baseErr, "invalid input")
-		
+
 		if IsRetryableError(err) {
 			t.Error("Expected PermanentError to not be retryable")
 		}
-		
+
 		var permanent *PermanentError
 		if !errors.As(err, &permanent) {
 			t.Error("Expected error to be PermanentError type")
 		}
-		
+
 		expectedMsg := "permanent error (invalid input): base error"
 		if err.Error() != expectedMsg {
 			t.Errorf("Expected error message %q, got %q", expectedMsg, err.Error())
@@ -57,20 +57,20 @@ func TestErrorTypes(t *testing.T) {
 	t.Run("RateLimitError", func(t *testing.T) {
 		baseErr := errors.New("too many requests")
 		err := NewRateLimitError(baseErr, 30)
-		
+
 		if !IsRetryableError(err) {
 			t.Error("Expected RateLimitError to be retryable")
 		}
-		
+
 		var rateLimit *RateLimitError
 		if !errors.As(err, &rateLimit) {
 			t.Error("Expected error to be RateLimitError type")
 		}
-		
+
 		if rateLimit.RetryAfter != 30 {
 			t.Errorf("Expected RetryAfter to be 30, got %d", rateLimit.RetryAfter)
 		}
-		
+
 		expectedMsg := "rate limit exceeded (retry after 30s): too many requests"
 		if err.Error() != expectedMsg {
 			t.Errorf("Expected error message %q, got %q", expectedMsg, err.Error())
@@ -285,7 +285,7 @@ func TestClassifyError(t *testing.T) {
 	t.Run("unclassified retryable", func(t *testing.T) {
 		err := errors.New("connection timeout")
 		classified := ClassifyError(err)
-		
+
 		var retryable *RetryableError
 		if !errors.As(classified, &retryable) {
 			t.Error("Expected timeout error to be classified as retryable")
@@ -295,7 +295,7 @@ func TestClassifyError(t *testing.T) {
 	t.Run("unclassified permanent", func(t *testing.T) {
 		err := errors.New("permission denied")
 		classified := ClassifyError(err)
-		
+
 		var permanent *PermanentError
 		if !errors.As(classified, &permanent) {
 			t.Error("Expected permission error to be classified as permanent")
@@ -309,16 +309,16 @@ func TestWrappers(t *testing.T) {
 		// Retryable network error
 		timeoutErr := &net.OpError{Op: "dial", Err: &timeoutError{}}
 		wrapped := WrapNetworkError(timeoutErr)
-		
+
 		var retryable *RetryableError
 		if !errors.As(wrapped, &retryable) {
 			t.Error("Expected timeout to be wrapped as retryable")
 		}
-		
+
 		// Non-retryable network error
 		permErr := errors.New("permission denied")
 		wrapped = WrapNetworkError(permErr)
-		
+
 		var permanent *PermanentError
 		if !errors.As(wrapped, &permanent) {
 			t.Error("Expected permission error to be wrapped as permanent")
@@ -329,16 +329,16 @@ func TestWrappers(t *testing.T) {
 		// Retryable FS error
 		busyErr := &os.PathError{Err: syscall.EBUSY}
 		wrapped := WrapFileSystemError(busyErr)
-		
+
 		var retryable *RetryableError
 		if !errors.As(wrapped, &retryable) {
 			t.Error("Expected EBUSY to be wrapped as retryable")
 		}
-		
+
 		// Non-retryable FS error
 		notFoundErr := &os.PathError{Err: syscall.ENOENT}
 		wrapped = WrapFileSystemError(notFoundErr)
-		
+
 		var permanent *PermanentError
 		if !errors.As(wrapped, &permanent) {
 			t.Error("Expected ENOENT to be wrapped as permanent")

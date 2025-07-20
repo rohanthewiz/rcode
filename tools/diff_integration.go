@@ -27,7 +27,7 @@ func NewDiffIntegration() (*DiffIntegration, error) {
 func (di *DiffIntegration) SetupDiffHooks(registry *EnhancedRegistry) {
 	// Add before-execute hook to capture snapshots
 	registry.AddBeforeExecuteHook(di.beforeFileModification)
-	
+
 	// Add after-execute hook to generate diffs
 	registry.AddAfterExecuteHook(di.afterFileModification)
 }
