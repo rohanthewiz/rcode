@@ -344,6 +344,9 @@ func sendMessageHandler(c rweb.Context) error {
 
 				logger.Info("Executing tool", "name", toolUse.Name)
 
+				// Add session ID to tool input for diff tracking
+				toolUse.Input["_sessionId"] = sessionID
+
 				// Log tool usage (measure execution time)
 				startTime := time.Now()
 

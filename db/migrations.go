@@ -272,7 +272,7 @@ var migrations = []Migration{
 				file_path TEXT NOT NULL,
 				accessed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 				access_type TEXT NOT NULL DEFAULT 'open', -- 'open', 'edit', 'create', 'delete'
-				FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
 			);
 			CREATE INDEX idx_file_access_session ON file_access(session_id);
 			CREATE INDEX idx_file_access_path ON file_access(file_path);
@@ -286,9 +286,75 @@ var migrations = []Migration{
 				last_viewed_at TIMESTAMP,
 				is_active BOOLEAN DEFAULT TRUE,
 				PRIMARY KEY (session_id, file_path),
-				FOREIGN KEY (session_id) REFERENCES sessions(id) ON DELETE CASCADE
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
 			);
 			CREATE INDEX idx_session_files_active ON session_files(session_id, is_active);
+		`,
+	},
+	{
+		Version:     6,
+		Description: "Add diff visualization tables",
+		SQL: `
+			-- Create diff_snapshots table for storing file snapshots
+			-- This is separate from the planner's file_snapshots to support diff-specific features
+			CREATE SEQUENCE IF NOT EXISTS diff_snapshots_id_seq;
+			CREATE TABLE IF NOT EXISTS diff_snapshots (
+				id INTEGER PRIMARY KEY DEFAULT nextval('diff_snapshots_id_seq'),
+				session_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				content TEXT NOT NULL,
+				hash TEXT NOT NULL,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				tool_execution_id TEXT, -- Links to specific tool execution
+				tool_name TEXT, -- Which tool created this snapshot
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
+			);
+			CREATE INDEX idx_diff_snapshots_session ON diff_snapshots(session_id);
+			CREATE INDEX idx_diff_snapshots_path ON diff_snapshots(file_path);
+			CREATE INDEX idx_diff_snapshots_hash ON diff_snapshots(hash);
+
+			-- Create diffs table for storing generated diffs
+			CREATE SEQUENCE IF NOT EXISTS diffs_id_seq;
+			CREATE TABLE IF NOT EXISTS diffs (
+				id INTEGER PRIMARY KEY DEFAULT nextval('diffs_id_seq'),
+				session_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				before_snapshot_id INTEGER,
+				after_snapshot_id INTEGER,
+				diff_data JSON NOT NULL, -- Stores hunks, stats, and metadata
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				tool_execution_id TEXT, -- Links to tool that made the change
+				is_applied BOOLEAN DEFAULT TRUE, -- Whether the diff is currently applied
+				FOREIGN KEY (session_id) REFERENCES sessions(id),
+				FOREIGN KEY (before_snapshot_id) REFERENCES diff_snapshots(id),
+				FOREIGN KEY (after_snapshot_id) REFERENCES diff_snapshots(id)
+			);
+			CREATE INDEX idx_diffs_session ON diffs(session_id);
+			CREATE INDEX idx_diffs_path ON diffs(file_path);
+			CREATE INDEX idx_diffs_created ON diffs(created_at);
+
+			-- Create diff_views table to track which diffs have been viewed
+			CREATE TABLE IF NOT EXISTS diff_views (
+				session_id TEXT NOT NULL,
+				diff_id INTEGER NOT NULL,
+				viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				view_mode TEXT DEFAULT 'side-by-side', -- 'side-by-side', 'inline', 'unified'
+				PRIMARY KEY (session_id, diff_id),
+				FOREIGN KEY (session_id) REFERENCES sessions(id),
+				FOREIGN KEY (diff_id) REFERENCES diffs(id)
+			);
+
+			-- Create diff_preferences table for user preferences
+			CREATE TABLE IF NOT EXISTS diff_preferences (
+				user_id TEXT PRIMARY KEY, -- For future multi-user support
+				default_mode TEXT DEFAULT 'side-by-side',
+				context_lines INTEGER DEFAULT 3,
+				word_wrap BOOLEAN DEFAULT FALSE,
+				syntax_highlight BOOLEAN DEFAULT TRUE,
+				show_line_numbers BOOLEAN DEFAULT TRUE,
+				theme TEXT DEFAULT 'dark',
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
 		`,
 	},
 }

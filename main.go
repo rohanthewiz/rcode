@@ -66,6 +66,14 @@ func main() {
 	// Initialize file change notifier for SSE broadcasts
 	web.InitFileChangeNotifier()
 
+	// Initialize diff service for diff visualization
+	web.InitDiffService()
+	logger.Info("Diff service initialized successfully")
+
+	// Initialize diff event broadcaster
+	web.InitDiffBroadcaster()
+	logger.Info("Diff broadcaster initialized successfully")
+
 	go func() {
 		serverOpts := rweb.ServerOptions{
 			Address: ":8000",

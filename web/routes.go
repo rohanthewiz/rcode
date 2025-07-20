@@ -76,6 +76,17 @@ func SetupRoutes(s *rweb.Server) {
 	s.Post("/api/session/:id/files/close", closeFileInSessionHandler)
 	s.Get("/api/session/:id/files/recent", getRecentFilesHandler)
 	s.Get("/api/session/:id/files/open", getSessionOpenFilesHandler)
+
+	// Diff visualization endpoints
+	s.Get("/api/diff/:sessionId/:path", getDiffHandler)
+	s.Post("/api/diff/snapshot", createSnapshotHandler)
+	s.Post("/api/diff/generate", generateDiffHandler)
+	s.Get("/api/session/:id/diffs", listSessionDiffsHandler)
+	s.Get("/api/diff/:id", getDiffByIdHandler)
+	s.Post("/api/diff/:id/viewed", markDiffViewedHandler)
+	s.Get("/api/diff/preferences", getDiffPreferencesHandler)
+	s.Post("/api/diff/preferences", saveDiffPreferencesHandler)
+	s.Post("/api/diff/apply", applyDiffHandler)
 }
 
 // rootHandler serves the main web UI

@@ -193,3 +193,18 @@ func BroadcastFileTreeUpdate(path string) {
 		"timestamp": fmt.Sprintf("%d", time.Now().Unix()),
 	})
 }
+
+// BroadcastDiffAvailable broadcasts when a new diff is available
+func BroadcastDiffAvailable(sessionID string, diffID int64, filePath string, stats interface{}, toolName string) {
+	event := SSEEvent{
+		Type:      "diff_available",
+		SessionID: sessionID,
+		Data: map[string]interface{}{
+			"diffId":   diffID,
+			"filePath": filePath,
+			"stats":    stats,
+			"toolName": toolName,
+		},
+	}
+	sseHub.Broadcast(event)
+}

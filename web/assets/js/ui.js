@@ -232,6 +232,24 @@ function handleServerEvent(event) {
     if (window.FileExplorer && window.FileExplorer.handleFileEvent) {
       window.FileExplorer.handleFileEvent(event);
     }
+  } else if (event.type === 'diff_available' && event.sessionId === currentSessionId) {
+    // Handle diff available event
+    console.log('Diff available:', event.data);
+    if (window.diffViewer && event.data && event.data.diffId) {
+      // Show notification that diff is available
+      const notification = `📝 Changes detected in ${event.data.path}`;
+      addSystemMessageToUI(notification, 'info');
+      
+      // Store the latest diff ID for quick access
+      if (event.data.path) {
+        window.diffViewer.setLatestDiff(event.data.path, event.data.diffId);
+        
+        // Mark the file as modified in the file explorer
+        if (window.FileExplorer && window.FileExplorer.markFileModified) {
+          window.FileExplorer.markFileModified(event.data.path);
+        }
+      }
+    }
   }
 }
 
@@ -349,6 +367,24 @@ function addToolUsageSummaryToUI(toolData) {
 // Helper function to quickly add a message
 function addMessage(role, content) {
   addMessageToUI({ role: role, content: content });
+}
+
+// Add system message to UI
+function addSystemMessageToUI(message, type = 'info') {
+  const messagesContainer = document.getElementById('messages');
+  
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `system-message ${type}`;
+  
+  const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : 'ℹ️';
+  
+  messageDiv.innerHTML = `
+    <span class="system-message-icon">${icon}</span>
+    <span class="system-message-text">${message}</span>
+  `;
+  
+  messagesContainer.appendChild(messageDiv);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
 // Add message to UI

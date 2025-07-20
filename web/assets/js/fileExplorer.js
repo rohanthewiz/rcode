@@ -6,6 +6,7 @@ const FileExplorer = (function() {
     let openFiles = new Map(); // path -> {name, content, language}
     let activeFile = null;
     let fileViewerEditor = null;
+    let modifiedFiles = new Set(); // Track files with available diffs
 
     // Initialize the file explorer
     async function init() {
@@ -28,7 +29,11 @@ const FileExplorer = (function() {
         if (treeContainer) {
             treeContainer.addEventListener('click', handleTreeClick);
             treeContainer.addEventListener('dblclick', handleTreeDoubleClick);
+            treeContainer.addEventListener('contextmenu', handleTreeContextMenu);
         }
+
+        // Create context menu
+        createContextMenu();
 
         // Load recent files if we have a session
         if (window.currentSessionId) {
@@ -119,13 +124,17 @@ const FileExplorer = (function() {
                 iconClass += `file-icon file-icon-${node.icon || 'file'}`;
             }
 
+            // Check if file has been modified (has diff available)
+            const isModified = !node.isDir && modifiedFiles.has(node.path);
+            
             let html = `
-                <div class="tree-node ${isSelected ? 'selected' : ''}" 
+                <div class="tree-node ${isSelected ? 'selected' : ''} ${isModified ? 'modified' : ''}" 
                      data-path="${node.path}" 
                      data-is-dir="${node.isDir}"
                      style="padding-left: ${indent}px">
                     <span class="${iconClass}" data-action="toggle"></span>
                     <span class="node-name">${node.name}</span>
+                    ${isModified ? '<span class="diff-indicator" title="File has been modified">●</span>' : ''}
                     ${!node.isDir && node.size ? `<span class="node-size">${formatFileSize(node.size)}</span>` : ''}
                 </div>
             `;
@@ -572,6 +581,193 @@ const FileExplorer = (function() {
         }
     }
 
+    // Mark a file as modified (has diff available)
+    function markFileModified(path) {
+        modifiedFiles.add(path);
+        renderFileTree();
+    }
+    
+    // Unmark a file as modified
+    function unmarkFileModified(path) {
+        modifiedFiles.delete(path);
+        renderFileTree();
+    }
+    
+    // Check if a file is modified
+    function isFileModified(path) {
+        return modifiedFiles.has(path);
+    }
+
+    // Create context menu
+    function createContextMenu() {
+        // Remove existing context menu if any
+        const existing = document.getElementById('file-context-menu');
+        if (existing) {
+            existing.remove();
+        }
+
+        // Create context menu element
+        const menu = document.createElement('div');
+        menu.id = 'file-context-menu';
+        menu.className = 'context-menu';
+        document.body.appendChild(menu);
+
+        // Hide menu on click outside
+        document.addEventListener('click', (e) => {
+            if (!menu.contains(e.target)) {
+                menu.classList.remove('active');
+            }
+        });
+
+        // Hide menu on escape
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape') {
+                menu.classList.remove('active');
+            }
+        });
+    }
+
+    // Handle context menu (right-click) on tree nodes
+    function handleTreeContextMenu(event) {
+        event.preventDefault();
+        
+        const node = event.target.closest('.tree-node');
+        if (!node) return;
+
+        const path = node.dataset.path;
+        const isDir = node.dataset.isDir === 'true';
+        const isModified = !isDir && modifiedFiles.has(path);
+
+        // Select the node
+        selectNode(path);
+
+        // Build context menu items
+        const menuItems = [];
+
+        if (!isDir) {
+            menuItems.push({
+                label: 'Open',
+                icon: '📄',
+                action: () => openFile(path)
+            });
+
+            if (isModified) {
+                menuItems.push({
+                    label: 'View Changes',
+                    icon: '📝',
+                    action: () => viewChanges(path)
+                });
+            }
+
+            menuItems.push({ separator: true });
+
+            menuItems.push({
+                label: 'Copy Path',
+                icon: '📋',
+                action: () => copyPath(path)
+            });
+        } else {
+            const isOpen = openFolders.has(path);
+            menuItems.push({
+                label: isOpen ? 'Collapse' : 'Expand',
+                icon: isOpen ? '📂' : '📁',
+                action: () => toggleFolder(path)
+            });
+
+            menuItems.push({ separator: true });
+
+            menuItems.push({
+                label: 'Refresh',
+                icon: '🔄',
+                action: () => refreshPath(path)
+            });
+
+            menuItems.push({
+                label: 'Copy Path',
+                icon: '📋',
+                action: () => copyPath(path)
+            });
+        }
+
+        // Show context menu
+        showContextMenu(event.clientX, event.clientY, menuItems);
+    }
+
+    // Show context menu at position
+    function showContextMenu(x, y, items) {
+        const menu = document.getElementById('file-context-menu');
+        if (!menu) return;
+
+        // Build menu HTML
+        const menuHtml = items.map(item => {
+            if (item.separator) {
+                return '<div class="context-menu-item separator"></div>';
+            }
+            return `
+                <div class="context-menu-item" data-action="${item.label}">
+                    <span class="context-menu-icon">${item.icon}</span>
+                    <span>${item.label}</span>
+                </div>
+            `;
+        }).join('');
+
+        menu.innerHTML = menuHtml;
+
+        // Add click handlers
+        menu.querySelectorAll('.context-menu-item:not(.separator)').forEach((menuItem, index) => {
+            menuItem.addEventListener('click', () => {
+                const itemData = items.filter(i => !i.separator)[index];
+                if (itemData && itemData.action) {
+                    itemData.action();
+                }
+                menu.classList.remove('active');
+            });
+        });
+
+        // Position menu
+        const menuRect = menu.getBoundingClientRect();
+        const windowWidth = window.innerWidth;
+        const windowHeight = window.innerHeight;
+
+        // Adjust position if menu would go off screen
+        if (x + menuRect.width > windowWidth) {
+            x = windowWidth - menuRect.width - 10;
+        }
+        if (y + menuRect.height > windowHeight) {
+            y = windowHeight - menuRect.height - 10;
+        }
+
+        menu.style.left = `${x}px`;
+        menu.style.top = `${y}px`;
+        menu.classList.add('active');
+    }
+
+    // View changes for a file
+    function viewChanges(path) {
+        if (window.diffViewer) {
+            // Get the latest diff ID for this file
+            const latestDiffId = window.diffViewer.getLatestDiff(path);
+            if (latestDiffId) {
+                window.diffViewer.showDiff(latestDiffId);
+            } else {
+                console.log('No diff available for', path);
+                showError('No changes available for this file');
+            }
+        }
+    }
+
+    // Copy path to clipboard
+    async function copyPath(path) {
+        try {
+            await navigator.clipboard.writeText(path);
+            console.log('Path copied to clipboard:', path);
+            // Could show a toast notification here
+        } catch (error) {
+            console.error('Failed to copy path:', error);
+            showError('Failed to copy path to clipboard');
+        }
+    }
+
     // Public API
     return {
         init,
@@ -581,7 +777,10 @@ const FileExplorer = (function() {
         getActiveFile: () => activeFile,
         refreshTree: () => renderFileTree(),
         handleFileEvent,
-        refreshPath
+        refreshPath,
+        markFileModified,
+        unmarkFileModified,
+        isFileModified
     };
 })();
 

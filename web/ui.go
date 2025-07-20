@@ -18,11 +18,17 @@ var loginJS string
 //go:embed assets/js/fileExplorer.js
 var fileExplorerJS string
 
+//go:embed assets/js/diffViewer.js
+var diffViewerJS string
+
 // //go:embed assets/js/monacoLoader.js
 // var monacoLoaderJS string
 
 //go:embed assets/css/ui.css
 var uiCSS string
+
+//go:embed assets/css/diffViewer.css
+var diffViewerCSS string
 
 // UIHandler serves the main chat interface using element package
 func UIHandler(c rweb.Context) error {
@@ -211,6 +217,53 @@ func generateMainUI(isAuthenticated bool) string {
 					b.Div("id", "plan-details-content", "class", "modal-body").R(),
 				),
 			),
+			// Diff Viewer Modal
+			b.Div("id", "diff-modal", "class", "modal").R(
+				b.Div("class", "modal-content diff-viewer-content").R(
+					b.Div("class", "diff-header").R(
+						b.H3().R(
+							b.T("📄 "),
+							b.Span("id", "diff-filename").T("filename"),
+							b.T(" - Changes"),
+						),
+						b.Button("class", "btn-close").T("×"),
+					),
+					b.Div("class", "diff-toolbar").R(
+						b.Div("class", "diff-mode-selector").R(
+							b.Button("class", "diff-mode active", "data-mode", "monaco").T("Monaco"),
+							b.Button("class", "diff-mode", "data-mode", "side-by-side").T("Side-by-Side"),
+							b.Button("class", "diff-mode", "data-mode", "inline").T("Inline"),
+							b.Button("class", "diff-mode", "data-mode", "unified").T("Unified"),
+						),
+						b.Div("class", "diff-options").R(
+							b.Label().R(
+								b.Input("type", "checkbox", "id", "word-wrap"),
+								b.T(" Wrap"),
+							),
+							b.Select("id", "diff-theme").R(
+								b.Option("value", "dark").T("Dark"),
+								b.Option("value", "light").T("Light"),
+							),
+						),
+						b.Div("class", "diff-stats").R(
+							b.Span("class", "additions").R(
+								b.T("+"),
+								b.Span("id", "additions-count").T("0"),
+							),
+							b.Span("class", "deletions").R(
+								b.T("-"),
+								b.Span("id", "deletions-count").T("0"),
+							),
+						),
+					),
+					b.Div("id", "diff-container", "class", "diff-container").R(),
+					b.Div("class", "diff-actions").R(
+						b.Button("class", "btn-primary", "onclick", "window.diffViewer && window.diffViewer.applyDiff()").T("Apply Changes"),
+						b.Button("class", "btn-secondary", "onclick", "window.diffViewer && window.diffViewer.revertDiff()").T("Revert"),
+						b.Button("class", "btn-secondary", "onclick", "window.diffViewer && window.diffViewer.copyDiff()").T("Copy Diff"),
+					),
+				),
+			),
 			// Monaco Editor Scripts
 			b.Script("src", "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js").R(),
 			// b.Script().T(monacoLoaderJS),
@@ -223,7 +276,7 @@ func generateMainUI(isAuthenticated bool) string {
 }
 
 func generateCSS() string {
-	return uiCSS
+	return uiCSS + "\n\n" + diffViewerCSS
 }
 
 func generateJavaScript(isAuthenticated bool) string {
@@ -237,14 +290,18 @@ func generateJavaScript(isAuthenticated bool) string {
 		`
 	}
 
-	// Include file explorer for authenticated users
-	return fileExplorerJS + "\n\n" + uiJS + `
-		// Initialize file explorer after UI is ready
+	// Include file explorer and diff viewer for authenticated users
+	return fileExplorerJS + "\n\n" + diffViewerJS + "\n\n" + uiJS + `
+		// Initialize file explorer and diff viewer after UI is ready
 		document.addEventListener('DOMContentLoaded', function() {
 			// Initialize file explorer after a short delay to ensure Monaco is loaded
 			setTimeout(() => {
 				if (window.FileExplorer) {
 					window.FileExplorer.init();
+				}
+				// Initialize diff viewer
+				if (window.DiffViewer) {
+					window.diffViewer = new window.DiffViewer();
 				}
 			}, 500);
 		});

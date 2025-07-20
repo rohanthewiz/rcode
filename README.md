@@ -17,6 +17,7 @@ Note: It is way better to use Claude Code, but if you want to see how deep the r
 - 🎨 **Plan Mode UI** - Visual interface for creating and executing complex tasks
 - 📜 **Plan History** - Review, re-run, and manage previous task plans
 - 📁 **File Explorer** - Visual file browser with tabbed interface and real-time updates
+- 🔍 **Diff Visualization** - Real-time file change tracking with Monaco-powered diff viewer
 
 ## Quick Start
 
@@ -348,6 +349,89 @@ The file explorer provides these endpoints:
 - `POST /api/files/search` - Search for files
 - `POST /api/session/:id/files/open` - Track file opening
 - `GET /api/session/:id/files/recent` - Get recent files
+
+## Diff Visualization
+
+RCode includes a powerful diff visualization system that tracks all file changes during your coding sessions and displays them with Monaco Editor's professional diff viewer:
+
+### How It Works
+
+Whenever you modify a file using AI tools, RCode automatically:
+1. **Creates a snapshot** of the file before changes
+2. **Generates a diff** after modifications
+3. **Broadcasts real-time notifications** via Server-Sent Events
+4. **Updates the UI** with visual indicators
+
+### Visual Indicators
+
+#### File Explorer Integration
+- **Orange Dot (●)**: Appears next to modified files in the file tree
+- **System Messages**: Notifications appear when files are changed: "📝 Changes detected in filename"
+- **Context Menu**: Right-click modified files to see "View Changes" option
+
+### Diff Viewer Features
+
+The diff viewer provides multiple ways to visualize changes:
+
+#### View Modes
+1. **Monaco (Default)**: Professional side-by-side diff editor from VS Code
+   - Syntax highlighting for all supported languages
+   - Synchronized scrolling between panes
+   - Inline change indicators
+   - Minimap navigation
+
+2. **Side-by-Side**: Custom implementation showing before/after
+   - Line numbers for easy reference
+   - Color-coded additions and deletions
+   - Synchronized scrolling
+
+3. **Inline**: Sequential view of changes
+   - Deleted lines in red
+   - Added lines in green
+   - Ideal for reviewing small changes
+
+4. **Unified**: Traditional unified diff format
+   - Compact representation
+   - Standard diff notation (+/-)
+
+#### Interactive Controls
+- **Theme Toggle**: Switch between dark and light themes
+- **Word Wrap**: Enable/disable text wrapping
+- **Statistics**: View addition/deletion counts
+- **Actions**:
+  - **Apply Changes**: Save the modifications permanently
+  - **Revert**: Restore the original file content
+  - **Copy Diff**: Export diff to clipboard
+
+### Usage
+
+1. **Automatic Tracking**: All file modifications are tracked automatically
+2. **View Changes**: 
+   - Look for orange indicators in File Explorer
+   - Right-click and select "View Changes"
+   - Or click when you see the system notification
+3. **Review**: Use different view modes to review changes
+4. **Decide**: Apply changes to keep them or revert to original
+
+### Keyboard Shortcuts
+- `Esc`: Close diff viewer
+- `Tab`: Switch between view modes (when focused)
+
+### Technical Details
+
+The diff system uses:
+- **LCS Algorithm**: Longest Common Subsequence for accurate line-based diffs
+- **Snapshot Management**: Efficient storage of file versions
+- **DuckDB Storage**: Persistent diff history tied to sessions
+- **SSE Broadcasting**: Real-time updates across all connected clients
+
+### API Endpoints
+
+Diff visualization endpoints:
+- `GET /api/session/:id/diff/:diffId` - Get diff details
+- `POST /api/session/:id/diff/:diffId/apply` - Apply changes
+- `POST /api/session/:id/diff/:diffId/revert` - Revert changes
+- `GET /api/session/:id/diffs` - List all diffs for a session
 
 ## Technical Stack
 

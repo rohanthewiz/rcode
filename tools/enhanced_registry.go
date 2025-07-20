@@ -366,6 +366,16 @@ func DefaultEnhancedRegistry() *EnhancedRegistry {
 		}
 	})
 
+	// Setup diff integration for file modification tracking
+	diffIntegration, err := NewDiffIntegration()
+	if err != nil {
+		logger.LogErr(err, "failed to initialize diff integration")
+		// Continue without diff integration - it's not critical
+	} else {
+		diffIntegration.SetupDiffHooks(registry)
+		logger.Debug("Diff integration hooks registered")
+	}
+
 	// Configure retry policies for tools that benefit from retries
 	
 	// Network-based tools get more aggressive retry
