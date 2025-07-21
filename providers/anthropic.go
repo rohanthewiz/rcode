@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -311,39 +312,78 @@ func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent fu
 		}
 	}
 
-	// Read SSE stream
-	reader := io.Reader(resp.Body)
-	buf := make([]byte, 4096)
+	// Read SSE stream with proper buffering
+	scanner := bufio.NewScanner(resp.Body)
+	var currentEvent strings.Builder
 
-	for {
-		n, err := reader.Read(buf)
-		if err == io.EOF {
-			break
-		}
-		if err != nil {
-			return serr.Wrap(err, "failed to read stream")
-		}
-
-		// Parse SSE events
-		lines := strings.Split(string(buf[:n]), "\n")
-		for _, line := range lines {
-			if strings.HasPrefix(line, "data: ") {
-				data := strings.TrimPrefix(line, "data: ")
-				if data == "[DONE]" {
-					return nil
+	for scanner.Scan() {
+		line := scanner.Text()
+		
+		// Handle event data
+		if strings.HasPrefix(line, "data: ") {
+			data := strings.TrimPrefix(line, "data: ")
+			if data == "[DONE]" {
+				return nil
+			}
+			currentEvent.WriteString(data)
+		} else if line == "" && currentEvent.Len() > 0 {
+			// Empty line indicates end of event
+			eventData := currentEvent.String()
+			currentEvent.Reset()
+			
+			// First try to get just the type
+			var typeCheck struct {
+				Type string `json:"type"`
+			}
+			if err := json.Unmarshal([]byte(eventData), &typeCheck); err != nil {
+				logger.LogErr(err, "failed to unmarshal SSE event type: " + eventData)
+				continue
+			}
+			
+			// For content_block_start, the structure might be different
+			if typeCheck.Type == "content_block_start" {
+				// Try parsing as a content block start event with content_block at top level
+				var blockStart struct {
+					Type         string `json:"type"`
+					Index        int    `json:"index"`
+					ContentBlock struct {
+						Type string `json:"type"`
+						ID   string `json:"id"`
+						Name string `json:"name,omitempty"`
+					} `json:"content_block"`
 				}
-
-				var event StreamEvent
-				if err := json.Unmarshal([]byte(data), &event); err != nil {
-					logger.LogErr(err, "failed to parse event")
+				if err := json.Unmarshal([]byte(eventData), &blockStart); err == nil && blockStart.ContentBlock.Type != "" {
+					// Convert to StreamEvent format
+					event := StreamEvent{
+						Type:  blockStart.Type,
+						Index: blockStart.Index,
+					}
+					// Marshal the content block as the message
+					if blockMsg, err := json.Marshal(blockStart.ContentBlock); err == nil {
+						event.Message = blockMsg
+					}
+					if err := onEvent(event); err != nil {
+						return serr.Wrap(err, "error in event handler")
+					}
 					continue
 				}
+			}
+			
+			// Parse as regular StreamEvent
+			var event StreamEvent
+			if err := json.Unmarshal([]byte(eventData), &event); err != nil {
+				logger.LogErr(err, "failed to parse event: " + eventData)
+				continue
+			}
 
-				if err := onEvent(event); err != nil {
-					return serr.Wrap(err, "error in event handler")
-				}
+			if err := onEvent(event); err != nil {
+				return serr.Wrap(err, "error in event handler")
 			}
 		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return serr.Wrap(err, "failed to read stream")
 	}
 
 	return nil

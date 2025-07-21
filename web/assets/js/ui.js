@@ -210,10 +210,41 @@ function showConnectionError(message) {
 // Handle server events
 function handleServerEvent(event) {
   console.log('Received SSE event:', event);
+  console.log('Event sessionId:', event.sessionId, 'Current sessionId:', currentSessionId, 'Match:', event.sessionId === currentSessionId);
+  console.log('Global currentSessionId:', window.currentSessionId);
 
-  if (event.type === 'message' && event.sessionId === currentSessionId) {
+  if (event.type === 'message_start' && event.sessionId === currentSessionId) {
+    console.log('Message streaming started');
+    // Don't remove thinking here - wait for content_start
+  } else if (event.type === 'content_start' && event.sessionId === currentSessionId) {
+    console.log('Content started (text or tool) - removing thinking indicators');
+    // Remove any thinking indicators when ANY content starts
+    const thinkingIndicators = document.querySelectorAll('.message.thinking');
+    console.log('Found thinking indicators:', thinkingIndicators.length);
+    thinkingIndicators.forEach(indicator => {
+      console.log('Removing thinking indicator:', indicator.id);
+      indicator.remove();
+    });
+  } else if (event.type === 'tool_use_start' && event.sessionId === currentSessionId) {
+    console.log('Tool use started');
+    // Remove any thinking indicators when tool use begins
+    const thinkingIndicators = document.querySelectorAll('.message.thinking');
+    thinkingIndicators.forEach(indicator => indicator.remove());
+  } else if (event.type === 'message_delta' && event.sessionId === currentSessionId) {
+    console.log('Message delta received:', event.data.delta);
+    // Create streaming message container if it doesn't exist
+    if (!currentStreamingMessageDiv) {
+      createStreamingMessage();
+    }
+    // Append delta to streaming message
+    appendToStreamingMessage(event.data.delta);
+  } else if (event.type === 'message_stop' && event.sessionId === currentSessionId) {
+    console.log('Message streaming stopped');
+    // Finalize streaming message
+    finalizeStreamingMessage();
+  } else if (event.type === 'message' && event.sessionId === currentSessionId) {
     console.log('Adding assistant message to UI');
-    // Add assistant message to UI
+    // Add assistant message to UI (fallback for non-streaming)
     addMessageToUI(event.data);
     // Scroll to bottom
     const messagesContainer = document.getElementById('messages');
@@ -520,6 +551,105 @@ function removeThinkingIndicator(id) {
   }
 }
 
+// Variables to track streaming state
+let currentStreamingMessageDiv = null;
+let currentStreamingContent = '';
+
+// Create streaming message container
+function createStreamingMessage() {
+  const messagesContainer = document.getElementById('messages');
+  
+  // Remove any existing thinking indicators
+  const thinkingIndicators = messagesContainer.querySelectorAll('.message.thinking');
+  thinkingIndicators.forEach(indicator => indicator.remove());
+  
+  // Create message container
+  const messageDiv = document.createElement('div');
+  messageDiv.className = 'message assistant streaming';
+  
+  const header = document.createElement('div');
+  header.className = 'message-header';
+  
+  // Show which model is responding
+  const modelSelector = document.getElementById('model-selector');
+  let modelName = 'Assistant';
+  if (modelSelector && modelSelector.value) {
+    // Extract model name from value
+    const parts = modelSelector.value.split('-');
+    if (parts.length > 1) {
+      modelName = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+    }
+  }
+  
+  header.innerHTML = `<span class="role">${modelName}</span>`;
+  
+  const content = document.createElement('div');
+  content.className = 'message-content';
+  content.innerHTML = '<span class="streaming-cursor"></span>';
+  
+  messageDiv.appendChild(header);
+  messageDiv.appendChild(content);
+  messagesContainer.appendChild(messageDiv);
+  
+  // Store reference
+  currentStreamingMessageDiv = messageDiv;
+  currentStreamingContent = '';
+  
+  // Scroll to bottom
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Append text to streaming message
+function appendToStreamingMessage(delta) {
+  if (!currentStreamingMessageDiv) {
+    createStreamingMessage();
+  }
+  
+  const content = currentStreamingMessageDiv.querySelector('.message-content');
+  currentStreamingContent += delta;
+  
+  // Process markdown and update content
+  const processedContent = window.marked ? marked.parse(currentStreamingContent) : currentStreamingContent;
+  content.innerHTML = processedContent + '<span class="streaming-cursor"></span>';
+  
+  // Highlight code blocks if they exist
+  content.querySelectorAll('pre code').forEach((block) => {
+    if (window.hljs) {
+      hljs.highlightElement(block);
+    }
+  });
+  
+  // Smooth scroll to bottom
+  const messagesContainer = document.getElementById('messages');
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Finalize streaming message
+function finalizeStreamingMessage() {
+  if (!currentStreamingMessageDiv) return;
+  
+  // Remove streaming class and cursor
+  currentStreamingMessageDiv.classList.remove('streaming');
+  const cursor = currentStreamingMessageDiv.querySelector('.streaming-cursor');
+  if (cursor) cursor.remove();
+  
+  // Final markdown processing
+  const content = currentStreamingMessageDiv.querySelector('.message-content');
+  const processedContent = window.marked ? marked.parse(currentStreamingContent) : currentStreamingContent;
+  content.innerHTML = processedContent;
+  
+  // Final code highlighting
+  content.querySelectorAll('pre code').forEach((block) => {
+    if (window.hljs) {
+      hljs.highlightElement(block);
+    }
+  });
+  
+  // Reset streaming state
+  currentStreamingMessageDiv = null;
+  currentStreamingContent = '';
+}
+
 // Send message
 async function sendMessage() {
   console.log('sendMessage called');
@@ -551,6 +681,7 @@ async function sendMessage() {
   }
 
   console.log('Sending to session:', currentSessionId);
+  console.log('Window session ID:', window.currentSessionId);
 
   // Add user message to UI immediately
   addMessageToUI({ role: 'user', content: content });
@@ -579,10 +710,11 @@ async function sendMessage() {
 
     console.log('Response status:', response.status);
 
-    // Remove thinking indicator
-    removeThinkingIndicator(thinkingId);
+    // Don't remove thinking indicator here - let SSE events handle it during streaming
 
     if (!response.ok) {
+      // Remove thinking indicator only on error
+      removeThinkingIndicator(thinkingId);
       const errorText = await response.text();
       console.error('Response error:', errorText);
       
@@ -609,6 +741,9 @@ async function sendMessage() {
 
     const result = await response.json();
     console.log('Response data:', result);
+    
+    // Remove thinking indicator when we get the response
+    removeThinkingIndicator(thinkingId);
     
     // Display tool summaries if any
     if (result.toolSummaries && result.toolSummaries.length > 0) {
@@ -659,6 +794,7 @@ async function actuallyCreateSession() {
 
     const session = await response.json();
     currentSessionId = session.id;
+    window.currentSessionId = session.id; // Ensure global is also set
     pendingNewSession = false;
     
     // Don't reload sessions immediately - wait for title to be set

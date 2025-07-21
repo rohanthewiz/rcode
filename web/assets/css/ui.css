@@ -567,6 +567,70 @@ main {
   opacity: 0.8;
 }
 
+/* Streaming messages */
+.message.streaming .message-content {
+  position: relative;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.streaming-cursor {
+  display: inline-block;
+  width: 3px;
+  height: 1.1em;
+  background-color: var(--text-primary);
+  animation: cursor-blink 1s infinite ease-in-out;
+  vertical-align: text-bottom;
+  margin-left: 1px;
+  border-radius: 1px;
+}
+
+@keyframes cursor-blink {
+  0%, 49% {
+    opacity: 1;
+    transform: scaleY(1);
+  }
+  50%, 100% {
+    opacity: 0;
+    transform: scaleY(0.8);
+  }
+}
+
+/* Smooth text appearance during streaming */
+.message.streaming .message-content {
+  transition: none;
+  animation: subtle-pulse 2s ease-in-out infinite;
+}
+
+@keyframes subtle-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.95;
+  }
+}
+
+.message.streaming .message-content p:last-child {
+  margin-bottom: 0;
+}
+
+/* Smooth scrolling during streaming */
+#messages {
+  scroll-behavior: smooth;
+}
+
+/* Better code block handling during streaming */
+.message.streaming pre {
+  overflow-x: auto;
+  white-space: pre;
+}
+
+.message.streaming code {
+  word-break: normal;
+  overflow-wrap: normal;
+}
+
 /* Initial Prompts Display */
 .initial-prompts {
   background: var(--bg-secondary);

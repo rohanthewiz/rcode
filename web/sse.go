@@ -222,3 +222,55 @@ func BroadcastToolPermissionUpdate(sessionID string, toolName string, enabled bo
 	}
 	sseHub.Broadcast(event)
 }
+
+// BroadcastMessageStart broadcasts when a message starts streaming
+func BroadcastMessageStart(sessionID string) {
+	event := SSEEvent{
+		Type:      "message_start",
+		SessionID: sessionID,
+		Data:      nil,
+	}
+	sseHub.Broadcast(event)
+}
+
+// BroadcastMessageDelta broadcasts a chunk of streaming text
+func BroadcastMessageDelta(sessionID string, delta string) {
+	event := SSEEvent{
+		Type:      "message_delta",
+		SessionID: sessionID,
+		Data: map[string]interface{}{
+			"delta": delta,
+		},
+	}
+	sseHub.Broadcast(event)
+}
+
+// BroadcastMessageStop broadcasts when a message finishes streaming
+func BroadcastMessageStop(sessionID string) {
+	event := SSEEvent{
+		Type:      "message_stop",
+		SessionID: sessionID,
+		Data:      nil,
+	}
+	sseHub.Broadcast(event)
+}
+
+// BroadcastToolUseStart broadcasts when tool use is starting (removes thinking indicator)
+func BroadcastToolUseStart(sessionID string) {
+	event := SSEEvent{
+		Type:      "tool_use_start",
+		SessionID: sessionID,
+		Data:      nil,
+	}
+	sseHub.Broadcast(event)
+}
+
+// BroadcastContentStart broadcasts when content starts (either text or tool)
+func BroadcastContentStart(sessionID string) {
+	event := SSEEvent{
+		Type:      "content_start",
+		SessionID: sessionID,
+		Data:      nil,
+	}
+	sseHub.Broadcast(event)
+}

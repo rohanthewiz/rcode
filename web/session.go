@@ -332,53 +332,210 @@ func sendMessageHandler(c rweb.Context) error {
 		Tools:     availableTools,
 	}
 
+	// Variables that persist across iterations
+	var streamingStarted bool
+	
 	// Keep trying until we get a final response (not a tool use)
 	for {
-		// Send message to Claude with retry for transient errors
-		response, err := client.SendMessageWithRetry(request)
+		// Enable streaming for real-time display
+		request.Stream = true
+		
+		// Variables to accumulate streaming response
+		var streamingContent string
+		var currentToolUses []interface{}
+		var streamComplete bool
+		var assistantModel string
+		var usage *providers.Usage
+		
+		// Only broadcast message start on first iteration
+		if !streamingStarted {
+			// Broadcast message start event
+			BroadcastMessageStart(sessionID)
+		}
+		
+		// Handle streaming response
+		err = client.StreamMessageWithRetry(request, func(event providers.StreamEvent) error {
+			logger.Info("Stream event received", "type", event.Type, "hasMessage", len(event.Message) > 0, "hasDelta", len(event.Delta) > 0, "index", event.Index)
+			
+			// For content_block_start, try to log the raw event
+			if event.Type == "content_block_start" {
+				eventJSON, _ := json.Marshal(event)
+				logger.Info("Full content_block_start event", "raw", string(eventJSON))
+			}
+			
+			switch event.Type {
+			case "message_start":
+				// Parse message start to get model info
+				var msgStart struct {
+					Message struct {
+						Model string `json:"model"`
+						Usage *providers.Usage `json:"usage"`
+					} `json:"message"`
+				}
+				if err := json.Unmarshal(event.Message, &msgStart); err == nil {
+					assistantModel = msgStart.Message.Model
+					usage = msgStart.Message.Usage
+				}
+				
+			case "content_block_start":
+				// Log raw message for debugging
+				logger.Info("Raw content_block_start", "message", string(event.Message))
+				
+				// Parse the content block from the message
+				var contentBlock struct {
+					Type string `json:"type"`
+					ID   string `json:"id"`
+					Name string `json:"name"`
+				}
+				
+				if err := json.Unmarshal(event.Message, &contentBlock); err != nil {
+					logger.LogErr(err, "Failed to parse content block", "message", string(event.Message))
+				} else {
+					logger.Info("Content block start", "type", contentBlock.Type, "name", contentBlock.Name, "id", contentBlock.ID)
+					
+					// On the FIRST content block of ANY iteration, remove thinking indicator
+					// Check if this is the first content block for a text response
+					if contentBlock.Type == "text" && !streamingStarted {
+						BroadcastContentStart(sessionID)
+						streamingStarted = true
+					}
+					
+					if contentBlock.Type == "tool_use" {
+						// Initialize a new tool use
+						currentToolUses = append(currentToolUses, map[string]interface{}{
+							"type": "tool_use",
+							"id":   contentBlock.ID,
+							"name": contentBlock.Name,
+							"input": make(map[string]interface{}),
+							"input_json": "", // Initialize for accumulation
+						})
+						logger.Info("Tool use started", "name", contentBlock.Name, "id", contentBlock.ID)
+					}
+				}
+			
+			case "content_block_delta":
+				// Log raw delta for debugging
+				logger.Info("Raw delta", "delta", string(event.Delta))
+				
+				// Parse content delta - event.Delta IS the delta, not wrapped
+				var delta struct {
+					Type  string `json:"type"`
+					Text  string `json:"text"`
+					Input string `json:"partial_json"`
+				}
+				if err := json.Unmarshal(event.Delta, &delta); err != nil {
+					logger.LogErr(err, "Failed to parse content delta", "raw", string(event.Delta))
+				} else {
+					logger.Info("Content delta parsed", "type", delta.Type, "text", delta.Text)
+					if delta.Type == "text_delta" {
+						// Accumulate text and broadcast delta
+						streamingContent += delta.Text
+						BroadcastMessageDelta(sessionID, delta.Text)
+					} else if delta.Type == "input_json_delta" {
+						if len(currentToolUses) > 0 {
+							// Accumulate tool input JSON
+							if toolUse, ok := currentToolUses[len(currentToolUses)-1].(map[string]interface{}); ok {
+								if currentInput, ok := toolUse["input_json"].(string); ok {
+									toolUse["input_json"] = currentInput + delta.Input
+								} else {
+									toolUse["input_json"] = delta.Input
+								}
+							}
+						} else {
+							logger.Warn("Received input_json_delta but no tool use initialized")
+						}
+					}
+				}
+			
+			case "content_block_stop":
+				// Finalize tool use input if needed
+				if len(currentToolUses) > 0 {
+					if toolUse, ok := currentToolUses[len(currentToolUses)-1].(map[string]interface{}); ok {
+						if inputJSON, ok := toolUse["input_json"].(string); ok {
+							// Parse the accumulated JSON
+							var input map[string]interface{}
+							if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
+								logger.LogErr(err, "Failed to parse tool input JSON", "json", inputJSON)
+								// Set empty input on error
+								toolUse["input"] = make(map[string]interface{})
+							} else {
+								toolUse["input"] = input
+								logger.Info("Tool input parsed", "toolName", toolUse["name"], "input", input)
+							}
+							delete(toolUse, "input_json")
+						} else {
+							// No input_json, ensure input is initialized
+							if _, hasInput := toolUse["input"]; !hasInput {
+								toolUse["input"] = make(map[string]interface{})
+							}
+						}
+					}
+				}
+			
+			case "message_delta":
+				// Update usage if provided
+				var msgDelta struct {
+				Delta struct {
+					Usage *providers.Usage `json:"usage"`
+				} `json:"delta"`
+				}
+				if err := json.Unmarshal(event.Delta, &msgDelta); err == nil && msgDelta.Delta.Usage != nil {
+					usage = msgDelta.Delta.Usage
+				}
+			
+			case "message_stop":
+				// Message streaming complete
+				streamComplete = true
+				BroadcastMessageStop(sessionID)
+			}
+			
+			return nil
+		})
+		
 		if err != nil {
-			logger.LogErr(err, "failed to send message to Claude")
+			logger.LogErr(err, "failed to stream message from Claude")
 			return c.WriteError(err, 500)
 		}
-
-		// Check if response contains tool uses
-		var hasToolUse bool
-		var toolResults []interface{}
-
-		for _, content := range response.Content {
-			if content.Type == "tool_use" {
-				hasToolUse = true
-
-				// Parse the tool use
-				toolUseData, _ := json.Marshal(content)
-				var toolUse tools.ToolUse
-				err = json.Unmarshal(toolUseData, &toolUse)
-				if err != nil {
-					logger.Warn("Error unmarshalling tool_use data", "error", err, "contentName", content.Name)
-					continue
+		
+		// Process the accumulated response
+		if streamComplete {
+			logger.Info("Stream complete", "contentLength", len(streamingContent), "toolUses", len(currentToolUses))
+			// Check if we have tool uses
+			if len(currentToolUses) > 0 {
+			// Process tool uses (similar to existing logic)
+			var toolResults []interface{}
+			
+			for _, toolUseData := range currentToolUses {
+				toolUseMap := toolUseData.(map[string]interface{})
+				
+				// Create tool use struct
+				toolUse := tools.ToolUse{
+					ID:    toolUseMap["id"].(string),
+					Name:  toolUseMap["name"].(string),
+					Input: toolUseMap["input"].(map[string]interface{}),
 				}
-
+				
 				logger.Info("Executing tool", "name", toolUse.Name)
-
+				
 				// Add session ID to tool input for diff tracking
 				toolUse.Input["_sessionId"] = sessionID
-
+				
 				// Log tool usage (measure execution time)
 				startTime := time.Now()
-
+				
 				// Execute the tool with permission and context awareness
 				result, err := permissionExecutor.Execute(toolUse)
 				durationMs := int(time.Since(startTime).Milliseconds())
-
+				
 				// Log tool usage to database
 				if logErr := database.LogToolUsage(sessionID, toolUse.Name, toolUse.Input, result.Content, durationMs, err); logErr != nil {
 					logger.LogErr(logErr, "failed to log tool usage")
 				}
-
+				
 				if err != nil {
 					logger.LogErr(err, "tool execution failed")
 				}
-
+				
 				// Create and broadcast tool usage summary
 				summary := createToolSummary(toolUse.Name, toolUse.Input, result.Content, err)
 				logger.Info("Broadcasting tool usage", "tool", toolUse.Name, "summary", summary)
@@ -386,24 +543,21 @@ func sendMessageHandler(c rweb.Context) error {
 				
 				// Collect tool summaries for response
 				toolSummaries = append(toolSummaries, summary)
-
+				
 				// Add tool result to results
 				toolResults = append(toolResults, result)
 			}
-		}
-
-		// If there were tool uses, add assistant message and tool results, then continue
-		if hasToolUse {
+			
 			// Add the assistant's message with tool uses to database
 			assistantMsg := providers.ChatMessage{
 				Role:    "assistant",
-				Content: response.Content,
+				Content: currentToolUses,
 			}
-			err = database.AddMessage(sessionID, assistantMsg, response.Model, &response.Usage)
+			err = database.AddMessage(sessionID, assistantMsg, assistantModel, usage)
 			if err != nil {
 				logger.LogErr(err, "failed to add assistant message with tool use")
 			}
-
+			
 			// Add tool results as user message
 			toolResultMsg := providers.ChatMessage{
 				Role:    "user",
@@ -413,52 +567,69 @@ func sendMessageHandler(c rweb.Context) error {
 			if err != nil {
 				logger.LogErr(err, "failed to add tool result message")
 			}
-
-			// Get updated messages
+			
+			// Get updated messages and continue with new request
 			messages, err = database.GetMessages(sessionID)
 			if err != nil {
 				return c.WriteError(serr.Wrap(err, "failed to get updated messages"), 500)
 			}
-
-			// Update request with new messages and continue
+			
+			// Update request with new messages and make another call
 			request.Messages = providers.ConvertToAPIMessages(messages)
+			// Reset for next iteration
+			streamingContent = ""
+			currentToolUses = nil
+			streamComplete = false
 			continue
-		}
-
-		// No tool use, extract text content from response
-		var responseText string
-		for _, content := range response.Content {
-			if content.Type == "text" {
-				responseText += content.Text
+			
+			} else if streamingContent != "" {
+				// No tool use, just text response
+			// Add assistant message to database
+			assistantMsg := providers.ChatMessage{
+				Role:    "assistant",
+				Content: streamingContent,
+			}
+			err = database.AddMessage(sessionID, assistantMsg, assistantModel, usage)
+			if err != nil {
+				logger.LogErr(err, "failed to add assistant message")
+			}
+			
+			// Broadcast the complete message (already streamed via deltas)
+			BroadcastMessage(sessionID, map[string]interface{}{
+				"role":    "assistant",
+				"content": streamingContent,
+				"model":   assistantModel,
+			})
+			
+			// Return the assistant's response with model info and tool summaries
+			return c.WriteJSON(map[string]interface{}{
+				"role":          "assistant",
+				"content":       streamingContent,
+				"usage":         usage,
+				"model":         assistantModel,
+				"toolSummaries": toolSummaries,
+			})
+			} else {
+				// No tool use and no text content - this shouldn't happen
+				logger.Error("Stream completed with no content or tool uses")
+				// Continue the loop to see if more content comes
+				continue
 			}
 		}
-
-		// Add assistant message to database
-		assistantMsg := providers.ChatMessage{
-			Role:    "assistant",
-			Content: responseText,
-		}
-		err = database.AddMessage(sessionID, assistantMsg, response.Model, &response.Usage)
-		if err != nil {
-			logger.LogErr(err, "failed to add assistant message")
-		}
-
-		// Broadcast the assistant's message
-		BroadcastMessage(sessionID, map[string]interface{}{
-			"role":    "assistant",
-			"content": responseText,
-			"model":   response.Model,
-		})
-
-		// Return the assistant's response with model info and tool summaries
-		return c.WriteJSON(map[string]interface{}{
-			"role":          "assistant",
-			"content":       responseText,
-			"usage":         response.Usage,
-			"model":         response.Model,
-			"toolSummaries": toolSummaries,
-		})
+		
+		// If we reach here with no content and no tools, there was an issue
+		logger.Error("Unexpected: exited streaming loop without processing response")
+		break
 	}
+	
+	// Should not reach here
+	logger.Error("Reached end of sendMessageHandler without proper response")
+	return c.WriteJSON(map[string]interface{}{
+		"role":          "assistant",
+		"content":       "",
+		"toolSummaries": toolSummaries,
+		"error":         "No response received from streaming",
+	})
 }
 
 // createToolSummary creates a concise summary of tool usage
