@@ -18,6 +18,7 @@ Note: It is way better to use Claude Code, but if you want to see how deep the r
 - 📜 **Plan History** - Review, re-run, and manage previous task plans
 - 📁 **File Explorer** - Visual file browser with tabbed interface and real-time updates
 - 🔍 **Diff Visualization** - Real-time file change tracking with Monaco-powered diff viewer
+- ⚡ **Real-time Tool Execution** - Live visualization of tool operations as they happen
 
 ## Quick Start
 
@@ -432,6 +433,68 @@ Diff visualization endpoints:
 - `POST /api/session/:id/diff/:diffId/apply` - Apply changes
 - `POST /api/session/:id/diff/:diffId/revert` - Revert changes
 - `GET /api/session/:id/diffs` - List all diffs for a session
+
+## Real-time Tool Execution Display
+
+RCode provides immediate visual feedback when AI tools are executing, replacing the generic "Thinking..." indicator with detailed real-time status updates:
+
+### How It Works
+
+When the AI uses tools to complete your request:
+1. **"Thinking..." disappears** as soon as the first tool starts
+2. **Tool execution container appears** showing active operations
+3. **Real-time status updates** for each tool (executing → success/failed)
+4. **Progress tracking** for long-running operations
+5. **Persistent history** - summaries remain in chat after completion
+
+### Visual Features
+
+#### Tool Execution Container
+- **Header**: "🛠️ Executing tools..." with collapsible toggle
+- **Tool List**: Each active tool shows:
+  - Status icon (⏳ executing, ✓ success, ❌ failed)
+  - Tool name and operation details
+  - Progress bar for operations that support it
+  - Execution metrics (duration, bytes processed, etc.)
+
+#### Status Indicators
+- **⏳ Executing**: Animated spinner showing tool is running
+- **✓ Success**: Green checkmark with summary (e.g., "✓ Wrote main.go (523 bytes)")
+- **❌ Failed**: Red X with error message
+- **🔄 Retrying**: For transient failures being retried
+
+#### Animations
+- Smooth fade-in when tools start
+- Pulsing effect on executing tools
+- Color transitions on status changes
+- Progress bar animations for long operations
+
+### Tool-Specific Features
+
+Different tools provide specialized feedback:
+- **File Operations**: Show bytes read/written and line counts
+- **Directory Operations**: Display item counts
+- **Search Operations**: Report number of matches found
+- **Git Operations**: Show commit counts, changed files
+- **Web Operations**: Display download progress
+
+### Benefits
+
+1. **Transparency**: See exactly what operations are being performed
+2. **Progress Tracking**: No more wondering if the AI is stuck
+3. **Debugging**: Clear visibility into tool failures
+4. **Professional UX**: Matches modern CI/CD pipeline interfaces
+
+### Technical Implementation
+
+The feature uses:
+- **Server-Sent Events**: Real-time updates from backend to frontend
+- **Event Types**:
+  - `tool_execution_start`: Tool begins execution
+  - `tool_execution_progress`: Progress updates for long operations
+  - `tool_execution_complete`: Tool finishes with status and metrics
+- **Frontend State Management**: Tracks active executions in real-time
+- **CSS Animations**: Smooth transitions and visual feedback
 
 ## Technical Stack
 

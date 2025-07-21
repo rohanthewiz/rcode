@@ -18,15 +18,15 @@ rcode/
 │   ├── routes.go             # Route definitions
 │   ├── ui.go                 # Main UI with element
 │   ├── auth_callback.go      # OAuth callback UI
-│   ├── session.go            # Session management with init prompt & tool summaries
-│   ├── sse.go                # SSE implementation with reconnection
+│   ├── session.go            # Session management with init prompt, tool summaries & real-time execution tracking
+│   ├── sse.go                # SSE implementation with reconnection & tool execution events
 │   ├── context_handlers.go   # Context API endpoints
 │   └── assets/
 │       ├── js/
-│       │   ├── ui.js         # Main UI logic with SSE handling & tool summaries
+│       │   ├── ui.js         # Main UI logic with SSE handling, tool summaries & real-time execution display
 │       │   └── login.js      # Login flow logic
 │       └── css/
-│           └── ui.css        # Dark theme styles with tool summary styling
+│           └── ui.css        # Dark theme styles with tool summary & execution animation styling
 ├── providers/
 │   └── anthropic.go          # Anthropic API client with retry & context integration
 ├── tools/
@@ -105,12 +105,17 @@ rcode/
    - Change tracking during sessions
    - Context-aware tool suggestions
 5. **Tool Usage Summaries**: Concise display of tool operations with metrics
-6. **Real-time Updates**: Server-sent events (SSE) with robust reconnection
-7. **Dark Theme**: Modern dark-themed UI with CSS variables
-8. **Session Management**: Persistent sessions with DuckDB storage
-9. **Auto-initialization**: Sessions start with permission prompt for tools/files
-10. **Connection Recovery**: Exponential backoff and manual reconnection for SSE
-11. **HTTPS Support**: Built-in TLS/SSL with automatic HTTP-to-HTTPS redirect
+6. **Real-time Tool Execution Display**: Live visualization of tool operations as they execute
+   - Immediate feedback when tools start (removes "Thinking..." indicator)
+   - Status updates: executing → success/failed with animations
+   - Progress bars for long-running operations
+   - Execution metrics (duration, bytes processed, etc.)
+7. **Real-time Updates**: Server-sent events (SSE) with robust reconnection
+8. **Dark Theme**: Modern dark-themed UI with CSS variables
+9. **Session Management**: Persistent sessions with DuckDB storage
+10. **Auto-initialization**: Sessions start with permission prompt for tools/files
+11. **Connection Recovery**: Exponential backoff and manual reconnection for SSE
+12. **HTTPS Support**: Built-in TLS/SSL with automatic HTTP-to-HTTPS redirect
 
 ## API Endpoints
 
@@ -188,6 +193,10 @@ The server can be configured using environment variables:
 - Sessions persist in DuckDB at `~/.local/share/rcode/rcode.db`
 - Each session starts with configurable prompts (default includes permission requirements)
 - Tool usage summaries display as "🛠️ TOOL USE" with concise metrics
+- Real-time tool execution events via SSE:
+  - `tool_execution_start`: Broadcast when tool begins (removes "Thinking...")
+  - `tool_execution_progress`: Progress updates for long operations
+  - `tool_execution_complete`: Final status with metrics
 - SSE reconnection: 5 attempts with exponential backoff (1s, 2s, 4s, 8s, 16s, max 30s)
 - Session recovery: Automatic new session creation on 404 errors
 
@@ -242,6 +251,13 @@ The server can be configured using environment variables:
   - Plugin template and examples provided
   - Hot-loadable at startup via environment variables
   - Comprehensive documentation in docs/CUSTOM_TOOLS.md
+- **Added Real-time Tool Execution Display**:
+  - Immediate visual feedback when tools start executing
+  - Live status updates: executing → success/failed
+  - Progress bars for long-running operations
+  - Animated status indicators and transitions
+  - Tool execution metrics displayed in real-time
+  - Replaces generic "Thinking..." with detailed execution info
 
 ## Tool System Details
 
