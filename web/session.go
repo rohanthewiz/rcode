@@ -502,6 +502,12 @@ func sendMessageHandler(c rweb.Context) error {
 			logger.Info("Stream complete", "contentLength", len(streamingContent), "toolUses", len(currentToolUses))
 			// Check if we have tool uses
 			if len(currentToolUses) > 0 {
+			// Broadcast that tool use is starting (removes thinking indicator)
+			if !streamingStarted {
+				BroadcastToolUseStart(sessionID)
+				streamingStarted = true
+			}
+			
 			// Process tool uses (similar to existing logic)
 			var toolResults []interface{}
 			
@@ -523,9 +529,30 @@ func sendMessageHandler(c rweb.Context) error {
 				// Log tool usage (measure execution time)
 				startTime := time.Now()
 				
+				// Broadcast tool execution start
+				BroadcastToolExecutionStart(sessionID, toolUse.ID, toolUse.Name)
+				
 				// Execute the tool with permission and context awareness
 				result, err := permissionExecutor.Execute(toolUse)
 				durationMs := int(time.Since(startTime).Milliseconds())
+				
+				// Prepare execution metrics
+				metrics := map[string]interface{}{
+					"duration": durationMs,
+				}
+				
+				// Determine status based on error
+				status := "success"
+				if err != nil {
+					status = "failed"
+					metrics["error"] = err.Error()
+				}
+				
+				// Create tool summary
+				summary := createToolSummary(toolUse.Name, toolUse.Input, result.Content, err)
+				
+				// Broadcast tool execution complete
+				BroadcastToolExecutionComplete(sessionID, toolUse.ID, status, summary, int64(durationMs), metrics)
 				
 				// Log tool usage to database
 				if logErr := database.LogToolUsage(sessionID, toolUse.Name, toolUse.Input, result.Content, durationMs, err); logErr != nil {
@@ -535,9 +562,6 @@ func sendMessageHandler(c rweb.Context) error {
 				if err != nil {
 					logger.LogErr(err, "tool execution failed")
 				}
-				
-				// Create and broadcast tool usage summary
-				summary := createToolSummary(toolUse.Name, toolUse.Input, result.Content, err)
 				logger.Info("Broadcasting tool usage", "tool", toolUse.Name, "summary", summary)
 				BroadcastToolUsage(sessionID, toolUse.Name, summary)
 				

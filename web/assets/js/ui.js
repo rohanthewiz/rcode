@@ -249,6 +249,15 @@ function handleServerEvent(event) {
     // Scroll to bottom
     const messagesContainer = document.getElementById('messages');
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  } else if (event.type === 'tool_execution_start' && event.sessionId === currentSessionId) {
+    console.log('Tool execution started:', event.data);
+    handleToolExecutionStart(event.data);
+  } else if (event.type === 'tool_execution_progress' && event.sessionId === currentSessionId) {
+    console.log('Tool execution progress:', event.data);
+    handleToolExecutionProgress(event.data);
+  } else if (event.type === 'tool_execution_complete' && event.sessionId === currentSessionId) {
+    console.log('Tool execution completed:', event.data);
+    handleToolExecutionComplete(event.data);
   } else if (event.type === 'tool_usage' && event.sessionId === currentSessionId) {
     console.log('Tool usage event received:', event.data);
     // Add tool usage summary to UI
@@ -1890,3 +1899,136 @@ function escapeHtml(text) {
 
 // Export the loadSessionTools function to window so it can be called from fileExplorer.js
 window.loadSessionTools = loadSessionTools;
+
+// Active tool executions tracker
+const activeToolExecutions = new Map();
+
+// Handle tool execution start event
+function handleToolExecutionStart(data) {
+  const messagesContainer = document.getElementById('messages');
+  
+  // Remove any thinking indicators
+  const thinkingIndicators = document.querySelectorAll('.message.thinking');
+  thinkingIndicators.forEach(indicator => indicator.remove());
+  
+  // Find or create the tool execution container
+  let toolsContainer = document.querySelector('.tool-execution-container.active');
+  if (!toolsContainer) {
+    toolsContainer = document.createElement('div');
+    toolsContainer.className = 'tool-execution-container active';
+    toolsContainer.innerHTML = `
+      <div class="tool-execution-header">
+        <span class="tool-icon">🛠️</span>
+        <span class="tool-title">Executing tools...</span>
+        <button class="tool-toggle" onclick="toggleToolDetails(this)">▼</button>
+      </div>
+      <div class="tool-execution-list"></div>
+    `;
+    messagesContainer.appendChild(toolsContainer);
+  }
+  
+  // Add tool to the execution list
+  const toolsList = toolsContainer.querySelector('.tool-execution-list');
+  const toolItem = document.createElement('div');
+  toolItem.className = 'tool-item executing';
+  toolItem.id = `tool-${data.toolId}`;
+  toolItem.innerHTML = `
+    <span class="tool-status-icon">⏳</span>
+    <span class="tool-name">${data.toolName}</span>
+    <div class="tool-progress" style="display: none;">
+      <div class="tool-progress-bar" style="width: 0%"></div>
+    </div>
+    <span class="tool-metrics"></span>
+  `;
+  
+  toolsList.appendChild(toolItem);
+  
+  // Track the active tool execution
+  activeToolExecutions.set(data.toolId, {
+    name: data.toolName,
+    startTime: data.startTime,
+    element: toolItem
+  });
+  
+  // Scroll to bottom
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Handle tool execution progress event
+function handleToolExecutionProgress(data) {
+  const toolInfo = activeToolExecutions.get(data.toolId);
+  if (!toolInfo) return;
+  
+  const toolItem = toolInfo.element;
+  const progressContainer = toolItem.querySelector('.tool-progress');
+  const progressBar = toolItem.querySelector('.tool-progress-bar');
+  
+  // Show progress bar
+  progressContainer.style.display = 'block';
+  progressBar.style.width = `${data.progress}%`;
+  
+  // Update metrics if provided
+  if (data.message) {
+    const metricsSpan = toolItem.querySelector('.tool-metrics');
+    metricsSpan.textContent = data.message;
+  }
+}
+
+// Handle tool execution complete event
+function handleToolExecutionComplete(data) {
+  const toolInfo = activeToolExecutions.get(data.toolId);
+  if (!toolInfo) return;
+  
+  const toolItem = toolInfo.element;
+  const statusIcon = toolItem.querySelector('.tool-status-icon');
+  const metricsSpan = toolItem.querySelector('.tool-metrics');
+  const progressContainer = toolItem.querySelector('.tool-progress');
+  
+  // Update status
+  toolItem.classList.remove('executing');
+  toolItem.classList.add(data.status);
+  
+  // Update icon based on status
+  if (data.status === 'success') {
+    statusIcon.textContent = '✓';
+  } else if (data.status === 'failed') {
+    statusIcon.textContent = '❌';
+  }
+  
+  // Hide progress bar
+  progressContainer.style.display = 'none';
+  
+  // Update summary/metrics
+  if (data.summary) {
+    metricsSpan.textContent = data.summary.replace(/^[✓❌]\s*/, ''); // Remove status icon from summary
+  } else if (data.metrics && data.metrics.duration) {
+    metricsSpan.textContent = `(${data.metrics.duration}ms)`;
+  }
+  
+  // Remove from active executions
+  activeToolExecutions.delete(data.toolId);
+  
+  // If no more active tools, update header
+  if (activeToolExecutions.size === 0) {
+    const toolsContainer = document.querySelector('.tool-execution-container.active');
+    if (toolsContainer) {
+      const title = toolsContainer.querySelector('.tool-title');
+      title.textContent = 'Tools completed';
+      toolsContainer.classList.remove('active');
+    }
+  }
+}
+
+// Toggle tool execution details visibility
+function toggleToolDetails(button) {
+  const container = button.closest('.tool-execution-container');
+  const list = container.querySelector('.tool-execution-list');
+  
+  if (list.style.display === 'none') {
+    list.style.display = 'block';
+    button.textContent = '▼';
+  } else {
+    list.style.display = 'none';
+    button.textContent = '▶';
+  }
+}

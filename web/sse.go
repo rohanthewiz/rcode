@@ -274,3 +274,48 @@ func BroadcastContentStart(sessionID string) {
 	}
 	sseHub.Broadcast(event)
 }
+
+// BroadcastToolExecutionStart broadcasts when a tool begins execution
+func BroadcastToolExecutionStart(sessionID string, toolID string, toolName string) {
+	event := SSEEvent{
+		Type:      "tool_execution_start",
+		SessionID: sessionID,
+		Data: map[string]interface{}{
+			"toolId":    toolID,
+			"toolName":  toolName,
+			"status":    "executing",
+			"startTime": time.Now().Unix(),
+		},
+	}
+	sseHub.Broadcast(event)
+}
+
+// BroadcastToolExecutionProgress broadcasts progress updates for long-running tools
+func BroadcastToolExecutionProgress(sessionID string, toolID string, progress int, message string) {
+	event := SSEEvent{
+		Type:      "tool_execution_progress",
+		SessionID: sessionID,
+		Data: map[string]interface{}{
+			"toolId":   toolID,
+			"progress": progress,
+			"message":  message,
+		},
+	}
+	sseHub.Broadcast(event)
+}
+
+// BroadcastToolExecutionComplete broadcasts when a tool finishes execution
+func BroadcastToolExecutionComplete(sessionID string, toolID string, status string, summary string, durationMs int64, metrics map[string]interface{}) {
+	event := SSEEvent{
+		Type:      "tool_execution_complete",
+		SessionID: sessionID,
+		Data: map[string]interface{}{
+			"toolId":   toolID,
+			"status":   status, // "success", "failed", "cancelled"
+			"summary":  summary,
+			"duration": durationMs,
+			"metrics":  metrics,
+		},
+	}
+	sseHub.Broadcast(event)
+}
