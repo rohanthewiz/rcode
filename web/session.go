@@ -304,6 +304,10 @@ func sendMessageHandler(c rweb.Context) error {
 	
 	// Create context-aware tool executor
 	contextExecutor := tools.NewContextAwareExecutor(toolRegistry, client.GetContextManager())
+	
+	// Wrap with permission-aware executor
+	permissionExecutor := NewPermissionAwareExecutor(contextExecutor, database)
+	// TODO: Set up ask handler for tools that require confirmation
 
 	// Use the model from the request, or default to Claude Sonnet 4
 	model := msgReq.Model
@@ -362,8 +366,8 @@ func sendMessageHandler(c rweb.Context) error {
 				// Log tool usage (measure execution time)
 				startTime := time.Now()
 
-				// Execute the tool with context awareness
-				result, err := contextExecutor.Execute(toolUse)
+				// Execute the tool with permission and context awareness
+				result, err := permissionExecutor.Execute(toolUse)
 				durationMs := int(time.Since(startTime).Milliseconds())
 
 				// Log tool usage to database

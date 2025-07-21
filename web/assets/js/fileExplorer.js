@@ -74,6 +74,11 @@ const FileExplorer = (function() {
         if (newSessionBtn) {
             newSessionBtn.parentElement.style.display = tabName === 'sessions' ? 'block' : 'none';
         }
+        
+        // Load tools when switching to tools tab
+        if (tabName === 'tools' && window.currentSessionId) {
+            loadSessionTools(window.currentSessionId);
+        }
     }
 
     // Load file tree from server

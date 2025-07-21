@@ -208,3 +208,17 @@ func BroadcastDiffAvailable(sessionID string, diffID int64, filePath string, sta
 	}
 	sseHub.Broadcast(event)
 }
+
+// BroadcastToolPermissionUpdate broadcasts when a tool permission is changed
+func BroadcastToolPermissionUpdate(sessionID string, toolName string, enabled bool, mode string) {
+	event := SSEEvent{
+		Type:      "tool_permission_update",
+		SessionID: sessionID,
+		Data: map[string]interface{}{
+			"toolName": toolName,
+			"enabled":  enabled,
+			"mode":     mode,
+		},
+	}
+	sseHub.Broadcast(event)
+}

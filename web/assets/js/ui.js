@@ -239,17 +239,12 @@ function handleServerEvent(event) {
       // Show notification that diff is available
       const notification = `📝 Changes detected in ${event.data.path}`;
       addSystemMessageToUI(notification, 'info');
-      
-      // Store the latest diff ID for quick access
-      if (event.data.path) {
-        window.diffViewer.setLatestDiff(event.data.path, event.data.diffId);
-        
-        // Mark the file as modified in the file explorer
-        if (window.FileExplorer && window.FileExplorer.markFileModified) {
-          window.FileExplorer.markFileModified(event.data.path);
-        }
-      }
     }
+  } else if (event.type === 'tool_permission_update' && event.sessionId === currentSessionId) {
+    // Handle tool permission update event
+    console.log('Tool permission updated:', event.data);
+    // Could refresh the tools list or update specific tool UI
+    // For now, just log it as the UI is already updated optimistically
   }
 }
 
@@ -257,9 +252,29 @@ function handleServerEvent(event) {
 async function loadSessions() {
   try {
     const response = await fetch('/api/session');
+    
+    // Check if response is ok
+    if (!response.ok) {
+      console.error('Failed to fetch sessions:', response.status);
+      return;
+    }
+    
     const sessions = await response.json();
+    
+    // Check if sessions is null or not an array
+    if (!sessions || !Array.isArray(sessions)) {
+      console.log('No sessions returned or invalid format');
+      return;
+    }
 
     const sessionList = document.getElementById('session-list');
+    
+    // Check if sessionList exists (it won't when on tools tab)
+    if (!sessionList) {
+      console.log('Session list element not found - likely on a different tab');
+      return;
+    }
+    
     sessionList.innerHTML = '';
 
     sessions.forEach(session => {
@@ -277,6 +292,7 @@ async function loadSessions() {
 // Select session
 function selectSession(sessionId) {
   currentSessionId = sessionId;
+  window.currentSessionId = sessionId; // make sure it is globally available
   pendingNewSession = false; // Clear pending state when selecting existing session
   loadMessages();
   loadSessions(); // Refresh to update active state
@@ -1559,3 +1575,182 @@ function showPlanExecutionArea() {
     document.body.classList.add('plan-executing');
   }
 }
+
+// Tool management functions
+async function loadSessionTools(sessionId) {
+  const toolsList = document.getElementById('tools-list');
+  if (!toolsList) return;
+  
+  // Check if sessionId is provided
+  if (!sessionId) {
+    toolsList.innerHTML = '<div class="empty-state">Please select a session to view and manage tool permissions.</div>';
+    return;
+  }
+  
+  // Show loading state
+  toolsList.innerHTML = '<div class="loading">Loading tools...</div>';
+  
+  try {
+    const response = await fetch(`/api/session/${sessionId}/tools`);
+    if (!response.ok) throw new Error('Failed to load tools');
+    
+    const tools = await response.json();
+    
+    // Group tools by category
+    const toolsByCategory = {};
+    tools.forEach(tool => {
+      if (!toolsByCategory[tool.category]) {
+        toolsByCategory[tool.category] = [];
+      }
+      toolsByCategory[tool.category].push(tool);
+    });
+    
+    // Render tools grouped by category
+    let html = '';
+    Object.entries(toolsByCategory).forEach(([category, categoryTools]) => {
+      html += `
+        <div class="tool-category">
+          <div class="tool-category-header">${category}</div>
+          <div class="tool-items">
+            ${categoryTools.map(tool => renderTool(tool)).join('')}
+          </div>
+        </div>
+      `;
+    });
+    
+    toolsList.innerHTML = html;
+    
+    // Add event listeners for tool controls
+    toolsList.querySelectorAll('.tool-toggle input').forEach(toggle => {
+      toggle.addEventListener('change', handleToolToggle);
+    });
+    
+    toolsList.querySelectorAll('.mode-radio input').forEach(radio => {
+      radio.addEventListener('change', handleModeChange);
+    });
+    
+  } catch (error) {
+    console.error('Error loading tools:', error);
+    toolsList.innerHTML = '<div class="error">Failed to load tools</div>';
+  }
+}
+
+function renderTool(tool) {
+  const toolId = `tool-${tool.name}`;
+  const modeGroupName = `mode-${tool.name}`;
+  
+  return `
+    <div class="tool-item ${!tool.enabled ? 'disabled' : ''}" data-tool="${tool.name}">
+      <div class="tool-info">
+        <div class="tool-name">${tool.name}</div>
+        <div class="tool-description">${escapeHtml(tool.description)}</div>
+      </div>
+      <div class="tool-controls">
+        <label class="tool-toggle">
+          <input type="checkbox" id="${toolId}" data-tool="${tool.name}" ${tool.enabled ? 'checked' : ''}>
+          <span class="toggle-slider"></span>
+        </label>
+        <div class="tool-mode" ${!tool.enabled ? 'style="opacity: 0.3; pointer-events: none;"' : ''}>
+          <div class="mode-radio">
+            <input type="radio" id="${toolId}-ask" name="${modeGroupName}" value="ask" 
+                   data-tool="${tool.name}" ${tool.mode === 'ask' ? 'checked' : ''}>
+            <label for="${toolId}-ask">Ask</label>
+          </div>
+          <div class="mode-radio">
+            <input type="radio" id="${toolId}-auto" name="${modeGroupName}" value="auto" 
+                   data-tool="${tool.name}" ${tool.mode === 'auto' ? 'checked' : ''}>
+            <label for="${toolId}-auto">Auto</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function handleToolToggle(event) {
+  const toggle = event.target;
+  const toolName = toggle.dataset.tool;
+  const enabled = toggle.checked;
+  const toolItem = toggle.closest('.tool-item');
+  const modeControls = toolItem.querySelector('.tool-mode');
+  
+  // Update UI immediately
+  toolItem.classList.toggle('disabled', !enabled);
+  if (modeControls) {
+    modeControls.style.opacity = enabled ? '1' : '0.3';
+    modeControls.style.pointerEvents = enabled ? 'auto' : 'none';
+  }
+  
+  // Get current mode
+  const modeRadio = toolItem.querySelector('.mode-radio input:checked');
+  const mode = modeRadio ? modeRadio.value : 'ask';
+  
+  // Update on server
+  try {
+    const response = await fetch(`/api/session/${currentSessionId}/tools/${toolName}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ enabled, mode })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update tool permission');
+    }
+    
+    console.log(`Tool ${toolName} ${enabled ? 'enabled' : 'disabled'}`);
+  } catch (error) {
+    console.error('Error updating tool:', error);
+    // Revert UI change
+    toggle.checked = !enabled;
+    toolItem.classList.toggle('disabled', enabled);
+    if (modeControls) {
+      modeControls.style.opacity = !enabled ? '1' : '0.3';
+      modeControls.style.pointerEvents = !enabled ? 'auto' : 'none';
+    }
+    alert('Failed to update tool permission. Please try again.');
+  }
+}
+
+async function handleModeChange(event) {
+  const radio = event.target;
+  const toolName = radio.dataset.tool;
+  const mode = radio.value;
+  const toolItem = radio.closest('.tool-item');
+  const enableToggle = toolItem.querySelector('.tool-toggle input');
+  const enabled = enableToggle.checked;
+  
+  // Update on server
+  try {
+    const response = await fetch(`/api/session/${currentSessionId}/tools/${toolName}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ enabled, mode })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update tool mode');
+    }
+    
+    console.log(`Tool ${toolName} mode changed to ${mode}`);
+  } catch (error) {
+    console.error('Error updating tool mode:', error);
+    // Revert to previous selection
+    const otherRadio = toolItem.querySelector(`.mode-radio input[value="${mode === 'ask' ? 'auto' : 'ask'}"]`);
+    if (otherRadio) otherRadio.checked = true;
+    alert('Failed to update tool mode. Please try again.');
+  }
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Export the loadSessionTools function to window so it can be called from fileExplorer.js
+window.loadSessionTools = loadSessionTools;

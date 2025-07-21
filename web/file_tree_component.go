@@ -85,7 +85,7 @@ type SessionInfo struct {
 
 // FileExplorerTabs represents the tabbed sidebar interface
 type FileExplorerTabs struct {
-	ActiveTab string // "sessions" or "files"
+	ActiveTab string // "sessions", "files", or "tools"
 	Sessions  []SessionInfo
 	FileTree  []FileNode
 }
@@ -96,6 +96,7 @@ func (f FileExplorerTabs) Render(b *element.Builder) (x any) {
 	b.Div("class", "sidebar-tabs").R(
 		b.Div("class", getTabClass("sessions", f.ActiveTab), "data-tab", "sessions").T("Sessions"),
 		b.Div("class", getTabClass("files", f.ActiveTab), "data-tab", "files").T("Files"),
+		b.Div("class", getTabClass("tools", f.ActiveTab), "data-tab", "tools").T("Tools"),
 	)
 	
 	// Tab content
@@ -127,6 +128,17 @@ func (f FileExplorerTabs) Render(b *element.Builder) (x any) {
 					}
 					return
 				}(),
+			),
+		),
+		
+		// Tools tab
+		b.Div("class", getTabContentClass("tools", f.ActiveTab), "id", "tools-tab").R(
+			b.Div("class", "tools-header").R(
+				b.H3().T("Tool Permissions"),
+				b.P("class", "tools-description").T("Configure which tools can be used in this session"),
+			),
+			b.Div("id", "tools-list", "class", "tools-list").R(
+				b.Div("class", "loading").T("Loading tools..."),
 			),
 		),
 	)

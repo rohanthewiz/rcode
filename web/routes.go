@@ -38,6 +38,10 @@ func SetupRoutes(s *rweb.Server) {
 	s.Put("/api/prompts/:id", updatePromptHandler)
 	s.Delete("/api/prompts/:id", deletePromptHandler)
 
+	// Tool permissions endpoints
+	s.Get("/api/session/:id/tools", getSessionToolsHandler)
+	s.Put("/api/session/:id/tools/:tool", updateToolPermissionHandler)
+
 	// Context management endpoints
 	s.Get("/api/context", getProjectContextHandler)
 	s.Post("/api/context/initialize", initializeProjectContextHandler)
