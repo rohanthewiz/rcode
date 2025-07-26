@@ -42,6 +42,9 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/session/:id/tools", getSessionToolsHandler)
 	s.Put("/api/session/:id/tools/:tool", updateToolPermissionHandler)
 
+	// Permission response endpoint
+	s.Post("/api/permission-response", handlePermissionResponseHandler)
+
 	// Context management endpoints
 	s.Get("/api/context", getProjectContextHandler)
 	s.Post("/api/context/initialize", initializeProjectContextHandler)
@@ -59,7 +62,7 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/plan/:id/checkpoints", listCheckpointsHandler)
 	s.Get("/api/plan/:id/analyze", analyzePlanHandler)
 	s.Get("/api/plan/:id/git-operations", getGitOperationsHandler)
-	
+
 	// Plan history endpoints
 	s.Get("/api/session/:id/plans/history", listPlanHistoryHandler)
 	s.Get("/api/plan/:id/full", getPlanFullDetailsHandler)
@@ -67,7 +70,24 @@ func SetupRoutes(s *rweb.Server) {
 	s.Delete("/api/plan/:id", deletePlanHandler)
 
 	// SSE endpoint for streaming events
-	s.Get("/events", eventsHandler)
+	s.Get("/events",
+		func(c rweb.Context) error {
+
+			// Create client channel
+			clientChan := make(chan any, 10)
+			sseHub.Register(clientChan)
+
+			// We cannot unregister here become the conn is long-lived
+			// // Ensure cleanup on disconnect
+			// defer func() {
+			// 	sseHub.Unregister(clientChan)
+			// }()
+
+			s.SetupSSE(c, clientChan, "")
+
+			return nil
+		},
+	)
 
 	// Prompt Manager UI
 	s.Get("/prompts", PromptManagerHandler)

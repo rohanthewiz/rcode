@@ -1,0 +1,245 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Complete SSE Test</title>
+    <style>
+        body {
+            background: #1a1b1e;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            padding: 20px;
+        }
+        .test-section {
+            border: 1px solid #3a3b3e;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            background: #2a2b2e;
+        }
+        button {
+            padding: 0.5rem 1rem;
+            margin: 0.5rem;
+            cursor: pointer;
+            background: #0066cc;
+            color: white;
+            border: none;
+            border-radius: 4px;
+        }
+        button:hover {
+            background: #0052a3;
+        }
+        .status {
+            margin: 10px 0;
+            padding: 10px;
+            background: #1a1b1e;
+            border-radius: 4px;
+        }
+        .event {
+            margin: 5px 0;
+            padding: 5px;
+            background: #1a1b1e;
+            border-left: 3px solid #0066cc;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        .error {
+            color: #ff6b6b;
+            border-left-color: #ff6b6b;
+        }
+        .success {
+            color: #4caf50;
+            border-left-color: #4caf50;
+        }
+    </style>
+</head>
+<body>
+    <h1>Complete SSE Test</h1>
+    
+    <div class="test-section">
+        <h2>Test 1: Simple SSE Endpoint (/test-sse)</h2>
+        <button onclick="testSimpleSSE()">Test Simple SSE</button>
+        <button onclick="closeSimpleSSE()">Close Simple SSE</button>
+        <div class="status" id="simple-status">Not connected</div>
+        <div id="simple-events"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Test 2: Main Events Endpoint (/events)</h2>
+        <button onclick="testMainSSE()">Test Main SSE</button>
+        <button onclick="closeMainSSE()">Close Main SSE</button>
+        <div class="status" id="main-status">Not connected</div>
+        <div id="main-events"></div>
+    </div>
+    
+    <div class="test-section">
+        <h2>Network Analysis</h2>
+        <button onclick="analyzeNetwork()">Analyze Network</button>
+        <div id="network-info"></div>
+    </div>
+    
+    <script>
+        let simpleEventSource;
+        let mainEventSource;
+        
+        function logEvent(containerId, message, isError = false) {
+            const div = document.createElement('div');
+            div.className = 'event' + (isError ? ' error' : '');
+            div.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            document.getElementById(containerId).appendChild(div);
+        }
+        
+        function testSimpleSSE() {
+            console.log('Testing simple SSE...');
+            document.getElementById('simple-status').textContent = 'Connecting...';
+            logEvent('simple-events', 'Initiating connection to /test-sse');
+            
+            simpleEventSource = new EventSource('/test-sse');
+            
+            simpleEventSource.onopen = function() {
+                console.log('Simple SSE connection opened!');
+                document.getElementById('simple-status').textContent = 'Connected!';
+                document.getElementById('simple-status').className = 'status success';
+                logEvent('simple-events', 'Connection opened successfully');
+            };
+            
+            simpleEventSource.onerror = function(error) {
+                console.error('Simple SSE error:', error);
+                document.getElementById('simple-status').textContent = `Error - ReadyState: ${simpleEventSource.readyState}`;
+                document.getElementById('simple-status').className = 'status error';
+                logEvent('simple-events', `Error occurred - ReadyState: ${simpleEventSource.readyState} (0=CONNECTING, 1=OPEN, 2=CLOSED)`, true);
+                
+                // Check response details
+                if (simpleEventSource.readyState === EventSource.CLOSED) {
+                    logEvent('simple-events', 'Connection closed by server', true);
+                }
+            };
+            
+            simpleEventSource.onmessage = function(event) {
+                console.log('Simple SSE message:', event.data);
+                logEvent('simple-events', `Message: ${event.data}`);
+            };
+            
+            // Listen for specific event types
+            simpleEventSource.addEventListener('connected', function(event) {
+                console.log('Received connected event:', event.data);
+                logEvent('simple-events', `Connected event: ${event.data}`, false);
+            });
+            
+            simpleEventSource.addEventListener('complete', function(event) {
+                console.log('Received complete event:', event.data);
+                logEvent('simple-events', `Complete event: ${event.data}`, false);
+            });
+        }
+        
+        function closeSimpleSSE() {
+            if (simpleEventSource) {
+                simpleEventSource.close();
+                document.getElementById('simple-status').textContent = 'Closed';
+                document.getElementById('simple-status').className = 'status';
+                logEvent('simple-events', 'Connection closed by client');
+            }
+        }
+        
+        function testMainSSE() {
+            console.log('Testing main SSE...');
+            document.getElementById('main-status').textContent = 'Connecting...';
+            logEvent('main-events', 'Initiating connection to /events');
+            
+            mainEventSource = new EventSource('/events');
+            
+            mainEventSource.onopen = function() {
+                console.log('Main SSE connection opened!');
+                document.getElementById('main-status').textContent = 'Connected!';
+                document.getElementById('main-status').className = 'status success';
+                logEvent('main-events', 'Connection opened successfully');
+            };
+            
+            mainEventSource.onerror = function(error) {
+                console.error('Main SSE error:', error);
+                document.getElementById('main-status').textContent = `Error - ReadyState: ${mainEventSource.readyState}`;
+                document.getElementById('main-status').className = 'status error';
+                logEvent('main-events', `Error occurred - ReadyState: ${mainEventSource.readyState} (0=CONNECTING, 1=OPEN, 2=CLOSED)`, true);
+                
+                // Check response details
+                if (mainEventSource.readyState === EventSource.CLOSED) {
+                    logEvent('main-events', 'Connection closed by server', true);
+                }
+            };
+            
+            mainEventSource.onmessage = function(event) {
+                console.log('Main SSE message:', event.data);
+                logEvent('main-events', `Message: ${event.data}`);
+            };
+            
+            // Listen for specific event types
+            mainEventSource.addEventListener('connected', function(event) {
+                console.log('Received connected event:', event.data);
+                logEvent('main-events', `Connected event: ${event.data}`, false);
+            });
+            
+            mainEventSource.addEventListener('permission_request', function(event) {
+                console.log('Received permission_request event:', event.data);
+                logEvent('main-events', `Permission request: ${event.data}`, false);
+            });
+        }
+        
+        function closeMainSSE() {
+            if (mainEventSource) {
+                mainEventSource.close();
+                document.getElementById('main-status').textContent = 'Closed';
+                document.getElementById('main-status').className = 'status';
+                logEvent('main-events', 'Connection closed by client');
+            }
+        }
+        
+        async function analyzeNetwork() {
+            const info = document.getElementById('network-info');
+            info.innerHTML = '<h3>Checking endpoints...</h3>';
+            
+            // Test regular endpoint
+            try {
+                const appResponse = await fetch('/api/app');
+                const appData = await appResponse.json();
+                info.innerHTML += `<div class="event success">✓ /api/app works: ${JSON.stringify(appData)}</div>`;
+            } catch (e) {
+                info.innerHTML += `<div class="event error">✗ /api/app failed: ${e.message}</div>`;
+            }
+            
+            // Test SSE endpoints with fetch
+            try {
+                const sseResponse = await fetch('/events', {
+                    headers: {
+                        'Accept': 'text/event-stream'
+                    }
+                });
+                info.innerHTML += `<div class="event ${sseResponse.ok ? 'success' : 'error'}">
+                    /events response: ${sseResponse.status} ${sseResponse.statusText}
+                    <br>Content-Type: ${sseResponse.headers.get('Content-Type')}
+                </div>`;
+            } catch (e) {
+                info.innerHTML += `<div class="event error">✗ /events fetch failed: ${e.message}</div>`;
+            }
+            
+            try {
+                const testResponse = await fetch('/test-sse', {
+                    headers: {
+                        'Accept': 'text/event-stream'
+                    }
+                });
+                info.innerHTML += `<div class="event ${testResponse.ok ? 'success' : 'error'}">
+                    /test-sse response: ${testResponse.status} ${testResponse.statusText}
+                    <br>Content-Type: ${testResponse.headers.get('Content-Type')}
+                </div>`;
+            } catch (e) {
+                info.innerHTML += `<div class="event error">✗ /test-sse fetch failed: ${e.message}</div>`;
+            }
+        }
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', function() {
+            if (simpleEventSource) simpleEventSource.close();
+            if (mainEventSource) mainEventSource.close();
+        });
+    </script>
+</body>
+</html>

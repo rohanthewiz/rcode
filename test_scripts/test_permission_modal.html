@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test Permission Modal</title>
+    <style>
+        body {
+            background: #1a1b1e;
+            color: #fff;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+        }
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        .modal-content {
+            background: #2a2b2e;
+            border-radius: 8px;
+            max-width: 500px;
+            width: 90%;
+        }
+        .modal-header {
+            padding: 1.5rem;
+            border-bottom: 1px solid #3a3b3e;
+        }
+        button {
+            padding: 0.5rem 1rem;
+            margin: 0.5rem;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+    <h1>Test Permission Modal</h1>
+    <button onclick="testModal()">Test Permission Modal</button>
+    
+    <div id="permission-modal" class="modal" style="display: none;">
+        <div class="modal-content permission-dialog">
+            <div class="modal-header">
+                <h3>
+                    <span class="permission-icon">🔐</span>
+                    Tool Permission Required
+                </h3>
+            </div>
+            <div class="modal-body">
+                <div class="permission-info">
+                    <p>
+                        The AI wants to use the 
+                        <strong id="permission-tool-name">test_tool</strong>
+                        tool with the following parameters:
+                    </p>
+                    <div id="permission-params" class="permission-params">
+                        <div class="param-display">Test parameters</div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer permission-actions">
+                <button id="permission-deny" onclick="hideModal()">Deny</button>
+                <button id="permission-approve" onclick="hideModal()">Approve</button>
+            </div>
+        </div>
+    </div>
+    
+    <script>
+        function testModal() {
+            console.log('Testing modal...');
+            const modal = document.getElementById('permission-modal');
+            console.log('Modal element:', modal);
+            if (modal) {
+                modal.style.display = 'block';
+                console.log('Modal should be visible now');
+            } else {
+                console.error('Modal element not found!');
+            }
+        }
+        
+        function hideModal() {
+            document.getElementById('permission-modal').style.display = 'none';
+        }
+    </script>
+</body>
+</html>

@@ -69,6 +69,8 @@ function connectEventSource() {
   };
 
   eventSource.onmessage = function(event) {
+    // console.log('SSE msg received (raw): ', event);
+
     const data = JSON.parse(event.data);
     handleServerEvent(data);
   };
@@ -209,9 +211,21 @@ function showConnectionError(message) {
 
 // Handle server events
 function handleServerEvent(event) {
-  console.log('Received SSE event:', event);
+  // already logged at parent // console.log('Received SSE event:', event);
   console.log('Event sessionId:', event.sessionId, 'Current sessionId:', currentSessionId, 'Match:', event.sessionId === currentSessionId);
   console.log('Global currentSessionId:', window.currentSessionId);
+  
+  // Special logging for permission events
+  if (event.type === 'permission_request' || event.type === 'permission_timeout') {
+    console.warn('PERMISSION EVENT RECEIVED:', {
+      type: event.type,
+      eventSessionId: event.sessionId,
+      currentSessionId: currentSessionId,
+      windowSessionId: window.currentSessionId,
+      sessionMatch: event.sessionId === currentSessionId,
+      data: event.data
+    });
+  }
 
   if (event.type === 'message_start' && event.sessionId === currentSessionId) {
     console.log('Message streaming started');
@@ -285,6 +299,19 @@ function handleServerEvent(event) {
     console.log('Tool permission updated:', event.data);
     // Could refresh the tools list or update specific tool UI
     // For now, just log it as the UI is already updated optimistically
+  } else if (event.type === 'permission_request') {
+    // Handle permission request - check session ID match
+    console.log('Permission request received:', event.data);
+    console.log('Session check:', event.sessionId, '===', currentSessionId, '?', event.sessionId === currentSessionId);
+    if (event.sessionId === currentSessionId || event.sessionId === window.currentSessionId) {
+      handlePermissionRequest(event.data);
+    } else {
+      console.warn('Permission request for different session, ignoring');
+    }
+  } else if (event.type === 'permission_timeout' && event.sessionId === currentSessionId) {
+    // Handle permission timeout
+    console.log('Permission request timed out:', event.data);
+    handlePermissionTimeout(event.data.requestId);
   }
 }
 
@@ -2030,5 +2057,178 @@ function toggleToolDetails(button) {
   } else {
     list.style.display = 'none';
     button.textContent = '▶';
+  }
+}
+
+// Permission Request Handling
+const activePermissionRequests = new Map();
+let permissionTimeoutInterval = null;
+
+// Handle incoming permission request
+function handlePermissionRequest(data) {
+  console.error('HANDLE PERMISSION REQUEST CALLED:', data);
+  
+  // Store the request
+  activePermissionRequests.set(data.requestId, {
+    ...data,
+    timeRemaining: 30
+  });
+  
+  // Show the permission modal
+  showPermissionModal(data);
+  
+  // Start timeout countdown if not already running
+  if (!permissionTimeoutInterval) {
+    permissionTimeoutInterval = setInterval(updatePermissionTimeouts, 1000);
+  }
+}
+
+// Show permission modal dialog
+function showPermissionModal(data) {
+  const modal = document.getElementById('permission-modal');
+  const toolNameElement = document.getElementById('permission-tool-name');
+  const paramsElement = document.getElementById('permission-params');
+  const rememberCheckbox = document.getElementById('permission-remember');
+  
+  // Set tool name
+  toolNameElement.textContent = data.toolName;
+  
+  // Display parameters
+  paramsElement.innerHTML = '';
+  if (data.parameterDisplay) {
+    const paramDiv = document.createElement('div');
+    paramDiv.className = 'param-display';
+    paramDiv.textContent = data.parameterDisplay;
+    paramsElement.appendChild(paramDiv);
+  } else {
+    // Fallback to showing raw parameters
+    const paramList = document.createElement('ul');
+    for (const [key, value] of Object.entries(data.parameters || {})) {
+      if (!key.startsWith('_')) { // Skip internal parameters
+        const li = document.createElement('li');
+        li.innerHTML = `<strong>${key}:</strong> ${JSON.stringify(value)}`;
+        paramList.appendChild(li);
+      }
+    }
+    paramsElement.appendChild(paramList);
+  }
+  
+  // Reset checkbox
+  rememberCheckbox.checked = false;
+  
+  // Set up button handlers
+  const approveBtn = document.getElementById('permission-approve');
+  const denyBtn = document.getElementById('permission-deny');
+  
+  // Remove old handlers
+  const newApproveBtn = approveBtn.cloneNode(true);
+  const newDenyBtn = denyBtn.cloneNode(true);
+  approveBtn.parentNode.replaceChild(newApproveBtn, approveBtn);
+  denyBtn.parentNode.replaceChild(newDenyBtn, denyBtn);
+  
+  // Add new handlers
+  newApproveBtn.addEventListener('click', () => {
+    handlePermissionResponse(data.requestId, true);
+  });
+  
+  newDenyBtn.addEventListener('click', () => {
+    handlePermissionResponse(data.requestId, false);
+  });
+  
+  // Show modal
+  modal.style.display = 'block';
+  
+  // Update timeout display
+  updatePermissionTimeout(data.requestId);
+}
+
+// Handle permission response
+async function handlePermissionResponse(requestId, approved) {
+  const request = activePermissionRequests.get(requestId);
+  if (!request) return;
+  
+  const rememberCheckbox = document.getElementById('permission-remember');
+  const remember = rememberCheckbox.checked;
+  
+  // Hide modal
+  document.getElementById('permission-modal').style.display = 'none';
+  
+  // Remove from active requests
+  activePermissionRequests.delete(requestId);
+  
+  // Stop timeout interval if no more requests
+  if (activePermissionRequests.size === 0 && permissionTimeoutInterval) {
+    clearInterval(permissionTimeoutInterval);
+    permissionTimeoutInterval = null;
+  }
+  
+  // Send response to backend
+  try {
+    const response = await fetch('/api/permission-response', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        requestId: requestId,
+        approved: approved,
+        rememberChoice: remember
+      })
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to send permission response:', response.status);
+    }
+  } catch (error) {
+    console.error('Error sending permission response:', error);
+  }
+}
+
+// Handle permission timeout
+function handlePermissionTimeout(requestId) {
+  // Remove from active requests
+  activePermissionRequests.delete(requestId);
+  
+  // Hide modal if it's showing this request
+  const modal = document.getElementById('permission-modal');
+  if (modal.style.display === 'block') {
+    // Check if current modal is for this request
+    // (In a more complex implementation, we'd track which request is shown)
+    modal.style.display = 'none';
+  }
+  
+  // Stop timeout interval if no more requests
+  if (activePermissionRequests.size === 0 && permissionTimeoutInterval) {
+    clearInterval(permissionTimeoutInterval);
+    permissionTimeoutInterval = null;
+  }
+  
+  // Show notification
+  addSystemMessageToUI('⏱️ Permission request timed out', 'warning');
+}
+
+// Update permission timeouts
+function updatePermissionTimeouts() {
+  for (const [requestId, request] of activePermissionRequests) {
+    request.timeRemaining--;
+    
+    if (request.timeRemaining <= 0) {
+      // Timeout reached, but let backend handle it
+      continue;
+    }
+    
+    // Update display if this request is shown
+    updatePermissionTimeout(requestId);
+  }
+}
+
+// Update timeout display for specific request
+function updatePermissionTimeout(requestId) {
+  const request = activePermissionRequests.get(requestId);
+  if (!request) return;
+  
+  const timeoutElement = document.getElementById('permission-timeout-seconds');
+  if (timeoutElement) {
+    timeoutElement.textContent = request.timeRemaining;
   }
 }

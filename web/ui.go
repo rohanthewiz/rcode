@@ -264,6 +264,45 @@ func generateMainUI(isAuthenticated bool) string {
 					),
 				),
 			),
+			// Permission Dialog Modal
+			b.Div("id", "permission-modal", "class", "modal").R(
+				b.Div("class", "modal-content permission-dialog").R(
+					b.Div("class", "modal-header").R(
+						b.H3().R(
+							b.Span("class", "permission-icon").T("🔐"),
+							b.T(" Tool Permission Required"),
+						),
+					),
+					b.Div("class", "modal-body").R(
+						b.Div("class", "permission-info").R(
+							b.P().R(
+								b.T("The AI wants to use the "),
+								b.Strong("id", "permission-tool-name").T(""),
+								b.T(" tool with the following parameters:"),
+							),
+							b.Div("id", "permission-params", "class", "permission-params").R(),
+						),
+						b.Div("class", "permission-warning").R(
+							b.P().T("⚠️ Please review the operation carefully before approving."),
+						),
+						b.Div("class", "permission-remember").R(
+							b.Label().R(
+								b.Input("type", "checkbox", "id", "permission-remember"),
+								b.T(" Remember this choice for this session"),
+							),
+						),
+					),
+					b.Div("class", "modal-footer permission-actions").R(
+						b.Button("id", "permission-deny", "class", "btn-secondary").T("Deny"),
+						b.Button("id", "permission-approve", "class", "btn-primary").T("Approve"),
+					),
+					b.Div("class", "permission-timeout").R(
+						b.Span().T("This request will timeout in "),
+						b.Span("id", "permission-timeout-seconds").T("30"),
+						b.T(" seconds"),
+					),
+				),
+			),
 			// Monaco Editor Scripts
 			b.Script("src", "https://cdnjs.cloudflare.com/ajax/libs/monaco-editor/0.52.2/min/vs/loader.min.js").R(),
 			// b.Script().T(monacoLoaderJS),

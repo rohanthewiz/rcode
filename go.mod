@@ -6,10 +6,10 @@ toolchain go1.24.4
 
 require (
 	github.com/marcboeker/go-duckdb/v2 v2.3.2
-	github.com/rohanthewiz/element v0.5.3-0.20250627111812-59cb8eb1e7d6
+	github.com/rohanthewiz/element v0.5.4
 	github.com/rohanthewiz/logger v1.2.6-0.20250414041848-3a03f01e83a7
-	github.com/rohanthewiz/rweb v0.1.15-0.20250705101651-20d3af4f8c5e
-	github.com/rohanthewiz/serr v1.2.4
+	github.com/rohanthewiz/rweb v0.1.20
+	github.com/rohanthewiz/serr v1.2.16
 )
 
 require (

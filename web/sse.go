@@ -3,7 +3,6 @@ package web
 import (
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"sync"
 	"time"
 
@@ -11,33 +10,35 @@ import (
 	"github.com/rohanthewiz/rweb"
 )
 
+const sseStdMsgType = "message" // note that JS EventSource only pickup on "message" event type
+
 // SSEEvent represents a server-sent event
 type SSEEvent struct {
 	Type      string      `json:"type"`
-	SessionID string      `json:"sessionId,omitempty"`
+	SessionId string      `json:"sessionId,omitempty"`
 	Data      interface{} `json:"data"`
 }
 
 // SSEHub manages SSE connections
 type SSEHub struct {
 	mu      sync.RWMutex
-	clients map[chan SSEEvent]bool
+	clients map[chan any]bool
 }
 
 // Global SSE hub
 var sseHub = &SSEHub{
-	clients: make(map[chan SSEEvent]bool),
+	clients: make(map[chan any]bool),
 }
 
 // Register adds a new SSE client
-func (h *SSEHub) Register(client chan SSEEvent) {
+func (h *SSEHub) Register(client chan any) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.clients[client] = true
 }
 
 // Unregister removes an SSE client
-func (h *SSEHub) Unregister(client chan SSEEvent) {
+func (h *SSEHub) Unregister(client chan any) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	delete(h.clients, client)
@@ -49,65 +50,32 @@ func (h *SSEHub) Broadcast(event SSEEvent) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	logger.F("Broadcasting SSE event: type=%s, sessionID=%s, clients=%d", event.Type, event.SessionID, len(h.clients))
+	logger.F("Broadcasting SSE event: type=%s, sessionID=%s, nbrOfClients=%d", event.Type, event.SessionId, len(h.clients))
+
+	// Prepare the payload
+	data := map[string]interface{}{
+		"type":      event.Type,
+		"sessionId": event.SessionId,
+		"data":      event.Data,
+	}
+
+	bytPayload, err := json.Marshal(data)
+	if err != nil {
+		logger.LogErr(err, "On broadcast, failed to marshal SSE event")
+		return
+	}
+
+	rEvent := rweb.SSEvent{
+		Type: sseStdMsgType, // Type fixed here bc that's what EventSource expects // event.Type,
+		Data: string(bytPayload),
+	}
 
 	for client := range h.clients {
 		select {
-		case client <- event:
-			// logger.Debug("Event sent to client")
+		case client <- rEvent:
 		default:
 			// Client's channel is full, skip
 			logger.Log("warn", "SSE client channel full, skipping")
-		}
-	}
-}
-
-// Updated eventsHandler with proper SSE implementation
-func eventsHandler(c rweb.Context) error {
-	// Set SSE headers
-	c.Response().SetHeader("Content-Type", "text/event-stream")
-	c.Response().SetHeader("Cache-Control", "no-cache")
-	c.Response().SetHeader("Connection", "keep-alive")
-	c.Response().SetHeader("Access-Control-Allow-Origin", "*")
-
-	// Create client channel
-	clientChan := make(chan SSEEvent, 10)
-	sseHub.Register(clientChan)
-
-	// Ensure cleanup on disconnect
-	defer func() {
-		sseHub.Unregister(clientChan)
-	}()
-
-	// Send initial connection event
-	_, _ = fmt.Fprintf(c.Response(), "event: connected\ndata: {}\n\n")
-	if flusher, ok := c.Response().(http.Flusher); ok {
-		flusher.Flush()
-	}
-
-	// Listen for events
-	for {
-		select {
-		case event, ok := <-clientChan:
-			if !ok {
-				// Channel closed, client disconnected
-				return nil
-			}
-
-			// Marshal event data
-			data, err := json.Marshal(event)
-			if err != nil {
-				logger.LogErr(err, "failed to marshal SSE event")
-				continue
-			}
-
-			// Send event
-			_, _ = fmt.Fprintf(c.Response(), "data: %s\n\n", string(data))
-
-			// Flush the response
-			if flusher, ok := c.Response().(http.Flusher); ok {
-				flusher.Flush()
-			}
 		}
 	}
 }
@@ -116,7 +84,7 @@ func eventsHandler(c rweb.Context) error {
 func BroadcastSessionUpdate(sessionID string, updateType string, data interface{}) {
 	event := SSEEvent{
 		Type:      updateType,
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data:      data,
 	}
 	sseHub.Broadcast(event)
@@ -140,7 +108,7 @@ func BroadcastSessionList() {
 func BroadcastToolUsage(sessionID string, toolName string, summary string) {
 	event := SSEEvent{
 		Type:      "tool_usage",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data: map[string]interface{}{
 			"tool":    toolName,
 			"summary": summary,
@@ -198,7 +166,7 @@ func BroadcastFileTreeUpdate(path string) {
 func BroadcastDiffAvailable(sessionID string, diffID int64, filePath string, stats interface{}, toolName string) {
 	event := SSEEvent{
 		Type:      "diff_available",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data: map[string]interface{}{
 			"diffId":   diffID,
 			"filePath": filePath,
@@ -213,7 +181,7 @@ func BroadcastDiffAvailable(sessionID string, diffID int64, filePath string, sta
 func BroadcastToolPermissionUpdate(sessionID string, toolName string, enabled bool, mode string) {
 	event := SSEEvent{
 		Type:      "tool_permission_update",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data: map[string]interface{}{
 			"toolName": toolName,
 			"enabled":  enabled,
@@ -227,7 +195,7 @@ func BroadcastToolPermissionUpdate(sessionID string, toolName string, enabled bo
 func BroadcastMessageStart(sessionID string) {
 	event := SSEEvent{
 		Type:      "message_start",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data:      nil,
 	}
 	sseHub.Broadcast(event)
@@ -237,7 +205,7 @@ func BroadcastMessageStart(sessionID string) {
 func BroadcastMessageDelta(sessionID string, delta string) {
 	event := SSEEvent{
 		Type:      "message_delta",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data: map[string]interface{}{
 			"delta": delta,
 		},
@@ -249,7 +217,7 @@ func BroadcastMessageDelta(sessionID string, delta string) {
 func BroadcastMessageStop(sessionID string) {
 	event := SSEEvent{
 		Type:      "message_stop",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data:      nil,
 	}
 	sseHub.Broadcast(event)
@@ -259,7 +227,7 @@ func BroadcastMessageStop(sessionID string) {
 func BroadcastToolUseStart(sessionID string) {
 	event := SSEEvent{
 		Type:      "tool_use_start",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data:      nil,
 	}
 	sseHub.Broadcast(event)
@@ -269,7 +237,7 @@ func BroadcastToolUseStart(sessionID string) {
 func BroadcastContentStart(sessionID string) {
 	event := SSEEvent{
 		Type:      "content_start",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data:      nil,
 	}
 	sseHub.Broadcast(event)
@@ -279,7 +247,7 @@ func BroadcastContentStart(sessionID string) {
 func BroadcastToolExecutionStart(sessionID string, toolID string, toolName string) {
 	event := SSEEvent{
 		Type:      "tool_execution_start",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data: map[string]interface{}{
 			"toolId":    toolID,
 			"toolName":  toolName,
@@ -294,7 +262,7 @@ func BroadcastToolExecutionStart(sessionID string, toolID string, toolName strin
 func BroadcastToolExecutionProgress(sessionID string, toolID string, progress int, message string) {
 	event := SSEEvent{
 		Type:      "tool_execution_progress",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data: map[string]interface{}{
 			"toolId":   toolID,
 			"progress": progress,
@@ -308,13 +276,44 @@ func BroadcastToolExecutionProgress(sessionID string, toolID string, progress in
 func BroadcastToolExecutionComplete(sessionID string, toolID string, status string, summary string, durationMs int64, metrics map[string]interface{}) {
 	event := SSEEvent{
 		Type:      "tool_execution_complete",
-		SessionID: sessionID,
+		SessionId: sessionID,
 		Data: map[string]interface{}{
 			"toolId":   toolID,
 			"status":   status, // "success", "failed", "cancelled"
 			"summary":  summary,
 			"duration": durationMs,
 			"metrics":  metrics,
+		},
+	}
+	sseHub.Broadcast(event)
+}
+
+// BroadcastPermissionRequest broadcasts a tool permission request to the frontend
+func BroadcastPermissionRequest(request *PermissionRequest) {
+	// Format parameters for display
+	paramDisplay := FormatParametersForDisplay(request.ToolName, request.Parameters)
+
+	event := SSEEvent{
+		Type:      "permission_request",
+		SessionId: request.SessionID,
+		Data: map[string]interface{}{
+			"requestId":        request.ID,
+			"toolName":         request.ToolName,
+			"parameters":       request.Parameters,
+			"parameterDisplay": paramDisplay,
+			"timestamp":        request.Timestamp.Unix(),
+		},
+	}
+	sseHub.Broadcast(event)
+}
+
+// BroadcastPermissionTimeout broadcasts when a permission request times out
+func BroadcastPermissionTimeout(sessionID string, requestID string) {
+	event := SSEEvent{
+		Type:      "permission_timeout",
+		SessionId: sessionID,
+		Data: map[string]interface{}{
+			"requestId": requestID,
 		},
 	}
 	sseHub.Broadcast(event)
