@@ -2233,6 +2233,7 @@ async function handlePermissionResponse(requestId, approved) {
       },
       body: JSON.stringify({
         requestId: requestId,
+        sessionId: currentSessionId,
         approved: approved,
         rememberChoice: remember
       })

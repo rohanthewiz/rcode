@@ -24,6 +24,7 @@ type PermissionRequest struct {
 // PermissionResponse represents a user's response to a permission request
 type PermissionResponse struct {
 	RequestID      string `json:"requestId"`
+	SessionID      string `json:"sessionId"`
 	Approved       bool   `json:"approved"`
 	RememberChoice bool   `json:"rememberChoice"`
 	Error          error  `json:"-"`

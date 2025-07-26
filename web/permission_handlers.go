@@ -25,8 +25,23 @@ func handlePermissionResponseHandler(c rweb.Context) error {
 		return c.WriteError(serr.New("permission request not found or expired"), 404)
 	}
 
-	// TODO: Validate that the session making the response owns the request
-	// For now, we'll trust the frontend (in production, you'd verify session ownership)
+	// Validate that the session making the response owns the request
+	// This prevents cross-session attacks where one session could approve
+	// permission requests from another session
+	if response.SessionID == "" {
+		return c.WriteError(serr.New("session ID is required"), 400)
+	}
+
+	// Verify the session ID matches the request's session ID
+	// This ensures only the session that triggered the permission request
+	// can approve or deny it, pr
+	if response.SessionID != request.SessionID {
+		logger.Warn("Session mismatch in permission response",
+			"responseSessionID", response.SessionID,
+			"requestSessionID", request.SessionID,
+			"requestID", response.RequestID)
+		return c.WriteError(serr.New("unauthorized: session does not own this permission request"), 403)
+	}
 
 	logger.Info("Received permission response",
 		"requestId", response.RequestID,
