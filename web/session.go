@@ -619,17 +619,12 @@ func sendMessageHandler(c rweb.Context) error {
 					logger.LogErr(err, "failed to add assistant message")
 				}
 
-				// Broadcast the complete message (already streamed via deltas)
-				BroadcastMessage(sessionID, map[string]interface{}{
-					"role":    "assistant",
-					"content": streamingContent,
-					"model":   assistantModel,
-				})
+				// Message already streamed via deltas - no need to broadcast complete message
 
-				// Return the assistant's response with model info and tool summaries
+				// Return response metadata (content already streamed via deltas)
 				return c.WriteJSON(map[string]interface{}{
 					"role":          "assistant",
-					"content":       streamingContent,
+					"streamed":      true,
 					"usage":         usage,
 					"model":         assistantModel,
 					"toolSummaries": toolSummaries,

@@ -256,13 +256,6 @@ function handleServerEvent(event) {
     console.log('Message streaming stopped');
     // Finalize streaming message
     finalizeStreamingMessage();
-  } else if (event.type === 'message' && event.sessionId === currentSessionId) {
-    console.log('Adding assistant message to UI');
-    // Add assistant message to UI (fallback for non-streaming)
-    addMessageToUI(event.data);
-    // Scroll to bottom
-    const messagesContainer = document.getElementById('messages');
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
   } else if (event.type === 'tool_execution_start' && event.sessionId === currentSessionId) {
     console.log('Tool execution started:', event.data);
     handleToolExecutionStart(event.data);
@@ -800,14 +793,7 @@ async function sendMessage() {
       messagesContainer.appendChild(toolsSummary);
     }
 
-    // Add the assistant's response directly from the API response
-    if (result.content) {
-      addMessageToUI({
-        role: 'assistant',
-        content: result.content,
-        model: result.model
-      });
-    }
+    // Response content already streamed via SSE deltas - no need to add again
     
     // Reload sessions to show updated title (for first message)
     // The backend will have updated the session title based on the first user message
