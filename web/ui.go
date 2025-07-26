@@ -83,7 +83,7 @@ func generateMainUI(isAuthenticated bool) string {
 						b.Div("class", "header-right").R(
 							func() any {
 								if isAuthenticated {
-									b.Span("class", "auth-status").T("Connected to Claude Pro/Max")
+									b.Span("class", "auth-status").T("Connected to Claude")
 									b.Span("id", "connection-status", "class", "connection-status").R()
 									b.Button("id", "plan-history-btn", "class", "btn-secondary").T("Plan History")
 									b.Button("class", "btn-secondary", "onclick", "window.open('/prompts', '_blank')").T("Manage Prompts")
