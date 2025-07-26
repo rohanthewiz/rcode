@@ -293,16 +293,23 @@ func BroadcastPermissionRequest(request *PermissionRequest) {
 	// Format parameters for display
 	paramDisplay := FormatParametersForDisplay(request.ToolName, request.Parameters)
 
+	eventData := map[string]interface{}{
+		"requestId":        request.ID,
+		"toolName":         request.ToolName,
+		"parameters":       request.Parameters,
+		"parameterDisplay": paramDisplay,
+		"timestamp":        request.Timestamp.Unix(),
+	}
+
+	// Include diff preview if available
+	if request.DiffPreview != nil {
+		eventData["diffPreview"] = request.DiffPreview
+	}
+
 	event := SSEEvent{
 		Type:      "permission_request",
 		SessionId: request.SessionID,
-		Data: map[string]interface{}{
-			"requestId":        request.ID,
-			"toolName":         request.ToolName,
-			"parameters":       request.Parameters,
-			"parameterDisplay": paramDisplay,
-			"timestamp":        request.Timestamp.Unix(),
-		},
+		Data:      eventData,
 	}
 	sseHub.Broadcast(event)
 }

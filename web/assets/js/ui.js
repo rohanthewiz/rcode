@@ -2099,6 +2099,49 @@ function showPermissionModal(data) {
     paramsElement.appendChild(paramList);
   }
   
+  // Handle diff preview if available
+  const diffSection = document.getElementById('permission-diff-section');
+  const diffToggle = document.getElementById('permission-diff-toggle');
+  const diffContainer = document.getElementById('permission-diff-container');
+  const diffContent = document.getElementById('permission-diff-content');
+  const diffStats = document.getElementById('permission-diff-stats');
+  
+  if (data.diffPreview && (data.toolName === 'write_file' || data.toolName === 'edit_file')) {
+    // Show diff section
+    diffSection.style.display = 'block';
+    
+    // Set diff stats
+    const stats = data.diffPreview.stats;
+    if (stats) {
+      diffStats.textContent = `(+${stats.added || 0}, -${stats.deleted || 0} lines)`;
+    }
+    
+    // Render diff content
+    renderPermissionDiff(diffContent, data.diffPreview);
+    
+    // Set up toggle handler
+    const toggleIcon = diffToggle.querySelector('.toggle-icon');
+    diffToggle.onclick = function() {
+      if (diffContainer.style.display === 'none') {
+        diffContainer.style.display = 'block';
+        diffToggle.classList.add('expanded');
+        toggleIcon.textContent = '▼';
+      } else {
+        diffContainer.style.display = 'none';
+        diffToggle.classList.remove('expanded');
+        toggleIcon.textContent = '▶';
+      }
+    };
+    
+    // Initially collapsed
+    diffContainer.style.display = 'none';
+    diffToggle.classList.remove('expanded');
+    toggleIcon.textContent = '▶';
+  } else {
+    // Hide diff section
+    diffSection.style.display = 'none';
+  }
+  
   // Reset checkbox
   rememberCheckbox.checked = false;
   
@@ -2126,6 +2169,39 @@ function showPermissionModal(data) {
   
   // Update timeout display
   updatePermissionTimeout(data.requestId);
+}
+
+// Render diff content in permission modal
+function renderPermissionDiff(container, diffResult) {
+  container.innerHTML = '';
+  
+  if (!diffResult.hunks || diffResult.hunks.length === 0) {
+    container.innerHTML = '<div class="diff-line context">No changes detected</div>';
+    return;
+  }
+  
+  // Render unified diff format
+  diffResult.hunks.forEach(hunk => {
+    // Add hunk header
+    const header = document.createElement('div');
+    header.className = 'diff-header';
+    header.textContent = `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
+    container.appendChild(header);
+    
+    // Add diff lines
+    hunk.lines.forEach(line => {
+      const lineDiv = document.createElement('div');
+      lineDiv.className = `diff-line ${line.type}`;
+      
+      // Add prefix based on type
+      let prefix = ' ';
+      if (line.type === 'add') prefix = '+';
+      else if (line.type === 'delete') prefix = '-';
+      
+      lineDiv.textContent = prefix + line.content;
+      container.appendChild(lineDiv);
+    });
+  });
 }
 
 // Handle permission response

@@ -282,6 +282,19 @@ func generateMainUI(isAuthenticated bool) string {
 							),
 							b.Div("id", "permission-params", "class", "permission-params").R(),
 						),
+						// Diff preview section (hidden by default)
+						b.Div("id", "permission-diff-section", "class", "permission-diff-section", "style", "display: none;").R(
+							b.Div("class", "permission-diff-header").R(
+								b.Button("id", "permission-diff-toggle", "class", "diff-toggle-btn").R(
+									b.Span("class", "toggle-icon").T("▶"),
+									b.T(" View Changes "),
+									b.Span("id", "permission-diff-stats", "class", "diff-stats").T(""),
+								),
+							),
+							b.Div("id", "permission-diff-container", "class", "permission-diff-container", "style", "display: none;").R(
+								b.Div("id", "permission-diff-content", "class", "permission-diff-content").R(),
+							),
+						),
 						b.Div("class", "permission-warning").R(
 							b.P().T("⚠️ Please review the operation carefully before approving."),
 						),

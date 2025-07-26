@@ -26,7 +26,7 @@ type FileSnapshot struct {
 	Path      string    `json:"path"`
 	Content   string    `json:"content"`
 	Timestamp time.Time `json:"timestamp"`
-	Hash      string    `json:"hash"` // SHA256 hash of content
+	Hash      string    `json:"hash"`             // SHA256 hash of content
 	ToolID    string    `json:"toolId,omitempty"` // ID of tool that created snapshot
 }
 
@@ -172,7 +172,7 @@ func (ds *DiffService) computeDiff(before, after string) ([]DiffHunk, error) {
 // Counts added, deleted, and modified lines.
 func (ds *DiffService) calculateStats(hunks []DiffHunk) DiffStats {
 	stats := DiffStats{}
-	
+
 	for _, hunk := range hunks {
 		for _, line := range hunk.Lines {
 			switch line.Type {
@@ -183,10 +183,42 @@ func (ds *DiffService) calculateStats(hunks []DiffHunk) DiffStats {
 			}
 		}
 	}
-	
+
 	// Modified lines are typically represented as delete + add
 	// We'll refine this logic when implementing the actual diff algorithm
 	return stats
+}
+
+// GeneratePreview creates a diff preview without storing a snapshot.
+// Used for showing changes before they're applied (e.g., in permission dialogs).
+// This is a non-destructive operation that doesn't affect the snapshot store.
+func (ds *DiffService) GeneratePreview(beforeContent, afterContent string, path string) (*DiffResult, error) {
+	// Generate diff hunks using diff algorithm
+	hunks, err := ds.computeDiff(beforeContent, afterContent)
+	if err != nil {
+		return nil, serr.Wrap(err, "failed to compute preview diff")
+	}
+
+	// Calculate statistics
+	stats := ds.calculateStats(hunks)
+
+	result := &DiffResult{
+		Path:      path,
+		Before:    beforeContent,
+		After:     afterContent,
+		Hunks:     hunks,
+		Stats:     stats,
+		Timestamp: time.Now(),
+	}
+
+	logger.Debug("Generated preview diff",
+		"path", path,
+		"hunks", len(hunks),
+		"added", stats.Added,
+		"deleted", stats.Deleted,
+	)
+
+	return result, nil
 }
 
 // ClearSnapshot removes a snapshot from memory.
@@ -203,7 +235,7 @@ func (ds *DiffService) ClearSnapshot(sessionID, path string) {
 func (ds *DiffService) ClearSessionSnapshots(sessionID string) {
 	ds.mu.Lock()
 	defer ds.mu.Unlock()
-	
+
 	// Remove all snapshots belonging to the session
 	for key := range ds.snapshots {
 		if len(key) > len(sessionID) && key[:len(sessionID)] == sessionID {
@@ -217,14 +249,14 @@ func (ds *DiffService) ClearSessionSnapshots(sessionID string) {
 func (ds *DiffService) GetSessionSnapshots(sessionID string) []*FileSnapshot {
 	ds.mu.RLock()
 	defer ds.mu.RUnlock()
-	
+
 	var snapshots []*FileSnapshot
 	for key, snapshot := range ds.snapshots {
 		if len(key) > len(sessionID) && key[:len(sessionID)] == sessionID {
 			snapshots = append(snapshots, snapshot)
 		}
 	}
-	
+
 	return snapshots
 }
 
@@ -235,7 +267,7 @@ func (ds *DiffService) HasChanges(sessionID, path, newContent string) bool {
 	if snapshot == nil {
 		return true // No snapshot means it's a new file
 	}
-	
+
 	// Compare hashes to detect changes
 	hash := sha256.Sum256([]byte(newContent))
 	newHash := hex.EncodeToString(hash[:])

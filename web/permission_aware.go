@@ -2,9 +2,11 @@ package web
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"rcode/db"
+	"rcode/diff"
 	"rcode/tools"
 
 	"github.com/rohanthewiz/logger"
@@ -163,8 +165,26 @@ func (e *PermissionAwareExecutor) applyScopeRestrictions(toolUse tools.ToolUse, 
 // HandleAskPermission handles ask permission requests via SSE
 // It sends a permission request to the frontend and waits for the user's response
 func HandleAskPermission(sessionID, toolName string, params map[string]interface{}) (bool, error) {
-	// Create a permission request
-	request, err := permissionManager.CreateRequest(sessionID, toolName, params)
+	var request *PermissionRequest
+	var err error
+
+	// Check if this is a file modification tool that needs diff preview
+	if toolName == "write_file" || toolName == "edit_file" {
+		// Generate diff preview for file modifications
+		diffPreview, err := generateDiffPreview(toolName, params)
+		if err != nil {
+			logger.LogErr(err, "failed to generate diff preview", "tool", toolName)
+			// Continue without diff preview if generation fails
+			request, err = permissionManager.CreateRequest(sessionID, toolName, params)
+		} else {
+			// Create request with diff preview
+			request, err = permissionManager.CreateRequestWithDiff(sessionID, toolName, params, diffPreview)
+		}
+	} else {
+		// Create regular request for non-file tools
+		request, err = permissionManager.CreateRequest(sessionID, toolName, params)
+	}
+
 	if err != nil {
 		return false, serr.Wrap(err, "failed to create permission request")
 	}
@@ -184,4 +204,130 @@ func HandleAskPermission(sessionID, toolName string, params map[string]interface
 	}
 
 	return response.Approved, nil
+}
+
+// generateDiffPreview generates a diff preview for file modification tools
+func generateDiffPreview(toolName string, params map[string]interface{}) (*diff.DiffResult, error) {
+	// Ensure diff service is initialized
+	if diffService == nil {
+		return nil, serr.New("diff service not initialized")
+	}
+
+	path, ok := tools.GetString(params, "path")
+	if !ok || path == "" {
+		return nil, serr.New("path parameter is required")
+	}
+
+	// Expand the path to handle ~ for home directory
+	expandedPath, err := tools.ExpandPath(path)
+	if err != nil {
+		return nil, serr.Wrap(err, "failed to expand path")
+	}
+
+	var beforeContent string
+	var afterContent string
+
+	switch toolName {
+	case "write_file":
+		// For write_file, get the current content if file exists
+		if content, err := os.ReadFile(expandedPath); err == nil {
+			beforeContent = string(content)
+		} else if !os.IsNotExist(err) {
+			// Log error but continue with empty before content
+			logger.LogErr(err, "failed to read existing file for diff", "path", path)
+		}
+		// After content is what will be written
+		afterContent, _ = tools.GetString(params, "content")
+
+	case "edit_file":
+		// For edit_file, we need to read the file and apply the edits
+		content, err := os.ReadFile(expandedPath)
+		if err != nil {
+			return nil, serr.Wrap(err, "failed to read file for edit preview")
+		}
+		beforeContent = string(content)
+
+		// Apply the edit operation to generate after content
+		afterContent, err = previewEditOperation(beforeContent, params)
+		if err != nil {
+			return nil, serr.Wrap(err, "failed to preview edit operation")
+		}
+	}
+
+	// Generate the diff preview
+	return diffService.GeneratePreview(beforeContent, afterContent, path)
+}
+
+// previewEditOperation applies the edit operation to generate the after content
+func previewEditOperation(content string, params map[string]interface{}) (string, error) {
+	// Get edit parameters
+	startLine, ok := tools.GetInt(params, "start_line")
+	if !ok || startLine < 1 {
+		return "", serr.New("start_line is required and must be >= 1")
+	}
+
+	endLine, hasEndLine := tools.GetInt(params, "end_line")
+	if !hasEndLine {
+		endLine = startLine
+	}
+
+	newContent, ok := tools.GetString(params, "new_content")
+	if !ok {
+		return "", serr.New("new_content is required")
+	}
+
+	operation, ok := tools.GetString(params, "operation")
+	if !ok {
+		operation = "replace"
+	}
+
+	// Split into lines
+	lines := strings.Split(content, "\n")
+
+	// Validate line numbers
+	if startLine > len(lines) {
+		return "", serr.New("start_line exceeds file length")
+	}
+	if endLine > len(lines) {
+		endLine = len(lines)
+	}
+
+	// Apply the operation
+	var result []string
+	newLines := strings.Split(newContent, "\n")
+
+	switch operation {
+	case "replace":
+		// Replace lines from startLine to endLine
+		result = append(result, lines[:startLine-1]...)
+		if newContent != "" {
+			result = append(result, newLines...)
+		}
+		if endLine < len(lines) {
+			result = append(result, lines[endLine:]...)
+		}
+
+	case "insert_before":
+		// Insert before startLine
+		result = append(result, lines[:startLine-1]...)
+		if newContent != "" {
+			result = append(result, newLines...)
+		}
+		result = append(result, lines[startLine-1:]...)
+
+	case "insert_after":
+		// Insert after endLine
+		result = append(result, lines[:endLine]...)
+		if newContent != "" {
+			result = append(result, newLines...)
+		}
+		if endLine < len(lines) {
+			result = append(result, lines[endLine:]...)
+		}
+
+	default:
+		return "", serr.New("invalid operation: " + operation)
+	}
+
+	return strings.Join(result, "\n"), nil
 }

@@ -12,12 +12,13 @@ import (
 
 // PermissionRequest represents a pending tool permission request
 type PermissionRequest struct {
-	ID         string                 `json:"id"`
-	SessionID  string                 `json:"sessionId"`
-	ToolName   string                 `json:"toolName"`
-	Parameters map[string]interface{} `json:"parameters"`
-	Timestamp  time.Time              `json:"timestamp"`
-	ResponseCh chan PermissionResponse
+	ID          string                 `json:"id"`
+	SessionID   string                 `json:"sessionId"`
+	ToolName    string                 `json:"toolName"`
+	Parameters  map[string]interface{} `json:"parameters"`
+	Timestamp   time.Time              `json:"timestamp"`
+	DiffPreview interface{}            `json:"diffPreview,omitempty"` // Optional diff preview for file modifications
+	ResponseCh  chan PermissionResponse
 }
 
 // PermissionResponse represents a user's response to a permission request
@@ -68,6 +69,31 @@ func (pm *PermissionManager) CreateRequest(sessionID, toolName string, parameter
 	pm.requests[request.ID] = request
 
 	logger.Info("Created permission request",
+		"id", request.ID,
+		"session", sessionID,
+		"tool", toolName)
+
+	return request, nil
+}
+
+// CreateRequestWithDiff creates a new permission request with an optional diff preview
+func (pm *PermissionManager) CreateRequestWithDiff(sessionID, toolName string, parameters map[string]interface{}, diffPreview interface{}) (*PermissionRequest, error) {
+	pm.mu.Lock()
+	defer pm.mu.Unlock()
+
+	request := &PermissionRequest{
+		ID:          uuid.New().String(),
+		SessionID:   sessionID,
+		ToolName:    toolName,
+		Parameters:  parameters,
+		Timestamp:   time.Now(),
+		DiffPreview: diffPreview,
+		ResponseCh:  make(chan PermissionResponse, 1),
+	}
+
+	pm.requests[request.ID] = request
+
+	logger.Info("Created permission request with diff",
 		"id", request.ID,
 		"session", sessionID,
 		"tool", toolName)

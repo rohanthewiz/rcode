@@ -2183,3 +2183,89 @@ body.plan-executing .plan-overlay {
   font-weight: bold;
   color: var(--primary);
 }
+
+/* Diff Preview in Permission Modal */
+.permission-diff-section {
+  margin: 1rem 0;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.permission-diff-header {
+  background: var(--bg-secondary);
+  padding: 0.5rem;
+}
+
+.diff-toggle-btn {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  font-size: 0.95rem;
+  transition: background-color 0.2s;
+}
+
+.diff-toggle-btn:hover {
+  background: var(--bg-hover);
+}
+
+.diff-toggle-btn .toggle-icon {
+  transition: transform 0.2s;
+}
+
+.diff-toggle-btn.expanded .toggle-icon {
+  transform: rotate(90deg);
+}
+
+.diff-toggle-btn .diff-stats {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+}
+
+.permission-diff-container {
+  max-height: 300px;
+  overflow: auto;
+  background: var(--bg-primary);
+}
+
+.permission-diff-content {
+  padding: 1rem;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  white-space: pre;
+}
+
+/* Diff line styles */
+.permission-diff-content .diff-line {
+  padding: 2px 4px;
+  margin: 0;
+  line-height: 1.4;
+}
+
+.permission-diff-content .diff-line.add {
+  background: rgba(46, 160, 67, 0.15);
+  color: #3fb950;
+}
+
+.permission-diff-content .diff-line.delete {
+  background: rgba(248, 81, 73, 0.15);
+  color: #f85149;
+}
+
+.permission-diff-content .diff-line.context {
+  color: var(--text-secondary);
+}
+
+.permission-diff-content .diff-header {
+  color: var(--primary);
+  font-weight: bold;
+  margin-top: 0.5rem;
+}
