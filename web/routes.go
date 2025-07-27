@@ -6,6 +6,8 @@ import (
 	"github.com/rohanthewiz/rweb"
 )
 
+const clientChanCap = 512
+
 // SetupRoutes configures all HTTP routes for the server
 func SetupRoutes(s *rweb.Server) {
 	// Root endpoint - serves the main web UI
@@ -74,7 +76,7 @@ func SetupRoutes(s *rweb.Server) {
 		func(c rweb.Context) error {
 
 			// Create client channel
-			clientChan := make(chan any, 10)
+			clientChan := make(chan any, clientChanCap)
 			sseHub.Register(clientChan)
 
 			// We cannot unregister here become the conn is long-lived

@@ -18,16 +18,18 @@ import (
 	"github.com/rohanthewiz/serr"
 )
 
+var cacheTTL = 7 * time.Second
+
 // FileNode represents a file or directory in the tree
 type FileNode struct {
-	Path     string      `json:"path"`
-	Name     string      `json:"name"`
-	IsDir    bool        `json:"isDir"`
-	Size     int64       `json:"size,omitempty"`
-	ModTime  time.Time   `json:"modTime"`
-	Children []FileNode  `json:"children,omitempty"`
-	IsOpen   bool        `json:"isOpen,omitempty"`
-	Icon     string      `json:"icon,omitempty"`
+	Path     string     `json:"path"`
+	Name     string     `json:"name"`
+	IsDir    bool       `json:"isDir"`
+	Size     int64      `json:"size,omitempty"`
+	ModTime  time.Time  `json:"modTime"`
+	Children []FileNode `json:"children,omitempty"`
+	IsOpen   bool       `json:"isOpen,omitempty"`
+	Icon     string     `json:"icon,omitempty"`
 }
 
 // FileExplorerService manages file system operations
@@ -60,7 +62,7 @@ func NewFileExplorerService(rootPath string) (*FileExplorerService, error) {
 		rootPath:       absPath,
 		cache:          make(map[string]*FileNode),
 		cacheTimestamp: make(map[string]time.Time),
-		cacheTTL:       5 * time.Minute,
+		cacheTTL:       cacheTTL,
 		ignorePatterns: getIgnorePatterns(absPath),
 	}
 
@@ -106,7 +108,7 @@ func getIgnorePatterns(rootPath string) []string {
 // shouldIgnore checks if a path should be ignored
 func (s *FileExplorerService) shouldIgnore(path string) bool {
 	base := filepath.Base(path)
-	
+
 	for _, pattern := range s.ignorePatterns {
 		// Simple pattern matching (can be enhanced with proper glob matching)
 		if strings.Contains(pattern, "*") {
@@ -119,7 +121,7 @@ func (s *FileExplorerService) shouldIgnore(path string) bool {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -132,7 +134,7 @@ func (s *FileExplorerService) GetTree(relativePath string, depth int) (*FileNode
 	}
 
 	fullPath := filepath.Join(s.rootPath, cleanPath)
-	
+
 	// Security check: ensure path is within root
 	if !strings.HasPrefix(fullPath, s.rootPath) {
 		return nil, serr.New("access denied: path outside project root")
@@ -206,7 +208,7 @@ func (s *FileExplorerService) buildTree(path string, maxDepth, currentDepth int)
 		var children []FileNode
 		for _, entry := range entries {
 			childPath := filepath.Join(path, entry.Name())
-			
+
 			// Skip ignored files
 			if s.shouldIgnore(childPath) {
 				continue
@@ -313,7 +315,7 @@ func (s *FileExplorerService) GetFileContent(relativePath string) (map[string]in
 	// Validate and clean the path
 	cleanPath := filepath.Clean(relativePath)
 	fullPath := filepath.Join(s.rootPath, cleanPath)
-	
+
 	// Security check: ensure path is within root
 	if !strings.HasPrefix(fullPath, s.rootPath) {
 		return nil, serr.New("access denied: path outside project root")
@@ -341,7 +343,7 @@ func (s *FileExplorerService) GetFileContent(relativePath string) (map[string]in
 
 	// Detect if file is binary
 	isBinary := isBinaryContent(content)
-	
+
 	result := map[string]interface{}{
 		"path":     cleanPath,
 		"name":     filepath.Base(fullPath),
@@ -365,19 +367,19 @@ func isBinaryContent(content []byte) bool {
 	if len(content) == 0 {
 		return false
 	}
-	
+
 	// Check first 512 bytes for null bytes
 	checkLen := len(content)
 	if checkLen > 512 {
 		checkLen = 512
 	}
-	
+
 	for i := 0; i < checkLen; i++ {
 		if content[i] == 0 {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -385,12 +387,12 @@ func isBinaryContent(content []byte) bool {
 func (s *FileExplorerService) SearchFiles(query string, searchContent bool) ([]FileNode, error) {
 	var results []FileNode
 	query = strings.ToLower(query)
-	
+
 	err := filepath.WalkDir(s.rootPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // Skip paths with errors
 		}
-		
+
 		// Skip ignored paths
 		if s.shouldIgnore(path) {
 			if d.IsDir() {
@@ -398,7 +400,7 @@ func (s *FileExplorerService) SearchFiles(query string, searchContent bool) ([]F
 			}
 			return nil
 		}
-		
+
 		// Check name match
 		if strings.Contains(strings.ToLower(d.Name()), query) {
 			relPath, _ := filepath.Rel(s.rootPath, path)
@@ -414,7 +416,7 @@ func (s *FileExplorerService) SearchFiles(query string, searchContent bool) ([]F
 				})
 			}
 		}
-		
+
 		// Check content if requested and it's a file
 		if searchContent && !d.IsDir() {
 			content, err := os.ReadFile(path)
@@ -422,7 +424,7 @@ func (s *FileExplorerService) SearchFiles(query string, searchContent bool) ([]F
 				if strings.Contains(strings.ToLower(string(content)), query) {
 					relPath, _ := filepath.Rel(s.rootPath, path)
 					info, _ := d.Info()
-					
+
 					// Check if already added by name match
 					alreadyAdded := false
 					for _, r := range results {
@@ -431,7 +433,7 @@ func (s *FileExplorerService) SearchFiles(query string, searchContent bool) ([]F
 							break
 						}
 					}
-					
+
 					if !alreadyAdded {
 						results = append(results, FileNode{
 							Path:    relPath,
@@ -445,14 +447,14 @@ func (s *FileExplorerService) SearchFiles(query string, searchContent bool) ([]F
 				}
 			}
 		}
-		
+
 		return nil
 	})
-	
+
 	if err != nil {
 		return nil, serr.Wrap(err, "search failed")
 	}
-	
+
 	// Sort results: directories first, then by name
 	sort.Slice(results, func(i, j int) bool {
 		if results[i].IsDir != results[j].IsDir {
@@ -460,12 +462,12 @@ func (s *FileExplorerService) SearchFiles(query string, searchContent bool) ([]F
 		}
 		return strings.ToLower(results[i].Name) < strings.ToLower(results[j].Name)
 	})
-	
+
 	// Limit results to 100
 	if len(results) > 100 {
 		results = results[:100]
 	}
-	
+
 	return results, nil
 }
 
@@ -589,7 +591,7 @@ func openFileHandler(c rweb.Context) error {
 
 	// Broadcast file opened event
 	BroadcastFileOpened(sessionId, req.Path)
-	
+
 	return c.WriteJSON(map[string]interface{}{
 		"status": "ok",
 		"path":   req.Path,

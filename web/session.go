@@ -553,7 +553,7 @@ func sendMessageHandler(c rweb.Context) error {
 					summary := createToolSummary(toolUse.Name, toolUse.Input, result.Content, err)
 
 					// Broadcast tool execution complete
-					BroadcastToolExecutionComplete(sessionID, toolUse.ID, status, summary, int64(durationMs), metrics)
+					BroadcastToolExecutionComplete(sessionID, toolUse.Name, toolUse.ID, status, summary, int64(durationMs), metrics)
 
 					// Log tool usage to database
 					if logErr := database.LogToolUsage(sessionID, toolUse.Name, toolUse.Input, result.Content, durationMs, err); logErr != nil {

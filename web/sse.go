@@ -273,11 +273,12 @@ func BroadcastToolExecutionProgress(sessionID string, toolID string, progress in
 }
 
 // BroadcastToolExecutionComplete broadcasts when a tool finishes execution
-func BroadcastToolExecutionComplete(sessionID string, toolID string, status string, summary string, durationMs int64, metrics map[string]interface{}) {
+func BroadcastToolExecutionComplete(sessionID string, toolName string, toolID string, status string, summary string, durationMs int64, metrics map[string]interface{}) {
 	event := SSEEvent{
 		Type:      "tool_execution_complete",
 		SessionId: sessionID,
 		Data: map[string]interface{}{
+			"toolName": toolName,
 			"toolId":   toolID,
 			"status":   status, // "success", "failed", "cancelled"
 			"summary":  summary,

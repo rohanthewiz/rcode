@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"time"
 
 	"rcode/web"
@@ -35,7 +34,7 @@ func main() {
 		"bytesWritten": 1024,
 		"linesWritten": 42,
 	}
-	web.BroadcastToolExecutionComplete(sessionID, "tool-1", "success", "✓ Wrote test.txt (1024 bytes)", 1500, metrics)
+	web.BroadcastToolExecutionComplete(sessionID, "tool 1", "tool-1", "success", "✓ Wrote test.txt (1024 bytes)", 1500, metrics)
 
 	fmt.Println("Test completed!")
 }

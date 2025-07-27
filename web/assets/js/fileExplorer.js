@@ -528,7 +528,9 @@ const FileExplorer = (function() {
 
     // Handle file events from SSE
     function handleFileEvent(event) {
-        console.log('File event received:', event);
+        // console.log('File event received:', event);
+        // console.log('Event type:', event.type);
+        // console.log('Event data:', event.data);
         
         switch (event.type) {
             case 'file_opened':
@@ -546,6 +548,9 @@ const FileExplorer = (function() {
                 // Refresh the tree or specific path
                 refreshPath(event.data.path);
                 break;
+                
+            default:
+                console.log('Unknown file event type:', event.type);
         }
     }
 
@@ -785,7 +790,8 @@ const FileExplorer = (function() {
         refreshPath,
         markFileModified,
         unmarkFileModified,
-        isFileModified
+        isFileModified,
+        switchTab  // Export switchTab function for external use
     };
 })();
 

@@ -3,6 +3,8 @@ let eventSource = null;
 let messageInput;
 let editor = null;
 let pendingNewSession = false; // Track if we're waiting to create a new session
+let hasReceivedFirstResponse = false; // Track first response per message
+let fileRefreshDelay = 9000 // Warn: must be greater than the cacheTTL of the backend which is currently 7s
 
 // SSE connection tracking
 let reconnectAttempts = 0;
@@ -227,6 +229,22 @@ function handleServerEvent(event) {
     });
   }
 
+  // Auto-switch to Files tab on first response
+  if (event.sessionId === currentSessionId && !hasReceivedFirstResponse) {
+    // Check for events that indicate the LLM is starting to respond
+    if (event.type === 'content_start' || 
+        event.type === 'tool_execution_start' ||
+        (event.type === 'message_delta' && event.data && event.data.delta)) {
+      
+      // Switch to Files tab on first response
+      if (window.FileExplorer && window.FileExplorer.switchTab) {
+        console.log('Auto-switching to Files tab on first response');
+        window.FileExplorer.switchTab('files');
+        hasReceivedFirstResponse = true;
+      }
+    }
+  }
+
   if (event.type === 'message_start' && event.sessionId === currentSessionId) {
     console.log('Message streaming started');
     // Don't remove thinking here - wait for content_start
@@ -265,6 +283,31 @@ function handleServerEvent(event) {
   } else if (event.type === 'tool_execution_complete' && event.sessionId === currentSessionId) {
     console.log('Tool execution completed:', event.data);
     handleToolExecutionComplete(event.data);
+
+    // Refresh file tree after successful file-related tool operations
+    const fileTools = ['write_file', 'edit_file', 'make_dir', 'remove', 'move'];
+    if (event.data && event.data.toolName && window.FileExplorer) {
+      // Extract tool name from the summary (format: "✓ Tool operation...")
+      const toolName = event.data.toolName;
+      if (fileTools.includes(toolName)) {
+        // console.log('File operation detected, refreshing file tree for tool:', toolName);
+
+        // Cancel any pending refresh to debounce multiple operations
+        if (window.fileTreeRefreshTimeout) {
+          clearTimeout(window.fileTreeRefreshTimeout);
+          console.log('Cancelled pending file tree refresh, will reschedule');
+        }
+
+        // Schedule refresh with longer delay to ensure file system operations are complete
+        // Using 1.5 second delay for better reliability with larger operations
+        window.fileTreeRefreshTimeout = setTimeout(() => {
+          console.log('Refreshing file tree now...');
+          window.FileExplorer.loadFileTree();
+          window.fileTreeRefreshTimeout = null;
+        }, fileRefreshDelay);
+      }
+    }
+
   } else if (event.type === 'tool_usage' && event.sessionId === currentSessionId) {
     console.log('Tool usage event received:', event.data);
     // Add tool usage summary to UI
@@ -711,6 +754,9 @@ async function sendMessage() {
 
   console.log('Sending to session:', currentSessionId);
   console.log('Window session ID:', window.currentSessionId);
+
+  // Reset first response flag for new message
+  hasReceivedFirstResponse = false;
 
   // Add user message to UI immediately
   addMessageToUI({ role: 'user', content: content });
