@@ -25,15 +25,15 @@ type ValidationRules struct {
 
 // ParamRule defines validation rules for a parameter
 type ParamRule struct {
-	Type         string   // "string", "integer", "boolean", "path", "regex"
-	MinLength    int      // For strings
-	MaxLength    int      // For strings
-	MinValue     int      // For integers
-	MaxValue     int      // For integers
-	Pattern      string   // Regex pattern for validation
+	Type          string   // "string", "integer", "boolean", "path", "regex"
+	MinLength     int      // For strings
+	MaxLength     int      // For strings
+	MinValue      int      // For integers
+	MaxValue      int      // For integers
+	Pattern       string   // Regex pattern for validation
 	AllowedValues []string // Enum values
-	PathType     string   // "file", "directory", "any"
-	MustExist    bool     // For paths
+	PathType      string   // "file", "directory", "any"
+	MustExist     bool     // For paths
 }
 
 // CustomValidation is a function that performs custom validation
@@ -44,10 +44,10 @@ func NewToolValidator() *ToolValidator {
 	v := &ToolValidator{
 		rules: make(map[string]ValidationRules),
 	}
-	
+
 	// Initialize default validation rules
 	v.initializeDefaultRules()
-	
+
 	return v
 }
 
@@ -64,7 +64,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	// write_file validation
 	v.rules["write_file"] = ValidationRules{
 		RequiredParams: []string{"path", "content"},
@@ -78,7 +78,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	// edit_file validation
 	v.rules["edit_file"] = ValidationRules{
 		RequiredParams: []string{"path", "start_line", "new_content"},
@@ -118,7 +118,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	// search validation
 	v.rules["search"] = ValidationRules{
 		RequiredParams: []string{"pattern"},
@@ -149,7 +149,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	// bash validation
 	v.rules["bash"] = ValidationRules{
 		RequiredParams: []string{"command"},
@@ -177,7 +177,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	// Directory operations
 	v.rules["list_dir"] = ValidationRules{
 		ParamRules: map[string]ParamRule{
@@ -196,7 +196,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	v.rules["make_dir"] = ValidationRules{
 		RequiredParams: []string{"path"},
 		ParamRules: map[string]ParamRule{
@@ -209,7 +209,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	v.rules["remove"] = ValidationRules{
 		RequiredParams: []string{"path"},
 		ParamRules: map[string]ParamRule{
@@ -237,7 +237,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	// Git operations
 	v.rules["git_status"] = ValidationRules{
 		ParamRules: map[string]ParamRule{
@@ -250,7 +250,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	v.rules["git_diff"] = ValidationRules{
 		ParamRules: map[string]ParamRule{
 			"path": {
@@ -271,7 +271,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	// web_search validation
 	v.rules["web_search"] = ValidationRules{
 		RequiredParams: []string{"query"},
@@ -288,7 +288,7 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 		},
 	}
-	
+
 	// web_fetch validation
 	v.rules["web_fetch"] = ValidationRules{
 		RequiredParams: []string{"url"},
@@ -305,8 +305,8 @@ func (v *ToolValidator) initializeDefaultRules() {
 			},
 			"max_size": {
 				Type:     "integer",
-				MinValue: 1024,      // 1KB minimum
-				MaxValue: 52428800,  // 50MB maximum
+				MinValue: 1024,     // 1KB minimum
+				MaxValue: 52428800, // 50MB maximum
 			},
 			"follow_redirects": {
 				Type: "boolean",
@@ -333,14 +333,14 @@ func (v *ToolValidator) Validate(toolName string, params map[string]interface{})
 		// No validation rules defined for this tool
 		return nil
 	}
-	
+
 	// Check required parameters
 	for _, required := range rules.RequiredParams {
 		if _, exists := params[required]; !exists {
 			return serr.New(fmt.Sprintf("required parameter '%s' is missing", required))
 		}
 	}
-	
+
 	// Validate each parameter
 	for paramName, value := range params {
 		if rule, exists := rules.ParamRules[paramName]; exists {
@@ -349,14 +349,14 @@ func (v *ToolValidator) Validate(toolName string, params map[string]interface{})
 			}
 		}
 	}
-	
+
 	// Run custom validation rules
 	for _, customRule := range rules.CustomRules {
 		if err := customRule(params); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -368,7 +368,7 @@ func (v *ToolValidator) validateParam(name string, value interface{}, rule Param
 		if !ok {
 			return serr.New(fmt.Sprintf("parameter '%s' must be a string", name))
 		}
-		
+
 		if rule.MinLength > 0 && len(str) < rule.MinLength {
 			return serr.New(fmt.Sprintf("parameter '%s' must be at least %d characters", name, rule.MinLength))
 		}
@@ -392,43 +392,43 @@ func (v *ToolValidator) validateParam(name string, value interface{}, rule Param
 				return serr.New(fmt.Sprintf("parameter '%s' must be one of: %v", name, rule.AllowedValues))
 			}
 		}
-		
+
 	case "integer":
 		intVal, ok := GetInt(map[string]interface{}{name: value}, name)
 		if !ok {
 			return serr.New(fmt.Sprintf("parameter '%s' must be an integer", name))
 		}
-		
+
 		if rule.MinValue > 0 && intVal < rule.MinValue {
 			return serr.New(fmt.Sprintf("parameter '%s' must be at least %d", name, rule.MinValue))
 		}
 		if rule.MaxValue > 0 && intVal > rule.MaxValue {
 			return serr.New(fmt.Sprintf("parameter '%s' must be at most %d", name, rule.MaxValue))
 		}
-		
+
 	case "boolean":
 		if _, ok := value.(bool); !ok {
 			return serr.New(fmt.Sprintf("parameter '%s' must be a boolean", name))
 		}
-		
+
 	case "path":
 		path, ok := value.(string)
 		if !ok {
 			return serr.New(fmt.Sprintf("parameter '%s' must be a string path", name))
 		}
-		
+
 		// Expand the path to handle ~ for home directory
 		expandedPath, err := ExpandPath(path)
 		if err != nil {
 			return serr.Wrap(err, fmt.Sprintf("failed to expand path for parameter '%s'", name))
 		}
-		
+
 		if rule.MustExist {
 			if _, err := os.Stat(expandedPath); os.IsNotExist(err) {
 				return serr.New(fmt.Sprintf("path '%s' does not exist", path))
 			}
 		}
-		
+
 		if rule.PathType != "" && rule.PathType != "any" {
 			info, err := os.Stat(expandedPath)
 			if err == nil {
@@ -440,18 +440,18 @@ func (v *ToolValidator) validateParam(name string, value interface{}, rule Param
 				}
 			}
 		}
-		
+
 	case "regex":
 		pattern, ok := value.(string)
 		if !ok {
 			return serr.New(fmt.Sprintf("parameter '%s' must be a string", name))
 		}
-		
+
 		if _, err := regexp.Compile(pattern); err != nil {
 			return serr.New(fmt.Sprintf("parameter '%s' contains invalid regex: %v", name, err))
 		}
 	}
-	
+
 	return nil
 }
 
@@ -461,12 +461,12 @@ func (v *ToolValidator) GetSchema(toolName string) map[string]interface{} {
 	if !exists {
 		return nil
 	}
-	
+
 	properties := make(map[string]interface{})
-	
+
 	for paramName, rule := range rules.ParamRules {
 		prop := make(map[string]interface{})
-		
+
 		// Map internal types to JSON schema types
 		switch rule.Type {
 		case "string", "path", "regex":
@@ -476,7 +476,7 @@ func (v *ToolValidator) GetSchema(toolName string) map[string]interface{} {
 		case "boolean":
 			prop["type"] = "boolean"
 		}
-		
+
 		// Add constraints
 		if rule.MinLength > 0 {
 			prop["minLength"] = rule.MinLength
@@ -496,10 +496,10 @@ func (v *ToolValidator) GetSchema(toolName string) map[string]interface{} {
 		if rule.Pattern != "" {
 			prop["pattern"] = rule.Pattern
 		}
-		
+
 		properties[paramName] = prop
 	}
-	
+
 	return map[string]interface{}{
 		"type":       "object",
 		"properties": properties,
@@ -516,17 +516,17 @@ func isDangerousCommand(cmd string) bool {
 		"mkfs",
 		"shutdown",
 		"reboot",
-		":(){:|:&};:",  // Fork bomb
+		":(){:|:&};:", // Fork bomb
 		"> /dev/sda",
 	}
-	
+
 	cmdLower := strings.ToLower(cmd)
 	for _, danger := range dangerous {
 		if strings.Contains(cmdLower, danger) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
@@ -535,20 +535,20 @@ func isCriticalPath(path string) bool {
 	if err != nil {
 		return false
 	}
-	
+
 	critical := []string{
 		"/", "/etc", "/usr", "/bin", "/sbin",
 		"/var", "/boot", "/dev", "/proc", "/sys",
 		"/System", "/Library", "/Applications",
 		"C:\\Windows", "C:\\Program Files",
 	}
-	
+
 	for _, crit := range critical {
 		if abspath == crit || abspath == crit+string(filepath.Separator) {
 			return true
 		}
 	}
-	
+
 	return false
 }
 

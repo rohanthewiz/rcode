@@ -12,12 +12,12 @@ import (
 // EnhancedRegistry wraps the standard registry with validation and enhanced features
 type EnhancedRegistry struct {
 	*Registry
-	validator      *ToolValidator
-	metrics        *ToolMetrics
-	beforeExecute  []BeforeExecuteHook
-	afterExecute   []AfterExecuteHook
-	retryPolicies  map[string]RetryPolicy // Tool-specific retry policies
-	defaultRetry   RetryPolicy            // Default retry policy for all tools
+	validator     *ToolValidator
+	metrics       *ToolMetrics
+	beforeExecute []BeforeExecuteHook
+	afterExecute  []AfterExecuteHook
+	retryPolicies map[string]RetryPolicy // Tool-specific retry policies
+	defaultRetry  RetryPolicy            // Default retry policy for all tools
 }
 
 // BeforeExecuteHook is called before tool execution
@@ -31,8 +31,8 @@ type ToolMetrics struct {
 	executions    map[string]int
 	totalDuration map[string]int64 // milliseconds
 	failures      map[string]int
-	retries       map[string]int   // Number of retry attempts
-	retrySuccess  map[string]int   // Successful retries
+	retries       map[string]int // Number of retry attempts
+	retrySuccess  map[string]int // Successful retries
 }
 
 // NewEnhancedRegistry creates a new enhanced registry
@@ -90,13 +90,13 @@ func (r *EnhancedRegistry) Execute(toolUse ToolUse) (*ToolResult, error) {
 	// Create the operation to retry
 	var result *ToolResult
 	var lastErr error
-	
+
 	operation := func(ctx context.Context) error {
 		// Execute the tool
 		res, err := r.Registry.Execute(toolUse)
 		result = res
 		lastErr = err
-		
+
 		return err
 	}
 
@@ -104,7 +104,7 @@ func (r *EnhancedRegistry) Execute(toolUse ToolUse) (*ToolResult, error) {
 	if retryPolicy.MaxAttempts > 0 {
 		ctx := context.Background()
 		retryResult := Retry(ctx, retryPolicy, operation)
-		
+
 		// Update retry metrics
 		if retryResult.Attempts > 1 {
 			r.metrics.retries[toolUse.Name] += retryResult.Attempts - 1
@@ -112,7 +112,7 @@ func (r *EnhancedRegistry) Execute(toolUse ToolUse) (*ToolResult, error) {
 				r.metrics.retrySuccess[toolUse.Name]++
 			}
 		}
-		
+
 		// Log retry details if there were retries
 		if retryResult.Attempts > 1 {
 			if retryResult.Success {
@@ -125,7 +125,7 @@ func (r *EnhancedRegistry) Execute(toolUse ToolUse) (*ToolResult, error) {
 					toolUse.Name, retryResult.Attempts, retryResult.TotalDuration))
 			}
 		}
-		
+
 		lastErr = retryResult.LastError
 	} else {
 		// No retry policy, execute once
@@ -232,7 +232,7 @@ func (r *EnhancedRegistry) getRetryPolicy(toolName string) RetryPolicy {
 func (m *ToolMetrics) RecordExecution(toolName string, durationMs int64, failed bool) {
 	m.executions[toolName]++
 	m.totalDuration[toolName] += durationMs
-	
+
 	if failed {
 		m.failures[toolName]++
 	}
@@ -241,18 +241,18 @@ func (m *ToolMetrics) RecordExecution(toolName string, durationMs int64, failed 
 // GetSummary returns a summary of metrics
 func (m *ToolMetrics) GetSummary() map[string]interface{} {
 	summary := make(map[string]interface{})
-	
+
 	for tool, count := range m.executions {
 		avgDuration := int64(0)
 		if count > 0 {
 			avgDuration = m.totalDuration[tool] / int64(count)
 		}
-		
+
 		successRate := 100.0
 		if count > 0 {
 			successRate = float64(count-m.failures[tool]) / float64(count) * 100
 		}
-		
+
 		retryRate := 0.0
 		retrySuccessRate := 0.0
 		if retries := m.retries[tool]; retries > 0 {
@@ -261,7 +261,7 @@ func (m *ToolMetrics) GetSummary() map[string]interface{} {
 				retrySuccessRate = float64(retrySuccess) / float64(retries) * 100
 			}
 		}
-		
+
 		summary[tool] = map[string]interface{}{
 			"executions":         count,
 			"failures":           m.failures[tool],
@@ -274,7 +274,7 @@ func (m *ToolMetrics) GetSummary() map[string]interface{} {
 			"retry_success_rate": fmt.Sprintf("%.1f%%", retrySuccessRate),
 		}
 	}
-	
+
 	return summary
 }
 
@@ -366,8 +366,18 @@ func DefaultEnhancedRegistry() *EnhancedRegistry {
 		}
 	})
 
+	// Setup diff integration for file modification tracking
+	diffIntegration, err := NewDiffIntegration()
+	if err != nil {
+		logger.LogErr(err, "failed to initialize diff integration")
+		// Continue without diff integration - it's not critical
+	} else {
+		diffIntegration.SetupDiffHooks(registry)
+		logger.Debug("Diff integration hooks registered")
+	}
+
 	// Configure retry policies for tools that benefit from retries
-	
+
 	// Network-based tools get more aggressive retry
 	registry.SetToolRetryPolicy("web_fetch", NetworkRetryPolicy)
 	registry.SetToolRetryPolicy("web_search", NetworkRetryPolicy)
@@ -375,7 +385,7 @@ func DefaultEnhancedRegistry() *EnhancedRegistry {
 	registry.SetToolRetryPolicy("git_pull", NetworkRetryPolicy)
 	registry.SetToolRetryPolicy("git_fetch", NetworkRetryPolicy)
 	registry.SetToolRetryPolicy("git_clone", NetworkRetryPolicy)
-	
+
 	// File system tools get lighter retry
 	registry.SetToolRetryPolicy("read_file", FileSystemRetryPolicy)
 	registry.SetToolRetryPolicy("write_file", FileSystemRetryPolicy)
@@ -384,13 +394,13 @@ func DefaultEnhancedRegistry() *EnhancedRegistry {
 	registry.SetToolRetryPolicy("make_dir", FileSystemRetryPolicy)
 	registry.SetToolRetryPolicy("remove", FileSystemRetryPolicy)
 	registry.SetToolRetryPolicy("move", FileSystemRetryPolicy)
-	
+
 	// Git local operations might need retry for lock issues
 	registry.SetToolRetryPolicy("git_status", FileSystemRetryPolicy)
 	registry.SetToolRetryPolicy("git_diff", FileSystemRetryPolicy)
 	registry.SetToolRetryPolicy("git_add", FileSystemRetryPolicy)
 	registry.SetToolRetryPolicy("git_commit", FileSystemRetryPolicy)
-	
+
 	// Bash commands don't retry by default (could be destructive)
 	// But users can configure specific retry if needed
 

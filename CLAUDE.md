@@ -1,3 +1,4 @@
+
 # RCode Go Server - Project Context
 
 ## Overview
@@ -17,20 +18,23 @@ rcode/
 │   ├── routes.go             # Route definitions
 │   ├── ui.go                 # Main UI with element
 │   ├── auth_callback.go      # OAuth callback UI
-│   ├── session.go            # Session management with init prompt & tool summaries
-│   ├── sse.go                # SSE implementation with reconnection
+│   ├── session.go            # Session management with init prompt, tool summaries & real-time execution tracking
+│   ├── sse.go                # SSE implementation with reconnection & tool execution events
 │   ├── context_handlers.go   # Context API endpoints
 │   └── assets/
 │       ├── js/
-│       │   ├── ui.js         # Main UI logic with SSE handling & tool summaries
+│       │   ├── ui.js         # Main UI logic with SSE handling, tool summaries & real-time execution display
 │       │   └── login.js      # Login flow logic
 │       └── css/
-│           └── ui.css        # Dark theme styles with tool summary styling
+│           └── ui.css        # Dark theme styles with tool summary & execution animation styling
 ├── providers/
 │   └── anthropic.go          # Anthropic API client with retry & context integration
 ├── tools/
 │   ├── tool.go               # Tool interface & registry
 │   ├── default.go            # Default tool implementations
+│   ├── plugin.go             # Plugin interface definitions
+│   ├── loader.go             # Plugin loader implementation
+│   ├── sandbox.go            # Capability-based sandboxing
 │   ├── read_file.go          # File reading tool
 │   ├── write_file.go         # File writing tool
 │   ├── bash.go               # Bash command tool
@@ -43,7 +47,9 @@ rcode/
 │   ├── context_aware.go      # Context-aware tool execution
 │   ├── retry.go              # Retry utility with exponential backoff
 │   ├── errors.go             # Error classification system
-│   └── web_*.go              # Web tools (search, fetch)
+│   ├── web_*.go              # Web tools (search, fetch)
+│   ├── plugin_template/      # Template for custom tools
+│   └── plugin_examples/      # Example custom tools
 ├── context/
 │   ├── types.go              # Core context data structures
 │   ├── manager.go            # Context manager with file tracking
@@ -67,7 +73,7 @@ rcode/
 - **Error Handling**: github.com/rohanthewiz/serr
 - **Logging**: github.com/rohanthewiz/logger
 - **Database**: DuckDB (embedded)
-- **Server Port**: 8000
+- **Server Port**: 8000 (HTTP), 8443 (HTTPS)
 
 ## Authentication System
 - **OAuth Provider**: Anthropic (Claude.ai)
@@ -87,6 +93,7 @@ rcode/
    - Web operations: search (mock), fetch and convert pages
    - Bash command execution
    - Tool parameter validation and safety checks
+   - **Custom Tools Support**: Dynamic plugin system for user-defined tools
 3. **Error Recovery System**:
    - Automatic retry with exponential backoff for transient failures
    - Error classification (retryable, permanent, rate limit)
@@ -98,11 +105,17 @@ rcode/
    - Change tracking during sessions
    - Context-aware tool suggestions
 5. **Tool Usage Summaries**: Concise display of tool operations with metrics
-6. **Real-time Updates**: Server-sent events (SSE) with robust reconnection
-7. **Dark Theme**: Modern dark-themed UI with CSS variables
-8. **Session Management**: Persistent sessions with DuckDB storage
-9. **Auto-initialization**: Sessions start with permission prompt for tools/files
-10. **Connection Recovery**: Exponential backoff and manual reconnection for SSE
+6. **Real-time Tool Execution Display**: Live visualization of tool operations as they execute
+   - Immediate feedback when tools start (removes "Thinking..." indicator)
+   - Status updates: executing → success/failed with animations
+   - Progress bars for long-running operations
+   - Execution metrics (duration, bytes processed, etc.)
+7. **Real-time Updates**: Server-sent events (SSE) with robust reconnection
+8. **Dark Theme**: Modern dark-themed UI with CSS variables
+9. **Session Management**: Persistent sessions with DuckDB storage
+10. **Auto-initialization**: Sessions start with permission prompt for tools/files
+11. **Connection Recovery**: Exponential backoff and manual reconnection for SSE
+12. **HTTPS Support**: Built-in TLS/SSL with automatic HTTP-to-HTTPS redirect
 
 ## API Endpoints
 
@@ -132,16 +145,44 @@ rcode/
 ## Development Notes
 
 ### Running the Server
+
+#### HTTP Mode (default):
 ```bash
 go run main.go
 ```
 Then visit http://localhost:8000
+
+#### HTTPS Mode:
+```bash
+# Generate certificates first (for development)
+cd scripts && ./generate-certs.sh && cd ..
+
+# Run with TLS enabled
+RCODE_TLS_ENABLED=true go run main.go
+```
+Then visit https://localhost:8443
+
+The server will automatically redirect HTTP traffic to HTTPS when TLS is enabled.
 
 ### OAuth Flow
 1. User clicks login → Opens Claude.ai OAuth in new tab
 2. User authorizes → Gets code from Anthropic
 3. User pastes code → Server exchanges for tokens
 4. Tokens stored with automatic refresh capability
+
+### Configuration
+
+The server can be configured using environment variables:
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `MSG_PROXY` | Proxy URL for Anthropic API | Direct connection |
+| `RCODE_TLS_ENABLED` | Enable HTTPS ("true" to enable) | false |
+| `RCODE_TLS_PORT` | HTTPS port | :8443 |
+| `RCODE_TLS_CERT` | Path to TLS certificate | certs/localhost.crt |
+| `RCODE_TLS_KEY` | Path to TLS private key | certs/localhost.key |
+| `RCODE_CUSTOM_TOOLS_ENABLED` | Enable custom tool plugins | false |
+| `RCODE_CUSTOM_TOOLS_PATHS` | Colon-separated plugin directories | ~/.rcode/tools:/usr/local/lib/rcode/tools |
 
 ### Important Implementation Details
 - System prompt remains exactly: "You are Claude Code, Anthropic's official CLI for Claude."
@@ -152,6 +193,10 @@ Then visit http://localhost:8000
 - Sessions persist in DuckDB at `~/.local/share/rcode/rcode.db`
 - Each session starts with configurable prompts (default includes permission requirements)
 - Tool usage summaries display as "🛠️ TOOL USE" with concise metrics
+- Real-time tool execution events via SSE:
+  - `tool_execution_start`: Broadcast when tool begins (removes "Thinking...")
+  - `tool_execution_progress`: Progress updates for long operations
+  - `tool_execution_complete`: Final status with metrics
 - SSE reconnection: 5 attempts with exponential backoff (1s, 2s, 4s, 8s, 16s, max 30s)
 - Session recovery: Automatic new session creation on 404 errors
 
@@ -170,11 +215,26 @@ Then visit http://localhost:8000
   - Per-tool retry policies based on operation type
   - Anthropic API 529 "Overloaded" errors now retry automatically
   - Comprehensive test coverage for reliability
-- Added context intelligence system:
-  - Automatic language/framework detection (Go, JS/TS, Python, Rust, Java)
-  - Smart file prioritization based on relevance
-  - Change tracking during sessions
-  - Context-aware tool execution
+- Added context intelligence system (Phase 2 Complete):
+  - Enhanced metadata extraction for code files:
+    - Imports, exports, functions, classes for multiple languages
+    - Language-specific parsing (Go, JS/TS, Python, Java, Rust)
+  - NLP-based keyword extraction with:
+    - Code pattern detection (camelCase, snake_case)
+    - Domain-specific term expansion
+    - Synonym mapping and action-object pairs
+  - Smart file prioritization:
+    - Metadata-aware scoring (functions, classes, exports)
+    - Language and framework detection
+    - Relevance-based file selection
+  - Accurate token counting:
+    - GPT-style tokenization approximation
+    - Language-specific token ratios
+    - Subword tokenization handling
+  - Enhanced change tracking:
+    - Detailed metadata for each change
+    - Tool-specific operation tracking
+    - Git operation awareness
 - Implemented tool parameter validation for safety
 - Added tool usage summaries in UI with metrics:
   - File operations show byte counts and line numbers
@@ -184,6 +244,20 @@ Then visit http://localhost:8000
 - Context information now added as initial user prompt
 - Enhanced UI with tool summary display during execution
 - Fixed SSE event handling for proper sessionId matching
+- **Implemented Custom Tool Support**:
+  - Dynamic plugin system using Go's plugin architecture
+  - Capability-based security model for sandboxing
+  - Path restrictions and resource limits
+  - Plugin template and examples provided
+  - Hot-loadable at startup via environment variables
+  - Comprehensive documentation in docs/CUSTOM_TOOLS.md
+- **Added Real-time Tool Execution Display**:
+  - Immediate visual feedback when tools start executing
+  - Live status updates: executing → success/failed
+  - Progress bars for long-running operations
+  - Animated status indicators and transitions
+  - Tool execution metrics displayed in real-time
+  - Replaces generic "Thinking..." with detailed execution info
 
 ## Tool System Details
 
@@ -240,11 +314,16 @@ Then visit http://localhost:8000
 - **Automatic Recovery**: Transient failures handled transparently
 
 ## Next Steps
-- Begin Phase 2: Context Intelligence implementation
-  - Create project scanner for language/framework detection
-  - Implement smart file prioritization algorithm
-  - Build change tracking system
-  - Design context window optimization
+- Begin Phase 3: Agent Enhancement
+  - Task planning system for complex operations
+  - Multi-step execution with checkpoints
+  - Rollback capabilities for operations
+  - Learning from user feedback
+  - Code generation templates
+- Complete remaining Phase 2 items:
+  - Persist change history in database
+  - Add comprehensive test coverage
+  - Performance optimization for large projects
 - Integrate real search APIs for web_search tool (Google Custom Search, Bing, DuckDuckGo)
 - Add remaining git operations (stash, reset, rebase, fetch, clone, remote)
 - Implement code formatting tools

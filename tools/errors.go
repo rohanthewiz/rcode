@@ -27,9 +27,9 @@ type (
 
 	// RateLimitError represents a rate limit error with retry-after information
 	RateLimitError struct {
-		Err         error
-		RetryAfter  int // seconds to wait before retry
-		Reason      string
+		Err        error
+		RetryAfter int // seconds to wait before retry
+		Reason     string
 	}
 )
 
@@ -195,14 +195,14 @@ func isRetryableSyscallError(err error) bool {
 
 	// List of retryable syscall errors
 	switch errno {
-	case syscall.EAGAIN,      // Resource temporarily unavailable
-		syscall.EINTR,        // Interrupted system call
-		syscall.EBUSY,        // Device or resource busy
-		syscall.ENFILE,       // Too many open files in system
-		syscall.EMFILE,       // Too many open files
-		syscall.ENOMEM,       // Out of memory
-		syscall.ENOBUFS,      // No buffer space available
-		syscall.ETIMEDOUT:    // Operation timed out
+	case syscall.EAGAIN, // Resource temporarily unavailable
+		syscall.EINTR,     // Interrupted system call
+		syscall.EBUSY,     // Device or resource busy
+		syscall.ENFILE,    // Too many open files in system
+		syscall.EMFILE,    // Too many open files
+		syscall.ENOMEM,    // Out of memory
+		syscall.ENOBUFS,   // No buffer space available
+		syscall.ETIMEDOUT: // Operation timed out
 		return true
 	}
 

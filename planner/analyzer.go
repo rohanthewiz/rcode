@@ -10,7 +10,8 @@ import (
 
 // TaskAnalyzer analyzes task descriptions and creates execution plans
 type TaskAnalyzer struct {
-	patterns []TaskPattern
+	patterns       []TaskPattern
+	contextManager interface{} // Will be *context.Manager but avoid import cycle
 }
 
 // TaskPattern represents a pattern for task analysis
@@ -27,8 +28,21 @@ func NewTaskAnalyzer() *TaskAnalyzer {
 	}
 }
 
+// NewTaskAnalyzerWithContext creates a new task analyzer with context support
+func NewTaskAnalyzerWithContext(contextManager interface{}) *TaskAnalyzer {
+	return &TaskAnalyzer{
+		patterns:       initializePatterns(),
+		contextManager: contextManager,
+	}
+}
+
 // AnalyzeTask analyzes a task description and returns steps
 func (a *TaskAnalyzer) AnalyzeTask(description string) ([]TaskStep, error) {
+	// If we have context support, use it for enhanced analysis
+	if a.contextManager != nil {
+		return a.analyzeTaskWithContext(description)
+	}
+	
 	description = strings.ToLower(description)
 	
 	// Try to match patterns
@@ -40,6 +54,180 @@ func (a *TaskAnalyzer) AnalyzeTask(description string) ([]TaskStep, error) {
 
 	// If no pattern matches, try to infer steps
 	return a.inferSteps(description)
+}
+
+// analyzeTaskWithContext uses context intelligence for better task analysis
+func (a *TaskAnalyzer) analyzeTaskWithContext(description string) ([]TaskStep, error) {
+	// Use reflection to call context manager methods
+	// This avoids import cycles while still using the context
+	relevantFiles := a.getRelevantFiles(description)
+	
+	steps := make([]TaskStep, 0)
+	
+	// First, search for relevant code
+	if len(relevantFiles) > 0 {
+		// Add initial search step
+		step := TaskStep{
+			ID:          fmt.Sprintf("step_1_%s", uuid.New().String()[:8]),
+			Description: "Search for relevant code patterns",
+			Tool:        "search",
+			Params: map[string]interface{}{
+				"pattern": a.extractSearchPattern(description),
+				"path":    ".",
+			},
+			Retryable:  true,
+			MaxRetries: 3,
+			Status:     StepStatusPending,
+		}
+		steps = append(steps, step)
+		
+		// Read relevant files
+		for i, file := range relevantFiles {
+			if i >= 3 { // Limit to top 3 files
+				break
+			}
+			step := TaskStep{
+				ID:          fmt.Sprintf("step_%d_%s", len(steps)+1, uuid.New().String()[:8]),
+				Description: fmt.Sprintf("Read relevant file: %s", file),
+				Tool:        "read_file",
+				Params: map[string]interface{}{
+					"path": file,
+				},
+				Dependencies: []string{steps[len(steps)-1].ID},
+				Retryable:    true,
+				MaxRetries:   3,
+				Status:       StepStatusPending,
+			}
+			steps = append(steps, step)
+		}
+	}
+	
+	// Continue with pattern matching
+	descLower := strings.ToLower(description)
+	for _, pattern := range a.patterns {
+		if a.matchesPattern(descLower, pattern) {
+			patternSteps, _ := a.createStepsFromPattern(description, pattern)
+			// Add dependencies to connect with previous steps
+			if len(steps) > 0 && len(patternSteps) > 0 {
+				patternSteps[0].Dependencies = []string{steps[len(steps)-1].ID}
+			}
+			steps = append(steps, patternSteps...)
+			return steps, nil
+		}
+	}
+	
+	// If no pattern matches, infer steps
+	inferredSteps, err := a.inferSteps(description)
+	if err != nil && len(steps) == 0 {
+		return nil, err
+	}
+	
+	// Add dependencies to connect with previous steps
+	if len(steps) > 0 && len(inferredSteps) > 0 {
+		inferredSteps[0].Dependencies = []string{steps[len(steps)-1].ID}
+	}
+	
+	return append(steps, inferredSteps...), nil
+}
+
+// getRelevantFiles uses the context manager to find relevant files
+func (a *TaskAnalyzer) getRelevantFiles(description string) []string {
+	// Use type assertion and reflection to avoid import cycle
+	type contextInterface interface {
+		GetContext() interface{}
+	}
+	
+	type prioritizerInterface interface {
+		ExtractKeywords(string) []string
+		Prioritize(interface{}, interface{}) ([]string, error)
+	}
+	
+	if _, ok := a.contextManager.(contextInterface); ok {
+		// Extract keywords from description
+		keywords := a.extractKeywordsFromDescription(description)
+		
+		// For now, we'll use a simplified approach
+		// In a full implementation, we would use the context manager
+		// to get relevant files based on project context
+		_ = keywords // Using keywords for future enhancement
+		
+		// Try to get relevant files
+		// Since we can't import the context package, we'll use a simplified approach
+		files := make([]string, 0)
+		
+		// Look for files mentioned in the description
+		words := strings.Fields(description)
+		for _, word := range words {
+			cleaned := strings.Trim(word, ".,!?\"'")
+			if strings.Contains(cleaned, "/") || strings.HasSuffix(cleaned, ".go") ||
+				strings.HasSuffix(cleaned, ".js") || strings.HasSuffix(cleaned, ".py") {
+				files = append(files, cleaned)
+			}
+		}
+		
+		return files
+	}
+	
+	return []string{}
+}
+
+// extractKeywordsFromDescription extracts relevant keywords from task description
+func (a *TaskAnalyzer) extractKeywordsFromDescription(description string) []string {
+	keywords := make([]string, 0)
+	
+	// Common programming keywords to look for
+	programmingKeywords := []string{
+		"function", "method", "class", "struct", "interface",
+		"variable", "constant", "package", "module", "import",
+		"error", "bug", "fix", "refactor", "optimize",
+		"test", "benchmark", "api", "endpoint", "route",
+		"database", "query", "model", "schema", "migration",
+	}
+	
+	descLower := strings.ToLower(description)
+	
+	// Check for programming keywords
+	for _, kw := range programmingKeywords {
+		if strings.Contains(descLower, kw) {
+			keywords = append(keywords, kw)
+		}
+	}
+	
+	// Extract potential identifiers
+	words := strings.Fields(description)
+	for _, word := range words {
+		cleaned := strings.Trim(word, ".,!?()")
+		if isCamelCase(cleaned) || isSnakeCase(cleaned) {
+			keywords = append(keywords, cleaned)
+		}
+	}
+	
+	return keywords
+}
+
+// extractSearchPattern creates a search pattern from the description
+func (a *TaskAnalyzer) extractSearchPattern(description string) string {
+	// Look for quoted strings first
+	quotes := extractQuotedStrings(description)
+	if len(quotes) > 0 {
+		return quotes[0]
+	}
+	
+	// Extract key identifiers
+	keywords := a.extractKeywordsFromDescription(description)
+	if len(keywords) > 0 {
+		// Use the most specific keyword (usually the longest one)
+		longest := keywords[0]
+		for _, kw := range keywords {
+			if len(kw) > len(longest) {
+				longest = kw
+			}
+		}
+		return longest
+	}
+	
+	// Default to a generic pattern
+	return "TODO"
 }
 
 // matchesPattern checks if a description matches a pattern

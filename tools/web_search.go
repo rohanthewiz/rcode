@@ -26,7 +26,7 @@ type WebSearchResult struct {
 // WebSearchResponse represents the response from a search API
 type WebSearchResponse struct {
 	Results []WebSearchResult `json:"results"`
-	Total   int              `json:"total"`
+	Total   int               `json:"total"`
 }
 
 // GetDefinition returns the tool definition
@@ -136,7 +136,7 @@ func (t *WebSearchTool) performSearch(query string, maxResults int) (*WebSearchR
 		}
 	}
 
-	// For now, we'll use a mock response since parsing HTML from DuckDuckGo 
+	// For now, we'll use a mock response since parsing HTML from DuckDuckGo
 	// would require additional HTML parsing dependencies
 	// In a production system, you'd want to use a proper search API
 	return t.getMockResults(query, maxResults), nil
@@ -150,7 +150,7 @@ func (t *WebSearchTool) getMockResults(query string, maxResults int) *WebSearchR
 	// 1. Use a proper search API (Google Custom Search, Bing Search API, etc.)
 	// 2. Parse the actual results
 	// 3. Handle pagination if needed
-	
+
 	results := []WebSearchResult{
 		{
 			Title:   fmt.Sprintf("Search results for: %s", query),

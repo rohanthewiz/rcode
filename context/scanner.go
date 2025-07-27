@@ -400,6 +400,323 @@ func (s *ProjectScanner) shouldIgnore(name string) bool {
 	return false
 }
 
+// extractGoMetadata extracts Go-specific metadata
+func (s *ProjectScanner) extractGoMetadata(line string, metadata *FileMetadata) {
+	// Import statements
+	if strings.HasPrefix(line, "import ") {
+		// Single import
+		if strings.Contains(line, "\"") {
+			start := strings.Index(line, "\"")
+			end := strings.LastIndex(line, "\"")
+			if start != -1 && end > start {
+				importPath := line[start+1:end]
+				metadata.Imports = append(metadata.Imports, importPath)
+			}
+		}
+	} else if strings.HasPrefix(line, "func ") {
+		// Function definitions
+		// Extract function name from "func (receiver) Name(" or "func Name("
+		funcStart := 5 // len("func ")
+		parenIndex := strings.Index(line[funcStart:], "(")
+		if parenIndex != -1 {
+			// Check for receiver
+			funcDecl := line[funcStart:]
+			if strings.HasPrefix(funcDecl, "(") {
+				// Has receiver, find closing paren
+				recvEnd := strings.Index(funcDecl, ")")
+				if recvEnd != -1 {
+					funcDecl = funcDecl[recvEnd+1:]
+					funcDecl = strings.TrimSpace(funcDecl)
+				}
+			}
+			// Extract function name
+			if spaceIdx := strings.Index(funcDecl, "("); spaceIdx > 0 {
+				funcName := strings.TrimSpace(funcDecl[:spaceIdx])
+				if funcName != "" && isExported(funcName) {
+					metadata.Functions = append(metadata.Functions, funcName)
+					metadata.Exports = append(metadata.Exports, funcName)
+				} else if funcName != "" {
+					metadata.Functions = append(metadata.Functions, funcName)
+				}
+			}
+		}
+	} else if strings.HasPrefix(line, "type ") && strings.Contains(line, " struct") {
+		// Struct definitions (classes in Go)
+		parts := strings.Fields(line)
+		if len(parts) >= 3 {
+			typeName := parts[1]
+			metadata.Classes = append(metadata.Classes, typeName)
+			if isExported(typeName) {
+				metadata.Exports = append(metadata.Exports, typeName)
+			}
+		}
+	} else if strings.HasPrefix(line, "type ") && strings.Contains(line, " interface") {
+		// Interface definitions
+		parts := strings.Fields(line)
+		if len(parts) >= 3 {
+			typeName := parts[1]
+			metadata.Classes = append(metadata.Classes, typeName)
+			if isExported(typeName) {
+				metadata.Exports = append(metadata.Exports, typeName)
+			}
+		}
+	}
+}
+
+// extractJSMetadata extracts JavaScript/TypeScript metadata
+func (s *ProjectScanner) extractJSMetadata(line string, metadata *FileMetadata) {
+	// Import statements
+	if strings.HasPrefix(line, "import ") {
+		if strings.Contains(line, " from ") {
+			// ES6 imports
+			fromIdx := strings.Index(line, " from ")
+			if fromIdx != -1 {
+				modulePart := line[fromIdx+6:]
+				modulePart = strings.Trim(modulePart, " ;")
+				modulePart = strings.Trim(modulePart, "'\"")
+				metadata.Imports = append(metadata.Imports, modulePart)
+			}
+		}
+	} else if strings.HasPrefix(line, "const ") || strings.HasPrefix(line, "let ") || strings.HasPrefix(line, "var ") {
+		// Check for function declarations
+		if strings.Contains(line, " = function") || strings.Contains(line, " = (") || strings.Contains(line, " = async") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				varName := strings.TrimSuffix(parts[1], ":")
+				metadata.Functions = append(metadata.Functions, varName)
+			}
+		}
+	} else if strings.HasPrefix(line, "function ") {
+		// Function declarations
+		funcStart := 9 // len("function ")
+		parenIdx := strings.Index(line[funcStart:], "(")
+		if parenIdx > 0 {
+			funcName := strings.TrimSpace(line[funcStart:funcStart+parenIdx])
+			metadata.Functions = append(metadata.Functions, funcName)
+		}
+	} else if strings.HasPrefix(line, "class ") {
+		// Class declarations
+		parts := strings.Fields(line)
+		if len(parts) >= 2 {
+			className := parts[1]
+			if strings.Contains(className, "{") {
+				className = strings.TrimSuffix(className, "{")
+			}
+			metadata.Classes = append(metadata.Classes, className)
+		}
+	} else if strings.HasPrefix(line, "export ") {
+		// Export statements
+		if strings.Contains(line, "function ") {
+			// Export function
+			funcIdx := strings.Index(line, "function ")
+			if funcIdx != -1 {
+				funcPart := line[funcIdx+9:]
+				if parenIdx := strings.Index(funcPart, "("); parenIdx > 0 {
+					funcName := strings.TrimSpace(funcPart[:parenIdx])
+					metadata.Exports = append(metadata.Exports, funcName)
+					metadata.Functions = append(metadata.Functions, funcName)
+				}
+			}
+		} else if strings.Contains(line, "class ") {
+			// Export class
+			classIdx := strings.Index(line, "class ")
+			if classIdx != -1 {
+				classPart := line[classIdx+6:]
+				parts := strings.Fields(classPart)
+				if len(parts) > 0 {
+					className := strings.TrimSuffix(parts[0], "{")
+					metadata.Exports = append(metadata.Exports, className)
+					metadata.Classes = append(metadata.Classes, className)
+				}
+			}
+		} else if strings.Contains(line, "const ") || strings.Contains(line, "let ") {
+			// Export const/let
+			parts := strings.Fields(line)
+			for i, part := range parts {
+				if (part == "const" || part == "let") && i+1 < len(parts) {
+					varName := strings.TrimSuffix(parts[i+1], ";")
+					metadata.Exports = append(metadata.Exports, varName)
+					break
+				}
+			}
+		}
+	}
+}
+
+// extractPythonMetadata extracts Python metadata
+func (s *ProjectScanner) extractPythonMetadata(line string, metadata *FileMetadata) {
+	// Import statements
+	if strings.HasPrefix(line, "import ") {
+		importPart := strings.TrimPrefix(line, "import ")
+		imports := strings.Split(importPart, ",")
+		for _, imp := range imports {
+			imp = strings.TrimSpace(imp)
+			if asIdx := strings.Index(imp, " as "); asIdx != -1 {
+				imp = imp[:asIdx]
+			}
+			metadata.Imports = append(metadata.Imports, imp)
+		}
+	} else if strings.HasPrefix(line, "from ") {
+		// from X import Y
+		if importIdx := strings.Index(line, " import "); importIdx != -1 {
+			module := line[5:importIdx] // Skip "from "
+			metadata.Imports = append(metadata.Imports, module)
+		}
+	} else if strings.HasPrefix(line, "def ") {
+		// Function definitions
+		defPart := strings.TrimPrefix(line, "def ")
+		if parenIdx := strings.Index(defPart, "("); parenIdx > 0 {
+			funcName := strings.TrimSpace(defPart[:parenIdx])
+			metadata.Functions = append(metadata.Functions, funcName)
+			// In Python, functions starting with _ are private
+			if !strings.HasPrefix(funcName, "_") {
+				metadata.Exports = append(metadata.Exports, funcName)
+			}
+		}
+	} else if strings.HasPrefix(line, "class ") {
+		// Class definitions
+		classPart := strings.TrimPrefix(line, "class ")
+		if colonIdx := strings.Index(classPart, ":"); colonIdx > 0 {
+			classDef := classPart[:colonIdx]
+			if parenIdx := strings.Index(classDef, "("); parenIdx > 0 {
+				className := strings.TrimSpace(classDef[:parenIdx])
+				metadata.Classes = append(metadata.Classes, className)
+				if !strings.HasPrefix(className, "_") {
+					metadata.Exports = append(metadata.Exports, className)
+				}
+			} else {
+				className := strings.TrimSpace(classDef)
+				metadata.Classes = append(metadata.Classes, className)
+				if !strings.HasPrefix(className, "_") {
+					metadata.Exports = append(metadata.Exports, className)
+				}
+			}
+		}
+	}
+}
+
+// extractJavaMetadata extracts Java metadata
+func (s *ProjectScanner) extractJavaMetadata(line string, metadata *FileMetadata) {
+	// Import statements
+	if strings.HasPrefix(line, "import ") {
+		importStmt := strings.TrimSuffix(strings.TrimPrefix(line, "import "), ";")
+		metadata.Imports = append(metadata.Imports, strings.TrimSpace(importStmt))
+	} else if strings.Contains(line, " class ") {
+		// Class definitions
+		classIdx := strings.Index(line, " class ")
+		if classIdx != -1 {
+			classPart := line[classIdx+7:]
+			parts := strings.Fields(classPart)
+			if len(parts) > 0 {
+				className := parts[0]
+				if strings.Contains(className, "{") {
+					className = strings.TrimSuffix(className, "{")
+				}
+				metadata.Classes = append(metadata.Classes, className)
+				if strings.Contains(line[:classIdx], "public") {
+					metadata.Exports = append(metadata.Exports, className)
+				}
+			}
+		}
+	} else if strings.Contains(line, " interface ") {
+		// Interface definitions
+		intIdx := strings.Index(line, " interface ")
+		if intIdx != -1 {
+			intPart := line[intIdx+11:]
+			parts := strings.Fields(intPart)
+			if len(parts) > 0 {
+				intName := parts[0]
+				if strings.Contains(intName, "{") {
+					intName = strings.TrimSuffix(intName, "{")
+				}
+				metadata.Classes = append(metadata.Classes, intName)
+				if strings.Contains(line[:intIdx], "public") {
+					metadata.Exports = append(metadata.Exports, intName)
+				}
+			}
+		}
+	} else if strings.Contains(line, "(") && strings.Contains(line, ")") && strings.Contains(line, "{") {
+		// Method definitions (simplified)
+		parenIdx := strings.Index(line, "(")
+		if parenIdx > 0 {
+			beforeParen := line[:parenIdx]
+			parts := strings.Fields(beforeParen)
+			if len(parts) >= 2 {
+				methodName := parts[len(parts)-1]
+				if methodName != "" && !strings.Contains(methodName, "if") && !strings.Contains(methodName, "for") && !strings.Contains(methodName, "while") {
+					metadata.Functions = append(metadata.Functions, methodName)
+					if strings.Contains(beforeParen, "public") {
+						metadata.Exports = append(metadata.Exports, methodName)
+					}
+				}
+			}
+		}
+	}
+}
+
+// extractRustMetadata extracts Rust metadata
+func (s *ProjectScanner) extractRustMetadata(line string, metadata *FileMetadata) {
+	// Use statements
+	if strings.HasPrefix(line, "use ") {
+		usePart := strings.TrimSuffix(strings.TrimPrefix(line, "use "), ";")
+		metadata.Imports = append(metadata.Imports, strings.TrimSpace(usePart))
+	} else if strings.HasPrefix(line, "fn ") {
+		// Function definitions
+		fnPart := strings.TrimPrefix(line, "fn ")
+		if parenIdx := strings.Index(fnPart, "("); parenIdx > 0 {
+			funcName := strings.TrimSpace(fnPart[:parenIdx])
+			metadata.Functions = append(metadata.Functions, funcName)
+			// Check if previous line had pub
+			metadata.Exports = append(metadata.Exports, funcName)
+		}
+	} else if strings.HasPrefix(line, "pub fn ") {
+		// Public function definitions
+		fnPart := strings.TrimPrefix(line, "pub fn ")
+		if parenIdx := strings.Index(fnPart, "("); parenIdx > 0 {
+			funcName := strings.TrimSpace(fnPart[:parenIdx])
+			metadata.Functions = append(metadata.Functions, funcName)
+			metadata.Exports = append(metadata.Exports, funcName)
+		}
+	} else if strings.Contains(line, "struct ") {
+		// Struct definitions
+		structIdx := strings.Index(line, "struct ")
+		if structIdx != -1 {
+			structPart := line[structIdx+7:]
+			parts := strings.Fields(structPart)
+			if len(parts) > 0 {
+				structName := strings.TrimSuffix(parts[0], "{")
+				metadata.Classes = append(metadata.Classes, structName)
+				if strings.HasPrefix(line, "pub ") {
+					metadata.Exports = append(metadata.Exports, structName)
+				}
+			}
+		}
+	} else if strings.Contains(line, "enum ") {
+		// Enum definitions
+		enumIdx := strings.Index(line, "enum ")
+		if enumIdx != -1 {
+			enumPart := line[enumIdx+5:]
+			parts := strings.Fields(enumPart)
+			if len(parts) > 0 {
+				enumName := strings.TrimSuffix(parts[0], "{")
+				metadata.Classes = append(metadata.Classes, enumName)
+				if strings.HasPrefix(line, "pub ") {
+					metadata.Exports = append(metadata.Exports, enumName)
+				}
+			}
+		}
+	}
+}
+
+// isExported checks if a Go identifier is exported (starts with uppercase)
+func isExported(name string) bool {
+	if name == "" {
+		return false
+	}
+	r := []rune(name)
+	return r[0] >= 'A' && r[0] <= 'Z'
+}
+
 // detectFileLanguage detects the language of a file
 func (s *ProjectScanner) detectFileLanguage(path string) string {
 	ext := strings.ToLower(filepath.Ext(path))
@@ -462,21 +779,64 @@ func (s *ProjectScanner) extractFileMetadata(path string) FileMetadata {
 	metadata.IsDocumentation = ext == ".md" || ext == ".rst" || 
 		ext == ".txt" || strings.HasPrefix(basename, "README")
 
-	// Count lines
+	// Read file and extract metadata based on language
 	file, err := os.Open(path)
 	if err != nil {
 		return metadata
 	}
 	defer file.Close()
 
+	// Detect language
+	lang := s.detectFileLanguage(path)
+	
 	scanner := bufio.NewScanner(file)
 	lines := 0
+	inImportBlock := false // For Go multi-line imports
+	
 	for scanner.Scan() {
 		lines++
-		// TODO: Extract imports, functions, classes based on language
+		line := scanner.Text()
+		trimmed := strings.TrimSpace(line)
+		
+		// Skip empty lines and comments for analysis
+		if trimmed == "" {
+			continue
+		}
+		
+		// Handle Go import blocks
+		if lang == "go" {
+			if trimmed == "import (" {
+				inImportBlock = true
+				continue
+			} else if inImportBlock && trimmed == ")" {
+				inImportBlock = false
+				continue
+			} else if inImportBlock {
+				// Extract import from block
+				imp := strings.Trim(trimmed, "\t\"")
+				if imp != "" && !strings.HasPrefix(imp, "//") {
+					metadata.Imports = append(metadata.Imports, imp)
+				}
+				continue
+			}
+		}
+		
+		// Extract based on language
+		switch lang {
+		case "go":
+			s.extractGoMetadata(trimmed, &metadata)
+		case "javascript", "typescript":
+			s.extractJSMetadata(trimmed, &metadata)
+		case "python":
+			s.extractPythonMetadata(trimmed, &metadata)
+		case "java":
+			s.extractJavaMetadata(trimmed, &metadata)
+		case "rust":
+			s.extractRustMetadata(trimmed, &metadata)
+		}
 	}
+	
 	metadata.Lines = lines
-
 	return metadata
 }
 

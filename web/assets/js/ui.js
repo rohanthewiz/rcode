@@ -3,6 +3,8 @@ let eventSource = null;
 let messageInput;
 let editor = null;
 let pendingNewSession = false; // Track if we're waiting to create a new session
+let hasReceivedFirstResponse = false; // Track first response per message
+let fileRefreshDelay = 9000 // Warn: must be greater than the cacheTTL of the backend which is currently 7s
 
 // SSE connection tracking
 let reconnectAttempts = 0;
@@ -69,6 +71,8 @@ function connectEventSource() {
   };
 
   eventSource.onmessage = function(event) {
+    // console.log('SSE msg received (raw): ', event);
+
     const data = JSON.parse(event.data);
     handleServerEvent(data);
   };
@@ -209,21 +213,141 @@ function showConnectionError(message) {
 
 // Handle server events
 function handleServerEvent(event) {
-  console.log('Received SSE event:', event);
+  // already logged at parent // console.log('Received SSE event:', event);
+  console.log('Event sessionId:', event.sessionId, 'Current sessionId:', currentSessionId, 'Match:', event.sessionId === currentSessionId);
+  console.log('Global currentSessionId:', window.currentSessionId);
+  
+  // Special logging for permission events
+  if (event.type === 'permission_request' || event.type === 'permission_timeout') {
+    console.warn('PERMISSION EVENT RECEIVED:', {
+      type: event.type,
+      eventSessionId: event.sessionId,
+      currentSessionId: currentSessionId,
+      windowSessionId: window.currentSessionId,
+      sessionMatch: event.sessionId === currentSessionId,
+      data: event.data
+    });
+  }
 
-  if (event.type === 'message' && event.sessionId === currentSessionId) {
-    console.log('Adding assistant message to UI');
-    // Add assistant message to UI
-    addMessageToUI(event.data);
-    // Scroll to bottom
-    const messagesContainer = document.getElementById('messages');
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  // Auto-switch to Files tab on first response
+  if (event.sessionId === currentSessionId && !hasReceivedFirstResponse) {
+    // Check for events that indicate the LLM is starting to respond
+    if (event.type === 'content_start' || 
+        event.type === 'tool_execution_start' ||
+        (event.type === 'message_delta' && event.data && event.data.delta)) {
+      
+      // Switch to Files tab on first response
+      if (window.FileExplorer && window.FileExplorer.switchTab) {
+        console.log('Auto-switching to Files tab on first response');
+        window.FileExplorer.switchTab('files');
+        hasReceivedFirstResponse = true;
+      }
+    }
+  }
+
+  if (event.type === 'message_start' && event.sessionId === currentSessionId) {
+    console.log('Message streaming started');
+    // Don't remove thinking here - wait for content_start
+  } else if (event.type === 'content_start' && event.sessionId === currentSessionId) {
+    console.log('Content started (text or tool) - removing thinking indicators');
+    // Remove any thinking indicators when ANY content starts
+    const thinkingIndicators = document.querySelectorAll('.message.thinking');
+    console.log('Found thinking indicators:', thinkingIndicators.length);
+    thinkingIndicators.forEach(indicator => {
+      console.log('Removing thinking indicator:', indicator.id);
+      indicator.remove();
+    });
+  } else if (event.type === 'tool_use_start' && event.sessionId === currentSessionId) {
+    console.log('Tool use started');
+    // Remove any thinking indicators when tool use begins
+    const thinkingIndicators = document.querySelectorAll('.message.thinking');
+    thinkingIndicators.forEach(indicator => indicator.remove());
+  } else if (event.type === 'message_delta' && event.sessionId === currentSessionId) {
+    console.log('Message delta received:', event.data.delta);
+    // Create streaming message container if it doesn't exist
+    if (!currentStreamingMessageDiv) {
+      createStreamingMessage();
+    }
+    // Append delta to streaming message
+    appendToStreamingMessage(event.data.delta);
+  } else if (event.type === 'message_stop' && event.sessionId === currentSessionId) {
+    console.log('Message streaming stopped');
+    // Finalize streaming message
+    finalizeStreamingMessage();
+  } else if (event.type === 'tool_execution_start' && event.sessionId === currentSessionId) {
+    console.log('Tool execution started:', event.data);
+    handleToolExecutionStart(event.data);
+  } else if (event.type === 'tool_execution_progress' && event.sessionId === currentSessionId) {
+    console.log('Tool execution progress:', event.data);
+    handleToolExecutionProgress(event.data);
+  } else if (event.type === 'tool_execution_complete' && event.sessionId === currentSessionId) {
+    console.log('Tool execution completed:', event.data);
+    handleToolExecutionComplete(event.data);
+
+    // Refresh file tree after successful file-related tool operations
+    const fileTools = ['write_file', 'edit_file', 'make_dir', 'remove', 'move'];
+    if (event.data && event.data.toolName && window.FileExplorer) {
+      // Extract tool name from the summary (format: "✓ Tool operation...")
+      const toolName = event.data.toolName;
+      if (fileTools.includes(toolName)) {
+        // console.log('File operation detected, refreshing file tree for tool:', toolName);
+
+        // Cancel any pending refresh to debounce multiple operations
+        if (window.fileTreeRefreshTimeout) {
+          clearTimeout(window.fileTreeRefreshTimeout);
+          console.log('Cancelled pending file tree refresh, will reschedule');
+        }
+
+        // Schedule refresh with longer delay to ensure file system operations are complete
+        // Using 1.5 second delay for better reliability with larger operations
+        window.fileTreeRefreshTimeout = setTimeout(() => {
+          console.log('Refreshing file tree now...');
+          window.FileExplorer.loadFileTree();
+          window.fileTreeRefreshTimeout = null;
+        }, fileRefreshDelay);
+      }
+    }
+
   } else if (event.type === 'tool_usage' && event.sessionId === currentSessionId) {
     console.log('Tool usage event received:', event.data);
     // Add tool usage summary to UI
     addToolUsageSummaryToUI(event.data);
   } else if (event.type === 'session_list_updated') {
     loadSessions();
+  } else if (event.type && event.type.startsWith('plan_') && event.session_id === currentSessionId) {
+    // Handle plan-related events
+    handlePlanEvent(event);
+  } else if (event.type && (event.type === 'file_opened' || event.type === 'file_changed' || event.type === 'file_tree_update')) {
+    // Handle file explorer events
+    if (window.FileExplorer && window.FileExplorer.handleFileEvent) {
+      window.FileExplorer.handleFileEvent(event);
+    }
+  } else if (event.type === 'diff_available' && event.sessionId === currentSessionId) {
+    // Handle diff available event
+    console.log('Diff available:', event.data);
+    if (window.diffViewer && event.data && event.data.diffId) {
+      // Show notification that diff is available
+      const notification = `📝 Changes detected in ${event.data.path}`;
+      addSystemMessageToUI(notification, 'info');
+    }
+  } else if (event.type === 'tool_permission_update' && event.sessionId === currentSessionId) {
+    // Handle tool permission update event
+    console.log('Tool permission updated:', event.data);
+    // Could refresh the tools list or update specific tool UI
+    // For now, just log it as the UI is already updated optimistically
+  } else if (event.type === 'permission_request') {
+    // Handle permission request - check session ID match
+    console.log('Permission request received:', event.data);
+    console.log('Session check:', event.sessionId, '===', currentSessionId, '?', event.sessionId === currentSessionId);
+    if (event.sessionId === currentSessionId || event.sessionId === window.currentSessionId) {
+      handlePermissionRequest(event.data);
+    } else {
+      console.warn('Permission request for different session, ignoring');
+    }
+  } else if (event.type === 'permission_timeout' && event.sessionId === currentSessionId) {
+    // Handle permission timeout
+    console.log('Permission request timed out:', event.data);
+    handlePermissionTimeout(event.data.requestId);
   }
 }
 
@@ -231,9 +355,29 @@ function handleServerEvent(event) {
 async function loadSessions() {
   try {
     const response = await fetch('/api/session');
+    
+    // Check if response is ok
+    if (!response.ok) {
+      console.error('Failed to fetch sessions:', response.status);
+      return;
+    }
+    
     const sessions = await response.json();
+    
+    // Check if sessions is null or not an array
+    if (!sessions || !Array.isArray(sessions)) {
+      console.log('No sessions returned or invalid format');
+      return;
+    }
 
     const sessionList = document.getElementById('session-list');
+    
+    // Check if sessionList exists (it won't when on tools tab)
+    if (!sessionList) {
+      console.log('Session list element not found - likely on a different tab');
+      return;
+    }
+    
     sessionList.innerHTML = '';
 
     sessions.forEach(session => {
@@ -251,6 +395,7 @@ async function loadSessions() {
 // Select session
 function selectSession(sessionId) {
   currentSessionId = sessionId;
+  window.currentSessionId = sessionId; // make sure it is globally available
   pendingNewSession = false; // Clear pending state when selecting existing session
   loadMessages();
   loadSessions(); // Refresh to update active state
@@ -335,6 +480,29 @@ function addToolUsageSummaryToUI(toolData) {
   toolsList.appendChild(toolItem);
   
   // Scroll to bottom
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Helper function to quickly add a message
+function addMessage(role, content) {
+  addMessageToUI({ role: role, content: content });
+}
+
+// Add system message to UI
+function addSystemMessageToUI(message, type = 'info') {
+  const messagesContainer = document.getElementById('messages');
+  
+  const messageDiv = document.createElement('div');
+  messageDiv.className = `system-message ${type}`;
+  
+  const icon = type === 'error' ? '❌' : type === 'warning' ? '⚠️' : 'ℹ️';
+  
+  messageDiv.innerHTML = `
+    <span class="system-message-icon">${icon}</span>
+    <span class="system-message-text">${message}</span>
+  `;
+  
+  messagesContainer.appendChild(messageDiv);
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
 
@@ -455,6 +623,105 @@ function removeThinkingIndicator(id) {
   }
 }
 
+// Variables to track streaming state
+let currentStreamingMessageDiv = null;
+let currentStreamingContent = '';
+
+// Create streaming message container
+function createStreamingMessage() {
+  const messagesContainer = document.getElementById('messages');
+  
+  // Remove any existing thinking indicators
+  const thinkingIndicators = messagesContainer.querySelectorAll('.message.thinking');
+  thinkingIndicators.forEach(indicator => indicator.remove());
+  
+  // Create message container
+  const messageDiv = document.createElement('div');
+  messageDiv.className = 'message assistant streaming';
+  
+  const header = document.createElement('div');
+  header.className = 'message-header';
+  
+  // Show which model is responding
+  const modelSelector = document.getElementById('model-selector');
+  let modelName = 'Assistant';
+  if (modelSelector && modelSelector.value) {
+    // Extract model name from value
+    const parts = modelSelector.value.split('-');
+    if (parts.length > 1) {
+      modelName = parts[1].charAt(0).toUpperCase() + parts[1].slice(1);
+    }
+  }
+  
+  header.innerHTML = `<span class="role">${modelName}</span>`;
+  
+  const content = document.createElement('div');
+  content.className = 'message-content';
+  content.innerHTML = '<span class="streaming-cursor"></span>';
+  
+  messageDiv.appendChild(header);
+  messageDiv.appendChild(content);
+  messagesContainer.appendChild(messageDiv);
+  
+  // Store reference
+  currentStreamingMessageDiv = messageDiv;
+  currentStreamingContent = '';
+  
+  // Scroll to bottom
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Append text to streaming message
+function appendToStreamingMessage(delta) {
+  if (!currentStreamingMessageDiv) {
+    createStreamingMessage();
+  }
+  
+  const content = currentStreamingMessageDiv.querySelector('.message-content');
+  currentStreamingContent += delta;
+  
+  // Process markdown and update content
+  const processedContent = window.marked ? marked.parse(currentStreamingContent) : currentStreamingContent;
+  content.innerHTML = processedContent + '<span class="streaming-cursor"></span>';
+  
+  // Highlight code blocks if they exist
+  content.querySelectorAll('pre code').forEach((block) => {
+    if (window.hljs) {
+      hljs.highlightElement(block);
+    }
+  });
+  
+  // Smooth scroll to bottom
+  const messagesContainer = document.getElementById('messages');
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Finalize streaming message
+function finalizeStreamingMessage() {
+  if (!currentStreamingMessageDiv) return;
+  
+  // Remove streaming class and cursor
+  currentStreamingMessageDiv.classList.remove('streaming');
+  const cursor = currentStreamingMessageDiv.querySelector('.streaming-cursor');
+  if (cursor) cursor.remove();
+  
+  // Final markdown processing
+  const content = currentStreamingMessageDiv.querySelector('.message-content');
+  const processedContent = window.marked ? marked.parse(currentStreamingContent) : currentStreamingContent;
+  content.innerHTML = processedContent;
+  
+  // Final code highlighting
+  content.querySelectorAll('pre code').forEach((block) => {
+    if (window.hljs) {
+      hljs.highlightElement(block);
+    }
+  });
+  
+  // Reset streaming state
+  currentStreamingMessageDiv = null;
+  currentStreamingContent = '';
+}
+
 // Send message
 async function sendMessage() {
   console.log('sendMessage called');
@@ -486,6 +753,10 @@ async function sendMessage() {
   }
 
   console.log('Sending to session:', currentSessionId);
+  console.log('Window session ID:', window.currentSessionId);
+
+  // Reset first response flag for new message
+  hasReceivedFirstResponse = false;
 
   // Add user message to UI immediately
   addMessageToUI({ role: 'user', content: content });
@@ -514,10 +785,11 @@ async function sendMessage() {
 
     console.log('Response status:', response.status);
 
-    // Remove thinking indicator
-    removeThinkingIndicator(thinkingId);
+    // Don't remove thinking indicator here - let SSE events handle it during streaming
 
     if (!response.ok) {
+      // Remove thinking indicator only on error
+      removeThinkingIndicator(thinkingId);
       const errorText = await response.text();
       console.error('Response error:', errorText);
       
@@ -545,6 +817,9 @@ async function sendMessage() {
     const result = await response.json();
     console.log('Response data:', result);
     
+    // Remove thinking indicator when we get the response
+    removeThinkingIndicator(thinkingId);
+    
     // Display tool summaries if any
     if (result.toolSummaries && result.toolSummaries.length > 0) {
       // Create tools summary container
@@ -564,14 +839,7 @@ async function sendMessage() {
       messagesContainer.appendChild(toolsSummary);
     }
 
-    // Add the assistant's response directly from the API response
-    if (result.content) {
-      addMessageToUI({
-        role: 'assistant',
-        content: result.content,
-        model: result.model
-      });
-    }
+    // Response content already streamed via SSE deltas - no need to add again
     
     // Reload sessions to show updated title (for first message)
     // The backend will have updated the session title based on the first user message
@@ -594,6 +862,7 @@ async function actuallyCreateSession() {
 
     const session = await response.json();
     currentSessionId = session.id;
+    window.currentSessionId = session.id; // Ensure global is also set
     pendingNewSession = false;
     
     // Don't reload sessions immediately - wait for title to be set
@@ -640,12 +909,353 @@ async function logout() {
   }
 }
 
+// Plan Mode Management
+let isPlanMode = false;
+let currentPlan = null;
+let currentPlanId = null;
+let planSteps = new Map(); // Map of step ID to step data
+
+function initializePlanMode() {
+  const planModeSwitch = document.getElementById('plan-mode-switch');
+  const planModeIndicator = document.getElementById('plan-mode-indicator');
+  const sendBtn = document.getElementById('send-btn');
+  const createPlanBtn = document.getElementById('create-plan-btn');
+  const planExecutionArea = document.getElementById('plan-execution-area');
+  const closePlanBtn = document.getElementById('close-plan-btn');
+  
+  if (!planModeSwitch) return;
+  
+  // Toggle plan mode
+  planModeSwitch.addEventListener('change', function() {
+    isPlanMode = this.checked;
+    document.body.classList.toggle('plan-mode', isPlanMode);
+    
+    if (isPlanMode) {
+      planModeIndicator.style.display = 'block';
+      sendBtn.style.display = 'none';
+      createPlanBtn.style.display = 'inline-block';
+      if (editor) {
+        editor.updateOptions({ placeholder: 'Describe a complex task to create a plan...' });
+      }
+    } else {
+      planModeIndicator.style.display = 'none';
+      sendBtn.style.display = 'inline-block';
+      createPlanBtn.style.display = 'none';
+      if (editor) {
+        editor.updateOptions({ placeholder: 'Type a message...' });
+      }
+    }
+  });
+  
+  // Create plan button
+  if (createPlanBtn) {
+    createPlanBtn.addEventListener('click', createPlan);
+  }
+  
+  // Close plan execution area
+  if (closePlanBtn) {
+    closePlanBtn.addEventListener('click', function() {
+      planExecutionArea.style.display = 'none';
+      document.body.classList.remove('plan-executing');
+    });
+  }
+  
+  // Plan control buttons
+  const executePlanBtn = document.getElementById('execute-plan-btn');
+  const pausePlanBtn = document.getElementById('pause-plan-btn');
+  const rollbackPlanBtn = document.getElementById('rollback-plan-btn');
+  const viewMetricsBtn = document.getElementById('view-metrics-btn');
+  
+  if (executePlanBtn) {
+    executePlanBtn.addEventListener('click', executePlan);
+  }
+  
+  if (pausePlanBtn) {
+    pausePlanBtn.addEventListener('click', pausePlan);
+  }
+  
+  if (rollbackPlanBtn) {
+    rollbackPlanBtn.addEventListener('click', showRollbackDialog);
+  }
+  
+  if (viewMetricsBtn) {
+    viewMetricsBtn.addEventListener('click', viewPlanMetrics);
+  }
+}
+
+async function createPlan() {
+  const content = editor.getValue().trim();
+  if (!content || !currentSessionId) return;
+  
+  try {
+    const response = await fetch(`/api/session/${currentSessionId}/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ 
+        description: content,
+        auto_execute: false 
+      })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to create plan');
+    }
+    
+    const plan = await response.json();
+    currentPlan = plan;
+    
+    // Clear the editor
+    editor.setValue('');
+    
+    // Show the plan in the messages area
+    addMessage('assistant', `📋 **Task Plan Created**\n\nI've created a plan with ${plan.steps.length} steps to: ${plan.description}`);
+    
+    // Show plan execution area
+    displayPlan(plan);
+    
+  } catch (error) {
+    console.error('Error creating plan:', error);
+    addMessage('assistant', '❌ Failed to create task plan. Please try again.');
+  }
+}
+
+function displayPlan(plan) {
+  const planExecutionArea = document.getElementById('plan-execution-area');
+  const planStepsContainer = document.getElementById('plan-steps');
+  const progressText = document.getElementById('progress-text');
+  
+  // Clear previous steps
+  planStepsContainer.innerHTML = '';
+  planSteps.clear();
+  
+  // Update progress text
+  progressText.textContent = `0 / ${plan.steps.length} steps`;
+  
+  // Display each step
+  plan.steps.forEach((step, index) => {
+    const stepElement = createStepElement(step, index + 1);
+    planStepsContainer.appendChild(stepElement);
+    planSteps.set(step.id, { element: stepElement, data: step });
+  });
+  
+  // Show the plan execution area
+  planExecutionArea.style.display = 'flex';
+  document.body.classList.add('plan-executing');
+  
+  // Enable/disable buttons based on plan status
+  updatePlanControls(plan.status);
+}
+
+function createStepElement(step, number) {
+  const stepDiv = document.createElement('div');
+  stepDiv.className = 'plan-step';
+  stepDiv.id = `step-${step.id}`;
+  
+  stepDiv.innerHTML = `
+    <div class="step-header">
+      <div class="step-info">
+        <span class="step-number">${number}</span>
+        <span class="step-title">${step.description}</span>
+      </div>
+      <span class="step-status ${step.status || 'pending'}">${step.status || 'pending'}</span>
+    </div>
+    <div class="step-details">
+      <span class="step-tool">Tool: ${step.tool}</span>
+    </div>
+    <div class="step-output" style="display: none;"></div>
+    <div class="step-metrics" style="display: none;"></div>
+  `;
+  
+  return stepDiv;
+}
+
+async function executePlan() {
+  if (!currentPlan) return;
+  
+  try {
+    const response = await fetch(`/api/plan/${currentPlan.id}/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to execute plan');
+    }
+    
+    // Update controls
+    document.getElementById('execute-plan-btn').disabled = true;
+    document.getElementById('pause-plan-btn').disabled = false;
+    document.getElementById('rollback-plan-btn').disabled = false;
+    
+    addMessage('assistant', '🚀 Plan execution started...');
+    
+  } catch (error) {
+    console.error('Error executing plan:', error);
+    addMessage('assistant', '❌ Failed to execute plan. Please try again.');
+  }
+}
+
+function pausePlan() {
+  // TODO: Implement pause functionality
+  console.log('Pause plan - not yet implemented');
+}
+
+function showRollbackDialog() {
+  // TODO: Show checkpoint selection dialog
+  console.log('Rollback - not yet implemented');
+}
+
+async function viewPlanMetrics() {
+  if (!currentPlan) return;
+  
+  try {
+    const response = await fetch(`/api/plan/${currentPlan.id}/status`);
+    if (!response.ok) throw new Error('Failed to get metrics');
+    
+    const status = await response.json();
+    
+    // Display metrics in a message
+    let metricsText = `📊 **Plan Execution Metrics**\n\n`;
+    metricsText += `Total Steps: ${status.total_steps}\n`;
+    metricsText += `Completed: ${status.completed_steps}\n`;
+    metricsText += `Failed: ${status.failed_steps}\n`;
+    if (status.metrics && status.metrics.total_duration) {
+      metricsText += `Duration: ${formatDuration(status.metrics.total_duration)}\n`;
+    }
+    
+    addMessage('assistant', metricsText);
+    
+  } catch (error) {
+    console.error('Error getting metrics:', error);
+  }
+}
+
+function updatePlanControls(status) {
+  const executeBtn = document.getElementById('execute-plan-btn');
+  const pauseBtn = document.getElementById('pause-plan-btn');
+  const rollbackBtn = document.getElementById('rollback-plan-btn');
+  
+  switch (status) {
+    case 'pending':
+      executeBtn.disabled = false;
+      pauseBtn.disabled = true;
+      rollbackBtn.disabled = true;
+      break;
+    case 'executing':
+      executeBtn.disabled = true;
+      pauseBtn.disabled = false;
+      rollbackBtn.disabled = false;
+      break;
+    case 'completed':
+    case 'failed':
+      executeBtn.disabled = true;
+      pauseBtn.disabled = true;
+      rollbackBtn.disabled = false;
+      break;
+  }
+}
+
+// Handle plan-related SSE events
+function handlePlanEvent(event) {
+  switch (event.type) {
+    case 'plan_created':
+      handlePlanCreated(event.data);
+      break;
+    case 'step_progress':
+      handleStepProgress(event.data);
+      break;
+    case 'plan_completed':
+      handlePlanCompleted(event.data);
+      break;
+  }
+}
+
+function handlePlanCreated(data) {
+  console.log('Plan created:', data);
+  // Plan creation is already handled in createPlan()
+}
+
+function handleStepProgress(data) {
+  const stepInfo = planSteps.get(data.step_id);
+  if (!stepInfo) return;
+  
+  const { element } = stepInfo;
+  const statusElement = element.querySelector('.step-status');
+  const outputElement = element.querySelector('.step-output');
+  
+  // Update step status
+  element.className = `plan-step ${data.status}`;
+  statusElement.className = `step-status ${data.status}`;
+  statusElement.textContent = data.status;
+  
+  // Show output if available
+  if (data.output) {
+    outputElement.style.display = 'block';
+    outputElement.textContent = typeof data.output === 'string' ? data.output : JSON.stringify(data.output, null, 2);
+  }
+  
+  // Update progress bar
+  updateProgressBar();
+  
+  // Show metrics if step completed
+  if (data.status === 'completed' && data.metrics) {
+    const metricsElement = element.querySelector('.step-metrics');
+    metricsElement.style.display = 'flex';
+    metricsElement.innerHTML = `
+      <span>Duration: ${formatDuration(data.metrics.duration)}</span>
+      ${data.metrics.retry_count > 0 ? `<span>Retries: ${data.metrics.retry_count}</span>` : ''}
+    `;
+  }
+}
+
+function handlePlanCompleted(data) {
+  updatePlanControls(data.status);
+  
+  if (data.status === 'completed') {
+    addMessage('assistant', '✅ Plan execution completed successfully!');
+  } else if (data.status === 'failed') {
+    addMessage('assistant', '❌ Plan execution failed. You can try to rollback to a previous checkpoint.');
+  }
+}
+
+function updateProgressBar() {
+  const progressFill = document.getElementById('progress-fill');
+  const progressText = document.getElementById('progress-text');
+  
+  let completed = 0;
+  let total = planSteps.size;
+  
+  planSteps.forEach(step => {
+    const status = step.element.querySelector('.step-status').textContent;
+    if (status === 'completed' || status === 'failed') {
+      completed++;
+    }
+  });
+  
+  const percentage = total > 0 ? (completed / total) * 100 : 0;
+  progressFill.style.width = `${percentage}%`;
+  progressText.textContent = `${completed} / ${total} steps`;
+}
+
+function formatDuration(duration) {
+  // Duration is in nanoseconds, convert to readable format
+  const ms = duration / 1000000;
+  if (ms < 1000) return `${ms.toFixed(0)}ms`;
+  const s = ms / 1000;
+  if (s < 60) return `${s.toFixed(1)}s`;
+  const m = s / 60;
+  return `${m.toFixed(1)}m`;
+}
+
 // Wait for DOM to be ready
 document.addEventListener('DOMContentLoaded', function() {
   console.log('DOM loaded, initializing...');
 
   // Configure marked.js
   configureMarked();
+
+  // Initialize Plan Mode
+  initializePlanMode();
 
   // Initialize model selector
   const modelSelector = document.getElementById('model-selector');
@@ -777,4 +1387,957 @@ document.addEventListener('DOMContentLoaded', function() {
   // initializeMonacoEditor();
 
   console.log('JavaScript Initialization complete');
+  
+  // Initialize Plan History
+  initializePlanHistory();
 });
+
+// Plan History functionality
+let planHistoryPage = 1;
+let planHistoryLoading = false;
+let planHistorySearch = '';
+let planHistoryStatus = '';
+
+function initializePlanHistory() {
+  const historyBtn = document.getElementById('plan-history-btn');
+  const historyPanel = document.getElementById('plan-history-panel');
+  const closeHistoryBtn = document.getElementById('close-history-btn');
+  const searchInput = document.getElementById('plan-search');
+  const statusFilter = document.getElementById('plan-status-filter');
+  const loadMoreBtn = document.getElementById('load-more-plans');
+  
+  if (!historyBtn || !historyPanel) {
+    console.log('Plan history elements not found');
+    return;
+  }
+  
+  // Toggle panel
+  historyBtn.addEventListener('click', () => {
+    historyPanel.classList.toggle('open');
+    if (historyPanel.classList.contains('open')) {
+      planHistoryPage = 1;
+      loadPlanHistory(true);
+    }
+  });
+  
+  // Close panel
+  closeHistoryBtn.addEventListener('click', () => {
+    historyPanel.classList.remove('open');
+  });
+  
+  // Search functionality
+  let searchTimeout;
+  searchInput.addEventListener('input', (e) => {
+    clearTimeout(searchTimeout);
+    planHistorySearch = e.target.value;
+    searchTimeout = setTimeout(() => {
+      planHistoryPage = 1;
+      loadPlanHistory(true);
+    }, 300);
+  });
+  
+  // Filter functionality
+  statusFilter.addEventListener('change', (e) => {
+    planHistoryStatus = e.target.value;
+    planHistoryPage = 1;
+    loadPlanHistory(true);
+  });
+  
+  // Load more
+  loadMoreBtn.addEventListener('click', () => {
+    planHistoryPage++;
+    loadPlanHistory(false);
+  });
+}
+
+async function loadPlanHistory(reset = false) {
+  if (planHistoryLoading || !currentSessionId) return;
+  
+  planHistoryLoading = true;
+  const historyList = document.getElementById('plan-history-list');
+  const loadMoreBtn = document.getElementById('load-more-plans');
+  
+  if (reset) {
+    historyList.innerHTML = '<div class="loading">Loading plan history...</div>';
+  }
+  
+  try {
+    const params = new URLSearchParams({
+      page: planHistoryPage,
+      limit: 20
+    });
+    
+    if (planHistorySearch) {
+      params.append('search', planHistorySearch);
+    }
+    
+    if (planHistoryStatus) {
+      params.append('status', planHistoryStatus);
+    }
+    
+    const response = await fetch(`/api/session/${currentSessionId}/plans/history?${params}`);
+    if (!response.ok) {
+      throw new Error('Failed to load plan history');
+    }
+    
+    const data = await response.json();
+    
+    if (reset) {
+      historyList.innerHTML = '';
+    }
+    
+    if (data.plans.length === 0 && reset) {
+      historyList.innerHTML = '<div class="loading">No plans found</div>';
+    } else {
+      data.plans.forEach(plan => {
+        historyList.appendChild(createPlanHistoryItem(plan));
+      });
+    }
+    
+    // Show/hide load more button
+    if (data.page * data.limit < data.total) {
+      loadMoreBtn.style.display = 'block';
+    } else {
+      loadMoreBtn.style.display = 'none';
+    }
+    
+  } catch (error) {
+    console.error('Error loading plan history:', error);
+    if (reset) {
+      historyList.innerHTML = '<div class="loading">Error loading plan history</div>';
+    }
+  } finally {
+    planHistoryLoading = false;
+  }
+}
+
+function createPlanHistoryItem(plan) {
+  const item = document.createElement('div');
+  item.className = 'plan-history-item';
+  
+  const statusIcon = getStatusIcon(plan.status);
+  const timeAgo = formatTimeAgo(new Date(plan.created_at));
+  const duration = plan.duration ? formatDuration(plan.duration) : 'N/A';
+  
+  item.innerHTML = `
+    <div class="plan-item-header">
+      <span class="plan-icon">${statusIcon}</span>
+      <div class="plan-item-content">
+        <div class="plan-description">${escapeHtml(plan.description)}</div>
+        <div class="plan-metadata">
+          <span class="plan-status-badge ${plan.status}">${plan.status}</span>
+          <span class="plan-step-count">📋 ${plan.step_count} steps</span>
+          <span class="plan-time">⏱️ ${timeAgo}</span>
+          ${plan.duration ? `<span class="plan-duration">⏳ ${duration}</span>` : ''}
+        </div>
+        <div class="plan-actions">
+          <button class="plan-action-btn" onclick="viewPlanDetails('${plan.id}')">View Details</button>
+          <button class="plan-action-btn" onclick="rerunPlan('${plan.id}')">Re-run</button>
+          <button class="plan-action-btn" onclick="deletePlan('${plan.id}')">Delete</button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  return item;
+}
+
+async function viewPlanDetails(planId) {
+  try {
+    const response = await fetch(`/api/plan/${planId}/full`);
+    if (!response.ok) {
+      throw new Error('Failed to load plan details');
+    }
+    
+    const data = await response.json();
+    showPlanDetailsModal(data);
+  } catch (error) {
+    console.error('Error loading plan details:', error);
+    alert('Failed to load plan details');
+  }
+}
+
+function showPlanDetailsModal(data) {
+  const modal = document.getElementById('plan-details-modal');
+  const content = document.getElementById('plan-details-content');
+  
+  const plan = data.plan;
+  const stats = data.stats || {};
+  const metrics = data.metrics || {};
+  
+  content.innerHTML = `
+    <div class="plan-detail-section">
+      <h4>Plan Overview</h4>
+      <p><strong>Description:</strong> ${escapeHtml(plan.description)}</p>
+      <p><strong>Status:</strong> <span class="plan-status-badge ${plan.status}">${plan.status}</span></p>
+      <p><strong>Created:</strong> ${new Date(plan.created_at).toLocaleString()}</p>
+      ${plan.completed_at ? `<p><strong>Completed:</strong> ${new Date(plan.completed_at).toLocaleString()}</p>` : ''}
+    </div>
+    
+    <div class="plan-detail-section">
+      <h4>Execution Statistics</h4>
+      <div class="plan-metrics">
+        <div class="metric-card">
+          <div class="metric-value">${stats.execution_count || 0}</div>
+          <div class="metric-label">Executions</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${Math.round(stats.success_rate || 0)}%</div>
+          <div class="metric-label">Success Rate</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${formatDuration(stats.total_duration * 1000 || 0)}</div>
+          <div class="metric-label">Total Time</div>
+        </div>
+        <div class="metric-card">
+          <div class="metric-value">${plan.steps.length}</div>
+          <div class="metric-label">Total Steps</div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="plan-detail-section">
+      <h4>Steps</h4>
+      <div class="plan-steps-detailed">
+        ${plan.steps.map((step, index) => `
+          <div class="plan-step-detailed ${step.status}">
+            <div class="step-header">
+              <span class="step-name">Step ${index + 1}: ${escapeHtml(step.description)}</span>
+              <span class="step-status">${step.status}</span>
+            </div>
+            <div class="step-details">
+              <strong>Tool:</strong> ${step.tool}<br>
+              ${step.error ? `<strong>Error:</strong> ${escapeHtml(step.error)}` : ''}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+    
+    ${data.modified_files && data.modified_files.length > 0 ? `
+      <div class="plan-detail-section">
+        <h4>Modified Files</h4>
+        <ul>
+          ${data.modified_files.map(file => `<li>${escapeHtml(file)}</li>`).join('')}
+        </ul>
+      </div>
+    ` : ''}
+    
+    ${data.git_operations && data.git_operations.length > 0 ? `
+      <div class="plan-detail-section">
+        <h4>Git Operations</h4>
+        <ul>
+          ${data.git_operations.map(op => `<li>${op.tool}: ${op.status}</li>`).join('')}
+        </ul>
+      </div>
+    ` : ''}
+  `;
+  
+  modal.classList.add('open');
+}
+
+function closePlanDetailsModal() {
+  const modal = document.getElementById('plan-details-modal');
+  modal.classList.remove('open');
+}
+
+async function rerunPlan(planId) {
+  if (!confirm('Are you sure you want to re-run this plan?')) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/api/plan/${planId}/clone`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to clone plan');
+    }
+    
+    const newPlan = await response.json();
+    
+    // Close history panel
+    document.getElementById('plan-history-panel').classList.remove('open');
+    
+    // Load and display the new plan
+    currentPlanId = newPlan.id;
+    await loadPlanDetails(newPlan.id);
+    showPlanExecutionArea();
+    
+    // Optionally auto-execute
+    if (confirm('Execute the cloned plan now?')) {
+      executePlan();
+    }
+    
+  } catch (error) {
+    console.error('Error re-running plan:', error);
+    alert('Failed to re-run plan');
+  }
+}
+
+async function deletePlan(planId) {
+  if (!confirm('Are you sure you want to delete this plan? This action cannot be undone.')) {
+    return;
+  }
+  
+  try {
+    const response = await fetch(`/api/plan/${planId}`, {
+      method: 'DELETE'
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to delete plan');
+    }
+    
+    // Reload the history
+    planHistoryPage = 1;
+    loadPlanHistory(true);
+    
+  } catch (error) {
+    console.error('Error deleting plan:', error);
+    alert('Failed to delete plan');
+  }
+}
+
+function getStatusIcon(status) {
+  switch (status) {
+    case 'completed': return '✅';
+    case 'failed': return '❌';
+    case 'executing': return '⏳';
+    case 'pending': return '⏸️';
+    default: return '📋';
+  }
+}
+
+function formatTimeAgo(date) {
+  const seconds = Math.floor((new Date() - date) / 1000);
+  
+  if (seconds < 60) return 'just now';
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)}d ago`;
+  
+  return date.toLocaleDateString();
+}
+
+function formatDuration(ms) {
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60000) return `${(ms / 1000).toFixed(1)}s`;
+  if (ms < 3600000) return `${Math.floor(ms / 60000)}m ${Math.floor((ms % 60000) / 1000)}s`;
+  
+  const hours = Math.floor(ms / 3600000);
+  const minutes = Math.floor((ms % 3600000) / 60000);
+  return `${hours}h ${minutes}m`;
+}
+
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Helper function to close plan details modal
+function closePlanDetailsModal() {
+  const modal = document.getElementById('plan-details-modal');
+  modal.classList.remove('open');
+}
+
+// Load plan details and prepare for execution
+async function loadPlanDetails(planId) {
+  try {
+    const response = await fetch(`/api/plan/${planId}/full`);
+    if (!response.ok) {
+      throw new Error(`Failed to load plan: ${response.statusText}`);
+    }
+    
+    const data = await response.json();
+    
+    // Extract the plan object from the response
+    const plan = data.plan;
+    
+    // Update currentPlan to reference the loaded plan
+    currentPlan = plan;
+    
+    // Display the plan in the execution area
+    displayPlan(plan);
+    
+    return plan;
+  } catch (error) {
+    console.error('Error loading plan details:', error);
+    alert('Failed to load plan details. Please try again.');
+    throw error;
+  }
+}
+
+// Show the plan execution area
+function showPlanExecutionArea() {
+  const planExecutionArea = document.getElementById('plan-execution-area');
+  if (planExecutionArea) {
+    planExecutionArea.style.display = 'flex';
+    document.body.classList.add('plan-executing');
+  }
+}
+
+// Tool management functions
+async function loadSessionTools(sessionId) {
+  const toolsList = document.getElementById('tools-list');
+  if (!toolsList) return;
+  
+  // Check if sessionId is provided
+  if (!sessionId) {
+    toolsList.innerHTML = '<div class="empty-state">Please select a session to view and manage tool permissions.</div>';
+    return;
+  }
+  
+  // Show loading state
+  toolsList.innerHTML = '<div class="loading">Loading tools...</div>';
+  
+  try {
+    const response = await fetch(`/api/session/${sessionId}/tools`);
+    if (!response.ok) throw new Error('Failed to load tools');
+    
+    const tools = await response.json();
+    
+    // Group tools by category
+    const toolsByCategory = {};
+    tools.forEach(tool => {
+      if (!toolsByCategory[tool.category]) {
+        toolsByCategory[tool.category] = [];
+      }
+      toolsByCategory[tool.category].push(tool);
+    });
+    
+    // Render tools grouped by category
+    let html = '';
+    Object.entries(toolsByCategory).forEach(([category, categoryTools]) => {
+      html += `
+        <div class="tool-category">
+          <div class="tool-category-header">${category}</div>
+          <div class="tool-items">
+            ${categoryTools.map(tool => renderTool(tool)).join('')}
+          </div>
+        </div>
+      `;
+    });
+    
+    toolsList.innerHTML = html;
+    
+    // Add event listeners for tool controls
+    toolsList.querySelectorAll('.tool-toggle input').forEach(toggle => {
+      toggle.addEventListener('change', handleToolToggle);
+    });
+    
+    toolsList.querySelectorAll('.mode-radio input').forEach(radio => {
+      radio.addEventListener('change', handleModeChange);
+    });
+    
+  } catch (error) {
+    console.error('Error loading tools:', error);
+    toolsList.innerHTML = '<div class="error">Failed to load tools</div>';
+  }
+}
+
+function renderTool(tool) {
+  const toolId = `tool-${tool.name}`;
+  const modeGroupName = `mode-${tool.name}`;
+  
+  return `
+    <div class="tool-item ${!tool.enabled ? 'disabled' : ''}" data-tool="${tool.name}">
+      <div class="tool-info">
+        <div class="tool-name">${tool.name}</div>
+        <div class="tool-description">${escapeHtml(tool.description)}</div>
+      </div>
+      <div class="tool-controls">
+        <label class="tool-toggle">
+          <input type="checkbox" id="${toolId}" data-tool="${tool.name}" ${tool.enabled ? 'checked' : ''}>
+          <span class="toggle-slider"></span>
+        </label>
+        <div class="tool-mode" ${!tool.enabled ? 'style="opacity: 0.3; pointer-events: none;"' : ''}>
+          <div class="mode-radio">
+            <input type="radio" id="${toolId}-ask" name="${modeGroupName}" value="ask" 
+                   data-tool="${tool.name}" ${tool.mode === 'ask' ? 'checked' : ''}>
+            <label for="${toolId}-ask">Ask</label>
+          </div>
+          <div class="mode-radio">
+            <input type="radio" id="${toolId}-auto" name="${modeGroupName}" value="auto" 
+                   data-tool="${tool.name}" ${tool.mode === 'auto' ? 'checked' : ''}>
+            <label for="${toolId}-auto">Auto</label>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+async function handleToolToggle(event) {
+  const toggle = event.target;
+  const toolName = toggle.dataset.tool;
+  const enabled = toggle.checked;
+  const toolItem = toggle.closest('.tool-item');
+  const modeControls = toolItem.querySelector('.tool-mode');
+  
+  // Update UI immediately
+  toolItem.classList.toggle('disabled', !enabled);
+  if (modeControls) {
+    modeControls.style.opacity = enabled ? '1' : '0.3';
+    modeControls.style.pointerEvents = enabled ? 'auto' : 'none';
+  }
+  
+  // Get current mode
+  const modeRadio = toolItem.querySelector('.mode-radio input:checked');
+  const mode = modeRadio ? modeRadio.value : 'ask';
+  
+  // Update on server
+  try {
+    const response = await fetch(`/api/session/${currentSessionId}/tools/${toolName}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ enabled, mode })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update tool permission');
+    }
+    
+    console.log(`Tool ${toolName} ${enabled ? 'enabled' : 'disabled'}`);
+  } catch (error) {
+    console.error('Error updating tool:', error);
+    // Revert UI change
+    toggle.checked = !enabled;
+    toolItem.classList.toggle('disabled', enabled);
+    if (modeControls) {
+      modeControls.style.opacity = !enabled ? '1' : '0.3';
+      modeControls.style.pointerEvents = !enabled ? 'auto' : 'none';
+    }
+    alert('Failed to update tool permission. Please try again.');
+  }
+}
+
+async function handleModeChange(event) {
+  const radio = event.target;
+  const toolName = radio.dataset.tool;
+  const mode = radio.value;
+  const toolItem = radio.closest('.tool-item');
+  const enableToggle = toolItem.querySelector('.tool-toggle input');
+  const enabled = enableToggle.checked;
+  
+  // Update on server
+  try {
+    const response = await fetch(`/api/session/${currentSessionId}/tools/${toolName}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ enabled, mode })
+    });
+    
+    if (!response.ok) {
+      throw new Error('Failed to update tool mode');
+    }
+    
+    console.log(`Tool ${toolName} mode changed to ${mode}`);
+  } catch (error) {
+    console.error('Error updating tool mode:', error);
+    // Revert to previous selection
+    const otherRadio = toolItem.querySelector(`.mode-radio input[value="${mode === 'ask' ? 'auto' : 'ask'}"]`);
+    if (otherRadio) otherRadio.checked = true;
+    alert('Failed to update tool mode. Please try again.');
+  }
+}
+
+// Escape HTML to prevent XSS
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
+}
+
+// Export the loadSessionTools function to window so it can be called from fileExplorer.js
+window.loadSessionTools = loadSessionTools;
+
+// Active tool executions tracker
+const activeToolExecutions = new Map();
+
+// Handle tool execution start event
+function handleToolExecutionStart(data) {
+  const messagesContainer = document.getElementById('messages');
+  
+  // Remove any thinking indicators
+  const thinkingIndicators = document.querySelectorAll('.message.thinking');
+  thinkingIndicators.forEach(indicator => indicator.remove());
+  
+  // Find or create the tool execution container
+  let toolsContainer = document.querySelector('.tool-execution-container.active');
+  if (!toolsContainer) {
+    toolsContainer = document.createElement('div');
+    toolsContainer.className = 'tool-execution-container active';
+    toolsContainer.innerHTML = `
+      <div class="tool-execution-header">
+        <span class="tool-icon">🛠️</span>
+        <span class="tool-title">Executing tools...</span>
+        <button class="tool-toggle" onclick="toggleToolDetails(this)">▼</button>
+      </div>
+      <div class="tool-execution-list"></div>
+    `;
+    messagesContainer.appendChild(toolsContainer);
+  }
+  
+  // Add tool to the execution list
+  const toolsList = toolsContainer.querySelector('.tool-execution-list');
+  const toolItem = document.createElement('div');
+  toolItem.className = 'tool-item executing';
+  toolItem.id = `tool-${data.toolId}`;
+  toolItem.innerHTML = `
+    <span class="tool-status-icon">⏳</span>
+    <span class="tool-name">${data.toolName}</span>
+    <div class="tool-progress" style="display: none;">
+      <div class="tool-progress-bar" style="width: 0%"></div>
+    </div>
+    <span class="tool-metrics"></span>
+  `;
+  
+  toolsList.appendChild(toolItem);
+  
+  // Track the active tool execution
+  activeToolExecutions.set(data.toolId, {
+    name: data.toolName,
+    startTime: data.startTime,
+    element: toolItem
+  });
+  
+  // Scroll to bottom
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Handle tool execution progress event
+function handleToolExecutionProgress(data) {
+  const toolInfo = activeToolExecutions.get(data.toolId);
+  if (!toolInfo) return;
+  
+  const toolItem = toolInfo.element;
+  const progressContainer = toolItem.querySelector('.tool-progress');
+  const progressBar = toolItem.querySelector('.tool-progress-bar');
+  
+  // Show progress bar
+  progressContainer.style.display = 'block';
+  progressBar.style.width = `${data.progress}%`;
+  
+  // Update metrics if provided
+  if (data.message) {
+    const metricsSpan = toolItem.querySelector('.tool-metrics');
+    metricsSpan.textContent = data.message;
+  }
+}
+
+// Handle tool execution complete event
+function handleToolExecutionComplete(data) {
+  const toolInfo = activeToolExecutions.get(data.toolId);
+  if (!toolInfo) return;
+  
+  const toolItem = toolInfo.element;
+  const statusIcon = toolItem.querySelector('.tool-status-icon');
+  const metricsSpan = toolItem.querySelector('.tool-metrics');
+  const progressContainer = toolItem.querySelector('.tool-progress');
+  
+  // Update status
+  toolItem.classList.remove('executing');
+  toolItem.classList.add(data.status);
+  
+  // Update icon based on status
+  if (data.status === 'success') {
+    statusIcon.textContent = '✓';
+  } else if (data.status === 'failed') {
+    statusIcon.textContent = '❌';
+  }
+  
+  // Hide progress bar
+  progressContainer.style.display = 'none';
+  
+  // Update summary/metrics
+  if (data.summary) {
+    metricsSpan.textContent = data.summary.replace(/^[✓❌]\s*/, ''); // Remove status icon from summary
+  } else if (data.metrics && data.metrics.duration) {
+    metricsSpan.textContent = `(${data.metrics.duration}ms)`;
+  }
+  
+  // Remove from active executions
+  activeToolExecutions.delete(data.toolId);
+  
+  // If no more active tools, update header
+  if (activeToolExecutions.size === 0) {
+    const toolsContainer = document.querySelector('.tool-execution-container.active');
+    if (toolsContainer) {
+      const title = toolsContainer.querySelector('.tool-title');
+      title.textContent = 'Tools completed';
+      toolsContainer.classList.remove('active');
+    }
+  }
+}
+
+// Toggle tool execution details visibility
+function toggleToolDetails(button) {
+  const container = button.closest('.tool-execution-container');
+  const list = container.querySelector('.tool-execution-list');
+  
+  if (list.style.display === 'none') {
+    list.style.display = 'block';
+    button.textContent = '▼';
+  } else {
+    list.style.display = 'none';
+    button.textContent = '▶';
+  }
+}
+
+// Permission Request Handling
+const activePermissionRequests = new Map();
+let permissionTimeoutInterval = null;
+
+// Handle incoming permission request
+function handlePermissionRequest(data) {
+  console.error('HANDLE PERMISSION REQUEST CALLED:', data);
+  
+  // Store the request
+  activePermissionRequests.set(data.requestId, {
+    ...data,
+    timeRemaining: 30
+  });
+  
+  // Show the permission modal
+  showPermissionModal(data);
+  
+  // Start timeout countdown if not already running
+  if (!permissionTimeoutInterval) {
+    permissionTimeoutInterval = setInterval(updatePermissionTimeouts, 1000);
+  }
+}
+
+// Show permission modal dialog
+function showPermissionModal(data) {
+  const modal = document.getElementById('permission-modal');
+  const toolNameElement = document.getElementById('permission-tool-name');
+  const paramsElement = document.getElementById('permission-params');
+  const rememberCheckbox = document.getElementById('permission-remember');
+  
+  // Set tool name
+  toolNameElement.textContent = data.toolName;
+  
+  // Display parameters
+  paramsElement.innerHTML = '';
+  if (data.parameterDisplay) {
+    const paramDiv = document.createElement('div');
+    paramDiv.className = 'param-display';
+    paramDiv.textContent = data.parameterDisplay;
+    paramsElement.appendChild(paramDiv);
+  } else {
+    // Fallback to showing raw parameters
+    const paramList = document.createElement('ul');
+    for (const [key, value] of Object.entries(data.parameters || {})) {
+      if (!key.startsWith('_')) { // Skip internal parameters
+        const li = document.createElement('li');
+        li.innerHTML = `<strong>${key}:</strong> ${JSON.stringify(value)}`;
+        paramList.appendChild(li);
+      }
+    }
+    paramsElement.appendChild(paramList);
+  }
+  
+  // Handle diff preview if available
+  const diffSection = document.getElementById('permission-diff-section');
+  const diffToggle = document.getElementById('permission-diff-toggle');
+  const diffContainer = document.getElementById('permission-diff-container');
+  const diffContent = document.getElementById('permission-diff-content');
+  const diffStats = document.getElementById('permission-diff-stats');
+  
+  if (data.diffPreview && (data.toolName === 'write_file' || data.toolName === 'edit_file')) {
+    // Show diff section
+    diffSection.style.display = 'block';
+    
+    // Set diff stats
+    const stats = data.diffPreview.stats;
+    if (stats) {
+      diffStats.textContent = `(+${stats.added || 0}, -${stats.deleted || 0} lines)`;
+    }
+    
+    // Render diff content
+    renderPermissionDiff(diffContent, data.diffPreview);
+    
+    // Set up toggle handler
+    const toggleIcon = diffToggle.querySelector('.toggle-icon');
+    diffToggle.onclick = function() {
+      if (diffContainer.style.display === 'none') {
+        diffContainer.style.display = 'block';
+        diffToggle.classList.add('expanded');
+        toggleIcon.textContent = '▼';
+      } else {
+        diffContainer.style.display = 'none';
+        diffToggle.classList.remove('expanded');
+        toggleIcon.textContent = '▶';
+      }
+    };
+    
+    // Initially collapsed
+    diffContainer.style.display = 'none';
+    diffToggle.classList.remove('expanded');
+    toggleIcon.textContent = '▶';
+  } else {
+    // Hide diff section
+    diffSection.style.display = 'none';
+  }
+  
+  // Reset checkbox
+  rememberCheckbox.checked = false;
+  
+  // Set up button handlers
+  const approveBtn = document.getElementById('permission-approve');
+  const denyBtn = document.getElementById('permission-deny');
+  
+  // Remove old handlers
+  const newApproveBtn = approveBtn.cloneNode(true);
+  const newDenyBtn = denyBtn.cloneNode(true);
+  approveBtn.parentNode.replaceChild(newApproveBtn, approveBtn);
+  denyBtn.parentNode.replaceChild(newDenyBtn, denyBtn);
+  
+  // Add new handlers
+  newApproveBtn.addEventListener('click', () => {
+    handlePermissionResponse(data.requestId, true);
+  });
+  
+  newDenyBtn.addEventListener('click', () => {
+    handlePermissionResponse(data.requestId, false);
+  });
+  
+  // Show modal
+  modal.style.display = 'block';
+  
+  // Update timeout display
+  updatePermissionTimeout(data.requestId);
+}
+
+// Render diff content in permission modal
+function renderPermissionDiff(container, diffResult) {
+  container.innerHTML = '';
+  
+  if (!diffResult.hunks || diffResult.hunks.length === 0) {
+    container.innerHTML = '<div class="diff-line context">No changes detected</div>';
+    return;
+  }
+  
+  // Render unified diff format
+  diffResult.hunks.forEach(hunk => {
+    // Add hunk header
+    const header = document.createElement('div');
+    header.className = 'diff-header';
+    header.textContent = `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
+    container.appendChild(header);
+    
+    // Add diff lines
+    hunk.lines.forEach(line => {
+      const lineDiv = document.createElement('div');
+      lineDiv.className = `diff-line ${line.type}`;
+      
+      // Add prefix based on type
+      let prefix = ' ';
+      if (line.type === 'add') prefix = '+';
+      else if (line.type === 'delete') prefix = '-';
+      
+      lineDiv.textContent = prefix + line.content;
+      container.appendChild(lineDiv);
+    });
+  });
+}
+
+// Handle permission response
+async function handlePermissionResponse(requestId, approved) {
+  const request = activePermissionRequests.get(requestId);
+  if (!request) return;
+  
+  const rememberCheckbox = document.getElementById('permission-remember');
+  const remember = rememberCheckbox.checked;
+  
+  // Hide modal
+  document.getElementById('permission-modal').style.display = 'none';
+  
+  // Remove from active requests
+  activePermissionRequests.delete(requestId);
+  
+  // Stop timeout interval if no more requests
+  if (activePermissionRequests.size === 0 && permissionTimeoutInterval) {
+    clearInterval(permissionTimeoutInterval);
+    permissionTimeoutInterval = null;
+  }
+  
+  // Send response to backend
+  try {
+    const response = await fetch('/api/permission-response', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        requestId: requestId,
+        sessionId: currentSessionId,
+        approved: approved,
+        rememberChoice: remember
+      })
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to send permission response:', response.status);
+    }
+  } catch (error) {
+    console.error('Error sending permission response:', error);
+  }
+}
+
+// Handle permission timeout
+function handlePermissionTimeout(requestId) {
+  // Remove from active requests
+  activePermissionRequests.delete(requestId);
+  
+  // Hide modal if it's showing this request
+  const modal = document.getElementById('permission-modal');
+  if (modal.style.display === 'block') {
+    // Check if current modal is for this request
+    // (In a more complex implementation, we'd track which request is shown)
+    modal.style.display = 'none';
+  }
+  
+  // Stop timeout interval if no more requests
+  if (activePermissionRequests.size === 0 && permissionTimeoutInterval) {
+    clearInterval(permissionTimeoutInterval);
+    permissionTimeoutInterval = null;
+  }
+  
+  // Show notification
+  addSystemMessageToUI('⏱️ Permission request timed out', 'warning');
+}
+
+// Update permission timeouts
+function updatePermissionTimeouts() {
+  for (const [requestId, request] of activePermissionRequests) {
+    request.timeRemaining--;
+    
+    if (request.timeRemaining <= 0) {
+      // Timeout reached, but let backend handle it
+      continue;
+    }
+    
+    // Update display if this request is shown
+    updatePermissionTimeout(requestId);
+  }
+}
+
+// Update timeout display for specific request
+function updatePermissionTimeout(requestId) {
+  const request = activePermissionRequests.get(requestId);
+  if (!request) return;
+  
+  const timeoutElement = document.getElementById('permission-timeout-seconds');
+  if (timeoutElement) {
+    timeoutElement.textContent = request.timeRemaining;
+  }
+}

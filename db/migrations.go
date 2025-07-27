@@ -172,6 +172,191 @@ var migrations = []Migration{
 			('go_language_prompt', 'Prefer Go language', 'Use the Go language as much as possible', false, false);
 		`,
 	},
+	{
+		Version:     4,
+		Description: "Add task planning tables",
+		SQL: `
+			-- Create task_plans table for storing AI task plans
+			CREATE TABLE IF NOT EXISTS task_plans (
+				id TEXT PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				description TEXT NOT NULL,
+				status TEXT NOT NULL CHECK (status IN ('pending', 'planning', 'executing', 'paused', 'completed', 'failed', 'cancelled')),
+				steps JSON NOT NULL,
+				context JSON,
+				checkpoints JSON,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				completed_at TIMESTAMP,
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
+			);
+			CREATE INDEX idx_task_plans_session ON task_plans(session_id);
+			CREATE INDEX idx_task_plans_status ON task_plans(status);
+
+			-- Create task_executions table for tracking step executions
+			CREATE SEQUENCE IF NOT EXISTS task_executions_id_seq;
+			CREATE TABLE IF NOT EXISTS task_executions (
+				id INTEGER PRIMARY KEY DEFAULT nextval('task_executions_id_seq'),
+				plan_id TEXT NOT NULL,
+				step_id TEXT NOT NULL,
+				status TEXT NOT NULL CHECK (status IN ('pending', 'running', 'success', 'failed', 'skipped')),
+				result JSON,
+				started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				completed_at TIMESTAMP,
+				duration_ms INTEGER,
+				retries INTEGER DEFAULT 0,
+				error_message TEXT,
+				FOREIGN KEY (plan_id) REFERENCES task_plans(id)
+			);
+			CREATE INDEX idx_task_executions_plan ON task_executions(plan_id);
+			CREATE INDEX idx_task_executions_step ON task_executions(plan_id, step_id);
+
+			-- Create file_snapshots table for rollback support
+			CREATE SEQUENCE IF NOT EXISTS file_snapshots_id_seq;
+			CREATE TABLE IF NOT EXISTS file_snapshots (
+				id INTEGER PRIMARY KEY DEFAULT nextval('file_snapshots_id_seq'),
+				snapshot_id TEXT NOT NULL UNIQUE,
+				plan_id TEXT NOT NULL,
+				checkpoint_id TEXT,
+				file_path TEXT NOT NULL,
+				content TEXT NOT NULL,
+				hash TEXT NOT NULL,
+				file_mode INTEGER,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (plan_id) REFERENCES task_plans(id)
+			);
+			CREATE INDEX idx_file_snapshots_plan ON file_snapshots(plan_id);
+			CREATE INDEX idx_file_snapshots_checkpoint ON file_snapshots(checkpoint_id);
+			CREATE INDEX idx_file_snapshots_hash ON file_snapshots(hash);
+
+			-- Create task_metrics table for performance tracking
+			CREATE TABLE IF NOT EXISTS task_metrics (
+				plan_id TEXT PRIMARY KEY,
+				total_steps INTEGER NOT NULL DEFAULT 0,
+				completed_steps INTEGER NOT NULL DEFAULT 0,
+				failed_steps INTEGER NOT NULL DEFAULT 0,
+				skipped_steps INTEGER NOT NULL DEFAULT 0,
+				total_duration_ms INTEGER,
+				avg_step_duration_ms INTEGER,
+				total_retries INTEGER DEFAULT 0,
+				context_files_used INTEGER DEFAULT 0,
+				tools_used JSON,
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (plan_id) REFERENCES task_plans(id)
+			);
+
+			-- Create task_logs table for detailed execution logging
+			CREATE SEQUENCE IF NOT EXISTS task_logs_id_seq;
+			CREATE TABLE IF NOT EXISTS task_logs (
+				id INTEGER PRIMARY KEY DEFAULT nextval('task_logs_id_seq'),
+				plan_id TEXT NOT NULL,
+				step_id TEXT,
+				level TEXT NOT NULL CHECK (level IN ('info', 'warning', 'error', 'debug')),
+				message TEXT NOT NULL,
+				metadata JSON,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (plan_id) REFERENCES task_plans(id)
+			);
+			CREATE INDEX idx_task_logs_plan ON task_logs(plan_id);
+			CREATE INDEX idx_task_logs_level ON task_logs(level);
+		`,
+	},
+	{
+		Version:     5,
+		Description: "Add file tracking tables",
+		SQL: `
+			-- Create file_access table to track files opened in sessions
+			CREATE TABLE IF NOT EXISTS file_access (
+				id INTEGER PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				accessed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				access_type TEXT NOT NULL DEFAULT 'open', -- 'open', 'edit', 'create', 'delete'
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
+			);
+			CREATE INDEX idx_file_access_session ON file_access(session_id);
+			CREATE INDEX idx_file_access_path ON file_access(file_path);
+			CREATE INDEX idx_file_access_time ON file_access(accessed_at);
+
+			-- Create session_files table for currently open files in a session
+			CREATE TABLE IF NOT EXISTS session_files (
+				session_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				opened_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				last_viewed_at TIMESTAMP,
+				is_active BOOLEAN DEFAULT TRUE,
+				PRIMARY KEY (session_id, file_path),
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
+			);
+			CREATE INDEX idx_session_files_active ON session_files(session_id, is_active);
+		`,
+	},
+	{
+		Version:     6,
+		Description: "Add diff visualization tables",
+		SQL: `
+			-- Create diff_snapshots table for storing file snapshots
+			-- This is separate from the planner's file_snapshots to support diff-specific features
+			CREATE SEQUENCE IF NOT EXISTS diff_snapshots_id_seq;
+			CREATE TABLE IF NOT EXISTS diff_snapshots (
+				id INTEGER PRIMARY KEY DEFAULT nextval('diff_snapshots_id_seq'),
+				session_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				content TEXT NOT NULL,
+				hash TEXT NOT NULL,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				tool_execution_id TEXT, -- Links to specific tool execution
+				tool_name TEXT, -- Which tool created this snapshot
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
+			);
+			CREATE INDEX idx_diff_snapshots_session ON diff_snapshots(session_id);
+			CREATE INDEX idx_diff_snapshots_path ON diff_snapshots(file_path);
+			CREATE INDEX idx_diff_snapshots_hash ON diff_snapshots(hash);
+
+			-- Create diffs table for storing generated diffs
+			CREATE SEQUENCE IF NOT EXISTS diffs_id_seq;
+			CREATE TABLE IF NOT EXISTS diffs (
+				id INTEGER PRIMARY KEY DEFAULT nextval('diffs_id_seq'),
+				session_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				before_snapshot_id INTEGER,
+				after_snapshot_id INTEGER,
+				diff_data JSON NOT NULL, -- Stores hunks, stats, and metadata
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				tool_execution_id TEXT, -- Links to tool that made the change
+				is_applied BOOLEAN DEFAULT TRUE, -- Whether the diff is currently applied
+				FOREIGN KEY (session_id) REFERENCES sessions(id),
+				FOREIGN KEY (before_snapshot_id) REFERENCES diff_snapshots(id),
+				FOREIGN KEY (after_snapshot_id) REFERENCES diff_snapshots(id)
+			);
+			CREATE INDEX idx_diffs_session ON diffs(session_id);
+			CREATE INDEX idx_diffs_path ON diffs(file_path);
+			CREATE INDEX idx_diffs_created ON diffs(created_at);
+
+			-- Create diff_views table to track which diffs have been viewed
+			CREATE TABLE IF NOT EXISTS diff_views (
+				session_id TEXT NOT NULL,
+				diff_id INTEGER NOT NULL,
+				viewed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				view_mode TEXT DEFAULT 'side-by-side', -- 'side-by-side', 'inline', 'unified'
+				PRIMARY KEY (session_id, diff_id),
+				FOREIGN KEY (session_id) REFERENCES sessions(id),
+				FOREIGN KEY (diff_id) REFERENCES diffs(id)
+			);
+
+			-- Create diff_preferences table for user preferences
+			CREATE TABLE IF NOT EXISTS diff_preferences (
+				user_id TEXT PRIMARY KEY, -- For future multi-user support
+				default_mode TEXT DEFAULT 'side-by-side',
+				context_lines INTEGER DEFAULT 3,
+				word_wrap BOOLEAN DEFAULT FALSE,
+				syntax_highlight BOOLEAN DEFAULT TRUE,
+				show_line_numbers BOOLEAN DEFAULT TRUE,
+				theme TEXT DEFAULT 'dark',
+				updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+			);
+		`,
+	},
 }
 
 // Migrate runs all pending database migrations

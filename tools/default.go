@@ -1,5 +1,10 @@
 package tools
 
+import (
+	"github.com/rohanthewiz/logger"
+	"rcode/config"
+)
+
 // DefaultRegistry creates a registry with all default tools
 func DefaultRegistry() *Registry {
 	registry := NewRegistry()
@@ -80,4 +85,25 @@ func DefaultRegistry() *Registry {
 	registry.Register(webFetchTool.GetDefinition(), webFetchTool)
 
 	return registry
+}
+
+// DefaultRegistryWithPlugins creates a registry with default tools and plugins
+func DefaultRegistryWithPlugins(projectRoot string) (*Registry, error) {
+	registry := DefaultRegistry()
+
+	// Load custom tools if enabled
+	cfg := config.Get()
+	if cfg.CustomToolsEnabled {
+		loader := NewPluginLoader(cfg.CustomToolsPaths)
+		if err := loader.LoadPlugins(); err != nil {
+			logger.LogErr(err, "failed to load custom tool plugins")
+			// Continue with built-in tools only
+		} else {
+			if err := loader.RegisterWithRegistry(registry, projectRoot); err != nil {
+				logger.LogErr(err, "failed to register custom tools")
+			}
+		}
+	}
+
+	return registry, nil
 }

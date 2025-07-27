@@ -404,7 +404,7 @@ func (t *GitAddTool) Execute(input map[string]interface{}) (string, error) {
 
 	// Build git command
 	args := []string{"add"}
-	
+
 	// Check for interactive modes and warn
 	if interactive, ok := input["interactive"].(bool); ok && interactive {
 		return "", serr.New("Interactive mode (git add -i) is not supported in automated contexts")
@@ -415,7 +415,7 @@ func (t *GitAddTool) Execute(input map[string]interface{}) (string, error) {
 
 	// Handle different add modes
 	filesAdded := false
-	
+
 	if all, ok := input["all"].(bool); ok && all {
 		args = append(args, "-A")
 		filesAdded = true
@@ -460,13 +460,13 @@ func (t *GitAddTool) Execute(input map[string]interface{}) (string, error) {
 	// Get the status to show what was added
 	statusCmd := exec.Command("git", "status", "--short")
 	statusCmd.Dir = path
-	
+
 	var statusOut bytes.Buffer
 	statusCmd.Stdout = &statusOut
 	statusCmd.Run()
 
 	result := "Files staged successfully.\n\nCurrent status:\n" + statusOut.String()
-	
+
 	// Include any warnings from the add command
 	if stderr.Len() > 0 {
 		result += "\nWarnings:\n" + stderr.String()
@@ -533,7 +533,7 @@ func (t *GitCommitTool) Execute(input map[string]interface{}) (string, error) {
 	// Get commit message
 	message, hasMessage := GetString(input, "message")
 	amend, isAmend := input["amend"].(bool)
-	
+
 	// Validate message requirement
 	if !hasMessage && (!isAmend || !amend) {
 		return "", serr.New("Commit message is required unless amending")
@@ -595,11 +595,11 @@ func (t *GitCommitTool) Execute(input map[string]interface{}) (string, error) {
 
 	// Get the commit info
 	result := stdout.String()
-	
+
 	// Get the latest commit details
 	logCmd := exec.Command("git", "log", "-1", "--oneline")
 	logCmd.Dir = path
-	
+
 	var logOut bytes.Buffer
 	logCmd.Stdout = &logOut
 	if logCmd.Run() == nil {
@@ -679,7 +679,7 @@ func (t *GitPushTool) Execute(input map[string]interface{}) (string, error) {
 	}
 
 	branch, hasBranch := GetString(input, "branch")
-	
+
 	// Handle options
 	if all, ok := input["all"].(bool); ok && all {
 		args = append(args, "--all")
@@ -687,7 +687,7 @@ func (t *GitPushTool) Execute(input map[string]interface{}) (string, error) {
 	} else {
 		// Add remote
 		args = append(args, remote)
-		
+
 		// Add branch if specified
 		if hasBranch && branch != "" {
 			args = append(args, branch)
@@ -731,7 +731,7 @@ func (t *GitPushTool) Execute(input map[string]interface{}) (string, error) {
 			return "", NewRetryableError(serr.New("Failed to connect to remote repository. Check your authentication and network connection"), "network error")
 		}
 		if strings.Contains(errMsg, "Connection refused") || strings.Contains(errMsg, "Connection timed out") ||
-		   strings.Contains(errMsg, "Could not resolve host") || strings.Contains(errMsg, "Network is unreachable") {
+			strings.Contains(errMsg, "Could not resolve host") || strings.Contains(errMsg, "Network is unreachable") {
 			return "", NewRetryableError(serr.New(fmt.Sprintf("Network error during push: %s", errMsg)), "network error")
 		}
 		if strings.Contains(errMsg, "failed to push") || strings.Contains(errMsg, "rejected") {
@@ -846,11 +846,11 @@ func (t *GitPullTool) Execute(input map[string]interface{}) (string, error) {
 	if !hasRemote || remote == "" {
 		remote = "origin"
 	}
-	
+
 	// Only add remote/branch if explicitly specified
 	if hasRemote {
 		args = append(args, remote)
-		
+
 		if branch, ok := GetString(input, "branch"); ok && branch != "" {
 			args = append(args, branch)
 		}
@@ -874,7 +874,7 @@ func (t *GitPullTool) Execute(input map[string]interface{}) (string, error) {
 			return "", NewRetryableError(serr.New("Failed to connect to remote repository. Check your authentication and network connection"), "network error")
 		}
 		if strings.Contains(errMsg, "Connection refused") || strings.Contains(errMsg, "Connection timed out") ||
-		   strings.Contains(errMsg, "Could not resolve host") || strings.Contains(errMsg, "Network is unreachable") {
+			strings.Contains(errMsg, "Could not resolve host") || strings.Contains(errMsg, "Network is unreachable") {
 			return "", NewRetryableError(serr.New(fmt.Sprintf("Network error during pull: %s", errMsg)), "network error")
 		}
 		if strings.Contains(errMsg, "Automatic merge failed") {
@@ -885,7 +885,7 @@ func (t *GitPullTool) Execute(input map[string]interface{}) (string, error) {
 			conflictInfo += "2. Stage the resolved files with git_add\n"
 			conflictInfo += "3. Complete the merge with git_commit\n\n"
 			conflictInfo += "Affected files:\n"
-			
+
 			// Get conflict status
 			statusCmd := exec.Command("git", "status", "--short")
 			statusCmd.Dir = path
@@ -894,7 +894,7 @@ func (t *GitPullTool) Execute(input map[string]interface{}) (string, error) {
 			if statusCmd.Run() == nil {
 				conflictInfo += statusOut.String()
 			}
-			
+
 			// Merge conflicts are not retryable - they need manual intervention
 			return "", NewPermanentError(serr.New(conflictInfo), "merge conflict")
 		}
@@ -916,7 +916,7 @@ func (t *GitPullTool) Execute(input map[string]interface{}) (string, error) {
 	if !strings.Contains(result, "Already up to date") {
 		logCmd := exec.Command("git", "log", "--oneline", "-5")
 		logCmd.Dir = path
-		
+
 		var logOut bytes.Buffer
 		logCmd.Stdout = &logOut
 		if logCmd.Run() == nil {
@@ -989,7 +989,7 @@ func (t *GitCheckoutTool) Execute(input map[string]interface{}) (string, error) 
 	// Check what operation we're doing
 	branch, hasBranch := GetString(input, "branch")
 	file, hasFile := GetString(input, "file")
-	
+
 	if !hasBranch && !hasFile {
 		return "", serr.New("Either 'branch' or 'file' parameter is required")
 	}
@@ -1032,11 +1032,11 @@ func (t *GitCheckoutTool) Execute(input map[string]interface{}) (string, error) 
 	// First, let's check if there are uncommitted changes
 	statusCmd := exec.Command("git", "status", "--porcelain")
 	statusCmd.Dir = path
-	
+
 	var statusOut bytes.Buffer
 	statusCmd.Stdout = &statusOut
 	statusCmd.Run()
-	
+
 	hasUncommittedChanges := statusOut.Len() > 0
 
 	// Execute git command
@@ -1075,7 +1075,7 @@ func (t *GitCheckoutTool) Execute(input map[string]interface{}) (string, error) 
 	// Get current branch info
 	branchCmd := exec.Command("git", "branch", "--show-current")
 	branchCmd.Dir = path
-	
+
 	var branchOut bytes.Buffer
 	branchCmd.Stdout = &branchOut
 	if branchCmd.Run() == nil {
@@ -1100,7 +1100,7 @@ func (t *GitCheckoutTool) Execute(input map[string]interface{}) (string, error) 
 	if hasBranch {
 		logCmd := exec.Command("git", "log", "--oneline", "-5")
 		logCmd.Dir = path
-		
+
 		var logOut bytes.Buffer
 		logCmd.Stdout = &logOut
 		if logCmd.Run() == nil {
@@ -1175,11 +1175,11 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 	if abort, ok := input["abort"].(bool); ok && abort {
 		cmd := exec.Command("git", "merge", "--abort")
 		cmd.Dir = path
-		
+
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
-		
+
 		if err := cmd.Run(); err != nil {
 			errMsg := stderr.String()
 			if strings.Contains(errMsg, "not a git repository") {
@@ -1190,18 +1190,18 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 			}
 			return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to abort merge: %s", errMsg)))
 		}
-		
+
 		return "Merge aborted successfully", nil
 	}
 
 	if cont, ok := input["continue"].(bool); ok && cont {
 		cmd := exec.Command("git", "merge", "--continue")
 		cmd.Dir = path
-		
+
 		var stdout, stderr bytes.Buffer
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
-		
+
 		if err := cmd.Run(); err != nil {
 			errMsg := stderr.String()
 			if strings.Contains(errMsg, "not a git repository") {
@@ -1215,7 +1215,7 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 			}
 			return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to continue merge: %s", errMsg)))
 		}
-		
+
 		result := stdout.String() + stderr.String()
 		return result + "\n\nMerge completed successfully", nil
 	}
@@ -1232,7 +1232,7 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 	// Handle conflicting options
 	noFF, hasNoFF := input["no_ff"].(bool)
 	ffOnly, hasFFOnly := input["ff_only"].(bool)
-	
+
 	if hasNoFF && noFF && hasFFOnly && ffOnly {
 		return "", serr.New("Cannot use both 'no_ff' and 'ff_only' options")
 	}
@@ -1240,7 +1240,7 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 	if noFF {
 		args = append(args, "--no-ff")
 	}
-	
+
 	if ffOnly {
 		args = append(args, "--ff-only")
 	}
@@ -1263,7 +1263,7 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 	// Check current branch first
 	currentBranchCmd := exec.Command("git", "branch", "--show-current")
 	currentBranchCmd.Dir = path
-	
+
 	var currentBranchOut bytes.Buffer
 	currentBranchCmd.Stdout = &currentBranchOut
 	currentBranchCmd.Run()
@@ -1295,7 +1295,7 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 			conflictInfo += "3. Complete the merge with git_merge --continue\n"
 			conflictInfo += "   (or abort with git_merge --abort)\n\n"
 			conflictInfo += "Conflicted files:\n"
-			
+
 			// Get conflict status
 			statusCmd := exec.Command("git", "status", "--short")
 			statusCmd.Dir = path
@@ -1304,7 +1304,7 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 			if statusCmd.Run() == nil {
 				conflictInfo += statusOut.String()
 			}
-			
+
 			return "", NewPermanentError(serr.New(conflictInfo), "merge conflict")
 		}
 		if strings.Contains(errMsg, "Not possible to fast-forward") {
@@ -1327,7 +1327,7 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 	// Show the merge commit
 	logCmd := exec.Command("git", "log", "-1", "--oneline")
 	logCmd.Dir = path
-	
+
 	var logOut bytes.Buffer
 	logCmd.Stdout = &logOut
 	if logCmd.Run() == nil {
@@ -1337,7 +1337,7 @@ func (t *GitMergeTool) Execute(input map[string]interface{}) (string, error) {
 	// Show what changed
 	diffStatCmd := exec.Command("git", "diff", "--stat", "HEAD~1..HEAD")
 	diffStatCmd.Dir = path
-	
+
 	var diffStatOut bytes.Buffer
 	diffStatCmd.Stdout = &diffStatOut
 	if diffStatCmd.Run() == nil && diffStatOut.Len() > 0 {

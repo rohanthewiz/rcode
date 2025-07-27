@@ -6,6 +6,8 @@ import (
 	"github.com/rohanthewiz/rweb"
 )
 
+const clientChanCap = 512
+
 // SetupRoutes configures all HTTP routes for the server
 func SetupRoutes(s *rweb.Server) {
 	// Root endpoint - serves the main web UI
@@ -38,6 +40,13 @@ func SetupRoutes(s *rweb.Server) {
 	s.Put("/api/prompts/:id", updatePromptHandler)
 	s.Delete("/api/prompts/:id", deletePromptHandler)
 
+	// Tool permissions endpoints
+	s.Get("/api/session/:id/tools", getSessionToolsHandler)
+	s.Put("/api/session/:id/tools/:tool", updateToolPermissionHandler)
+
+	// Permission response endpoint
+	s.Post("/api/permission-response", handlePermissionResponseHandler)
+
 	// Context management endpoints
 	s.Get("/api/context", getProjectContextHandler)
 	s.Post("/api/context/initialize", initializeProjectContextHandler)
@@ -46,11 +55,64 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/context/stats", getContextStatsHandler)
 	s.Post("/api/context/suggest-tools", suggestToolsHandler)
 
+	// Task planning endpoints
+	s.Post("/api/session/:id/plan", createPlanHandler)
+	s.Get("/api/session/:id/plans", listPlansHandler)
+	s.Post("/api/plan/:id/execute", executePlanHandler)
+	s.Get("/api/plan/:id/status", getPlanStatusHandler)
+	s.Post("/api/plan/:id/rollback", rollbackPlanHandler)
+	s.Get("/api/plan/:id/checkpoints", listCheckpointsHandler)
+	s.Get("/api/plan/:id/analyze", analyzePlanHandler)
+	s.Get("/api/plan/:id/git-operations", getGitOperationsHandler)
+
+	// Plan history endpoints
+	s.Get("/api/session/:id/plans/history", listPlanHistoryHandler)
+	s.Get("/api/plan/:id/full", getPlanFullDetailsHandler)
+	s.Post("/api/plan/:id/clone", clonePlanHandler)
+	s.Delete("/api/plan/:id", deletePlanHandler)
+
 	// SSE endpoint for streaming events
-	s.Get("/events", eventsHandler)
+	s.Get("/events",
+		func(c rweb.Context) error {
+
+			// Create client channel
+			clientChan := make(chan any, clientChanCap)
+			sseHub.Register(clientChan)
+
+			// We cannot unregister here become the conn is long-lived
+			// // Ensure cleanup on disconnect
+			// defer func() {
+			// 	sseHub.Unregister(clientChan)
+			// }()
+
+			s.SetupSSE(c, clientChan, "")
+
+			return nil
+		},
+	)
 
 	// Prompt Manager UI
 	s.Get("/prompts", PromptManagerHandler)
+
+	// File Explorer endpoints
+	s.Get("/api/files/tree", getFileTreeHandler)
+	s.Get("/api/files/content/:path", getFileContentHandler)
+	s.Post("/api/files/search", searchFilesHandler)
+	s.Post("/api/session/:id/files/open", openFileHandler)
+	s.Post("/api/session/:id/files/close", closeFileInSessionHandler)
+	s.Get("/api/session/:id/files/recent", getRecentFilesHandler)
+	s.Get("/api/session/:id/files/open", getSessionOpenFilesHandler)
+
+	// Diff visualization endpoints
+	s.Get("/api/diff/:sessionId/:path", getDiffHandler)
+	s.Post("/api/diff/snapshot", createSnapshotHandler)
+	s.Post("/api/diff/generate", generateDiffHandler)
+	s.Get("/api/session/:id/diffs", listSessionDiffsHandler)
+	s.Get("/api/diff/:id", getDiffByIdHandler)
+	s.Post("/api/diff/:id/viewed", markDiffViewedHandler)
+	s.Get("/api/diff/preferences", getDiffPreferencesHandler)
+	s.Post("/api/diff/preferences", saveDiffPreferencesHandler)
+	s.Post("/api/diff/apply", applyDiffHandler)
 }
 
 // rootHandler serves the main web UI

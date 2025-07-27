@@ -7,6 +7,7 @@ import (
 // TaskPlanner manages multi-step task execution
 type TaskPlanner struct {
 	ID          string            `json:"id"`
+	SessionID   string            `json:"session_id"`
 	Description string            `json:"description"`
 	Steps       []TaskStep        `json:"steps"`
 	CurrentStep int               `json:"current_step"`
@@ -15,6 +16,9 @@ type TaskPlanner struct {
 	Status      TaskStatus        `json:"status"`
 	StartTime   time.Time         `json:"start_time"`
 	EndTime     *time.Time        `json:"end_time,omitempty"`
+	CreatedAt   time.Time         `json:"created_at"`
+	UpdatedAt   time.Time         `json:"updated_at"`
+	CompletedAt *time.Time        `json:"completed_at,omitempty"`
 }
 
 // TaskStep represents a single step in a task plan
@@ -93,11 +97,14 @@ const (
 
 // PlannerOptions contains options for creating a task planner
 type PlannerOptions struct {
-	MaxSteps          int
-	MaxRetries        int
-	TimeoutPerStep    time.Duration
-	EnableCheckpoints bool
-	CheckpointEvery   int // Create checkpoint every N steps
+	MaxSteps           int
+	MaxRetries         int
+	TimeoutPerStep     time.Duration
+	EnableCheckpoints  bool
+	CheckpointEvery    int // Create checkpoint every N steps
+	MaxConcurrentSteps int
+	CheckpointInterval int
+	ContextManager     interface{} // Will be *context.Manager but avoid import cycle
 }
 
 // DefaultPlannerOptions returns default planner options

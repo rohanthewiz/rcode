@@ -20,20 +20,20 @@ const (
 
 // PermissionScope represents the scope of a permission
 type PermissionScope struct {
-	Paths        []string               `json:"paths,omitempty"`
-	MaxFileSize  int64                  `json:"max_file_size,omitempty"`
-	AllowedCmds  []string               `json:"allowed_cmds,omitempty"`
-	CustomRules  map[string]interface{} `json:"custom_rules,omitempty"`
+	Paths       []string               `json:"paths,omitempty"`
+	MaxFileSize int64                  `json:"max_file_size,omitempty"`
+	AllowedCmds []string               `json:"allowed_cmds,omitempty"`
+	CustomRules map[string]interface{} `json:"custom_rules,omitempty"`
 }
 
 // ToolPermission represents a tool permission in the database
 type ToolPermission struct {
-	ID             int             `json:"id"`
-	SessionID      string          `json:"session_id"`
-	ToolName       string          `json:"tool_name"`
-	PermissionType PermissionType  `json:"permission_type"`
-	GrantedAt      *time.Time      `json:"granted_at,omitempty"`
-	ExpiresAt      *time.Time      `json:"expires_at,omitempty"`
+	ID             int              `json:"id"`
+	SessionID      string           `json:"session_id"`
+	ToolName       string           `json:"tool_name"`
+	PermissionType PermissionType   `json:"permission_type"`
+	GrantedAt      *time.Time       `json:"granted_at,omitempty"`
+	ExpiresAt      *time.Time       `json:"expires_at,omitempty"`
 	Scope          *PermissionScope `json:"scope,omitempty"`
 }
 
@@ -41,7 +41,7 @@ type ToolPermission struct {
 func (db *DB) SetToolPermission(sessionID, toolName string, permType PermissionType, scope *PermissionScope, expiresIn time.Duration) error {
 	var scopeJSON []byte
 	var err error
-	
+
 	if scope != nil {
 		scopeJSON, err = json.Marshal(scope)
 		if err != nil {
@@ -58,18 +58,61 @@ func (db *DB) SetToolPermission(sessionID, toolName string, permType PermissionT
 	grantedAt := time.Now()
 
 	// Use UPSERT to insert or update
-	query := `
-		INSERT INTO tool_permissions (session_id, tool_name, permission_type, granted_at, expires_at, scope)
-		VALUES (?, ?, ?, ?, ?, ?::JSON)
-		ON CONFLICT (session_id, tool_name) 
-		DO UPDATE SET 
-			permission_type = EXCLUDED.permission_type,
-			granted_at = EXCLUDED.granted_at,
-			expires_at = EXCLUDED.expires_at,
-			scope = EXCLUDED.scope
-	`
+	// DuckDB requires special handling for NULL values
+	var query string
+	var args []interface{}
 
-	_, err = db.Exec(query, sessionID, toolName, string(permType), grantedAt, expiresAt, string(scopeJSON))
+	if expiresAt != nil && scopeJSON != nil {
+		query = `
+			INSERT INTO tool_permissions (session_id, tool_name, permission_type, granted_at, expires_at, scope)
+			VALUES (?, ?, ?, ?, ?, ?::JSON)
+			ON CONFLICT (session_id, tool_name) 
+			DO UPDATE SET 
+				permission_type = EXCLUDED.permission_type,
+				granted_at = EXCLUDED.granted_at,
+				expires_at = EXCLUDED.expires_at,
+				scope = EXCLUDED.scope
+		`
+		args = []interface{}{sessionID, toolName, string(permType), grantedAt, *expiresAt, string(scopeJSON)}
+	} else if expiresAt != nil {
+		query = `
+			INSERT INTO tool_permissions (session_id, tool_name, permission_type, granted_at, expires_at, scope)
+			VALUES (?, ?, ?, ?, ?, NULL)
+			ON CONFLICT (session_id, tool_name) 
+			DO UPDATE SET 
+				permission_type = EXCLUDED.permission_type,
+				granted_at = EXCLUDED.granted_at,
+				expires_at = EXCLUDED.expires_at,
+				scope = EXCLUDED.scope
+		`
+		args = []interface{}{sessionID, toolName, string(permType), grantedAt, *expiresAt}
+	} else if scopeJSON != nil {
+		query = `
+			INSERT INTO tool_permissions (session_id, tool_name, permission_type, granted_at, expires_at, scope)
+			VALUES (?, ?, ?, ?, NULL, ?::JSON)
+			ON CONFLICT (session_id, tool_name) 
+			DO UPDATE SET 
+				permission_type = EXCLUDED.permission_type,
+				granted_at = EXCLUDED.granted_at,
+				expires_at = EXCLUDED.expires_at,
+				scope = EXCLUDED.scope
+		`
+		args = []interface{}{sessionID, toolName, string(permType), grantedAt, string(scopeJSON)}
+	} else {
+		query = `
+			INSERT INTO tool_permissions (session_id, tool_name, permission_type, granted_at, expires_at, scope)
+			VALUES (?, ?, ?, ?, NULL, NULL)
+			ON CONFLICT (session_id, tool_name) 
+			DO UPDATE SET 
+				permission_type = EXCLUDED.permission_type,
+				granted_at = EXCLUDED.granted_at,
+				expires_at = EXCLUDED.expires_at,
+				scope = EXCLUDED.scope
+		`
+		args = []interface{}{sessionID, toolName, string(permType), grantedAt}
+	}
+
+	_, err = db.Exec(query, args...)
 	if err != nil {
 		return serr.Wrap(err, "failed to set tool permission")
 	}

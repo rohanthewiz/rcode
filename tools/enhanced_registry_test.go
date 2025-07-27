@@ -48,9 +48,9 @@ func TestEnhancedRegistryWithRetry(t *testing.T) {
 			name:      "test_tool",
 			failUntil: 2, // Fail first 2 attempts
 		}
-		
+
 		registry.RegisterWithValidation(mockTool.GetDefinition(), mockTool)
-		
+
 		// Set retry policy
 		registry.SetToolRetryPolicy("test_tool", RetryPolicy{
 			MaxAttempts:     3,
@@ -59,14 +59,14 @@ func TestEnhancedRegistryWithRetry(t *testing.T) {
 			Multiplier:      2,
 			RetryableErrors: func(err error) bool { return true },
 		})
-		
+
 		// Execute tool
 		result, err := registry.Execute(ToolUse{
 			ID:    "test-1",
 			Name:  "test_tool",
 			Input: map[string]interface{}{"test": "value"},
 		})
-		
+
 		if err != nil {
 			t.Errorf("Expected success after retry, got error: %v", err)
 		}
@@ -76,13 +76,13 @@ func TestEnhancedRegistryWithRetry(t *testing.T) {
 		if mockTool.executions != 3 {
 			t.Errorf("Expected 3 executions, got %d", mockTool.executions)
 		}
-		
+
 		// Check metrics
 		metrics := registry.GetMetrics()
 		if toolMetrics, ok := metrics["test_tool"].(map[string]interface{}); ok {
 			// Debug: print all metrics
 			t.Logf("Tool metrics: %+v", toolMetrics)
-			
+
 			if retries, ok := toolMetrics["retries"].(int); !ok || retries != 2 {
 				t.Errorf("Expected 2 retries in metrics, got %v", retries)
 			}
@@ -101,23 +101,23 @@ func TestEnhancedRegistryWithRetry(t *testing.T) {
 			failUntil:   10,
 			failWithErr: NewPermanentError(errors.New("permanent"), "test"),
 		}
-		
+
 		registry.RegisterWithValidation(mockTool.GetDefinition(), mockTool)
-		
+
 		// Set retry policy
 		registry.SetToolRetryPolicy("test_tool", RetryPolicy{
 			MaxAttempts:     3,
 			InitialDelay:    10 * time.Millisecond,
 			RetryableErrors: IsRetryableError,
 		})
-		
+
 		// Execute tool
 		_, err := registry.Execute(ToolUse{
 			ID:    "test-2",
 			Name:  "test_tool",
 			Input: map[string]interface{}{"test": "value"},
 		})
-		
+
 		if err == nil {
 			t.Error("Expected permanent error")
 		}
@@ -132,23 +132,23 @@ func TestEnhancedRegistryWithRetry(t *testing.T) {
 			name:      "test_tool",
 			failUntil: 1,
 		}
-		
+
 		registry.RegisterWithValidation(mockTool.GetDefinition(), mockTool)
-		
+
 		// Set default retry policy for all tools
 		registry.SetDefaultRetryPolicy(RetryPolicy{
 			MaxAttempts:     2,
 			InitialDelay:    10 * time.Millisecond,
 			RetryableErrors: func(err error) bool { return true },
 		})
-		
+
 		// Execute tool
 		result, err := registry.Execute(ToolUse{
 			ID:    "test-3",
 			Name:  "test_tool",
 			Input: map[string]interface{}{"test": "value"},
 		})
-		
+
 		if err != nil {
 			t.Errorf("Expected success with default retry, got error: %v", err)
 		}
@@ -166,16 +166,16 @@ func TestEnhancedRegistryWithRetry(t *testing.T) {
 			name:      "test_tool",
 			failUntil: 1,
 		}
-		
+
 		registry.RegisterWithValidation(mockTool.GetDefinition(), mockTool)
-		
+
 		// No retry policy set - should execute only once
 		_, err := registry.Execute(ToolUse{
 			ID:    "test-4",
 			Name:  "test_tool",
 			Input: map[string]interface{}{"test": "value"},
 		})
-		
+
 		if err == nil {
 			t.Error("Expected error with no retry")
 		}
@@ -188,23 +188,23 @@ func TestEnhancedRegistryWithRetry(t *testing.T) {
 // TestEnhancedRegistryMetrics tests the metrics tracking
 func TestEnhancedRegistryMetrics(t *testing.T) {
 	registry := NewEnhancedRegistry()
-	
+
 	// Create tools with different success/failure patterns
 	successTool := &MockTool{name: "success_tool", failUntil: 0}
 	failTool := &MockTool{name: "fail_tool", failUntil: 100}
 	retryTool := &MockTool{name: "retry_tool", failUntil: 1}
-	
+
 	registry.RegisterWithValidation(successTool.GetDefinition(), successTool)
 	registry.RegisterWithValidation(failTool.GetDefinition(), failTool)
 	registry.RegisterWithValidation(retryTool.GetDefinition(), retryTool)
-	
+
 	// Set retry policy for retry_tool
 	registry.SetToolRetryPolicy("retry_tool", RetryPolicy{
 		MaxAttempts:     2,
 		InitialDelay:    1 * time.Millisecond,
 		RetryableErrors: func(err error) bool { return true },
 	})
-	
+
 	// Execute tools multiple times
 	for i := 0; i < 5; i++ {
 		registry.Execute(ToolUse{
@@ -213,7 +213,7 @@ func TestEnhancedRegistryMetrics(t *testing.T) {
 			Input: map[string]interface{}{},
 		})
 	}
-	
+
 	for i := 0; i < 3; i++ {
 		registry.Execute(ToolUse{
 			ID:    "fail-" + string(rune(i)),
@@ -221,7 +221,7 @@ func TestEnhancedRegistryMetrics(t *testing.T) {
 			Input: map[string]interface{}{},
 		})
 	}
-	
+
 	for i := 0; i < 2; i++ {
 		retryTool.executions = 0 // Reset for each test
 		registry.Execute(ToolUse{
@@ -230,13 +230,13 @@ func TestEnhancedRegistryMetrics(t *testing.T) {
 			Input: map[string]interface{}{},
 		})
 	}
-	
+
 	// Check metrics
 	metrics := registry.GetMetrics()
-	
+
 	// Debug: print all metrics
 	t.Logf("All metrics: %+v", metrics)
-	
+
 	// Success tool metrics
 	if successMetrics, ok := metrics["success_tool"].(map[string]interface{}); ok {
 		if executions, ok := successMetrics["executions"].(int); !ok || executions != 5 {
@@ -251,7 +251,7 @@ func TestEnhancedRegistryMetrics(t *testing.T) {
 	} else {
 		t.Error("Missing metrics for success_tool")
 	}
-	
+
 	// Fail tool metrics
 	if failMetrics, ok := metrics["fail_tool"].(map[string]interface{}); ok {
 		if executions, ok := failMetrics["executions"].(int); !ok || executions != 3 {
@@ -266,7 +266,7 @@ func TestEnhancedRegistryMetrics(t *testing.T) {
 	} else {
 		t.Error("Missing metrics for fail_tool")
 	}
-	
+
 	// Retry tool metrics
 	if retryMetrics, ok := metrics["retry_tool"].(map[string]interface{}); ok {
 		if retries, ok := retryMetrics["retries"].(int); !ok || retries != 2 {
@@ -286,7 +286,7 @@ func TestEnhancedRegistryMetrics(t *testing.T) {
 // TestRetryPolicyConfiguration tests the retry policy configuration in default registry
 func TestRetryPolicyConfiguration(t *testing.T) {
 	registry := DefaultEnhancedRegistry()
-	
+
 	// Check that network tools have NetworkRetryPolicy
 	networkTools := []string{"web_fetch", "web_search", "git_push", "git_pull"}
 	for _, toolName := range networkTools {
@@ -303,7 +303,7 @@ func TestRetryPolicyConfiguration(t *testing.T) {
 			t.Errorf("Expected %s to be registered", toolName)
 		}
 	}
-	
+
 	// Check that file system tools are registered
 	fsTools := []string{"read_file", "write_file", "edit_file", "list_dir", "make_dir", "remove", "move"}
 	for _, toolName := range fsTools {

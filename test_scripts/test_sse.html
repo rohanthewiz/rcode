@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test SSE Connection</title>
+</head>
+<body>
+    <h1>SSE Connection Test</h1>
+    <button onclick="testSSE()">Test SSE Connection</button>
+    <div id="status">Not connected</div>
+    <div id="events"></div>
+    
+    <script>
+        let eventSource;
+        
+        function testSSE() {
+            console.log('Testing SSE connection...');
+            document.getElementById('status').textContent = 'Connecting...';
+            
+            eventSource = new EventSource('/events');
+            
+            eventSource.onopen = function() {
+                console.log('SSE connection opened!');
+                document.getElementById('status').textContent = 'Connected!';
+            };
+            
+            eventSource.onerror = function(error) {
+                console.error('SSE error:', error);
+                document.getElementById('status').textContent = 'Error: ' + error.type;
+                console.log('ReadyState:', eventSource.readyState);
+                console.log('0=CONNECTING, 1=OPEN, 2=CLOSED');
+            };
+            
+            eventSource.onmessage = function(event) {
+                console.log('SSE message:', event.data);
+                const div = document.createElement('div');
+                div.textContent = 'Message: ' + event.data;
+                document.getElementById('events').appendChild(div);
+            };
+            
+            // Listen for specific event types
+            eventSource.addEventListener('connected', function(event) {
+                console.log('Received connected event:', event.data);
+                const div = document.createElement('div');
+                div.textContent = 'Connected event: ' + event.data;
+                document.getElementById('events').appendChild(div);
+            });
+        }
+        
+        // Clean up on page unload
+        window.addEventListener('beforeunload', function() {
+            if (eventSource) {
+                eventSource.close();
+            }
+        });
+    </script>
+</body>
+</html>

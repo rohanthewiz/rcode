@@ -97,7 +97,7 @@ func (t *EditFileTool) Execute(input map[string]interface{}) (string, error) {
 
 	// Split into lines
 	lines := strings.Split(string(originalContent), "\n")
-	
+
 	// Handle case where file ends with newline
 	if len(lines) > 0 && lines[len(lines)-1] == "" {
 		lines = lines[:len(lines)-1]
@@ -152,11 +152,14 @@ func (t *EditFileTool) Execute(input map[string]interface{}) (string, error) {
 		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path)))
 	}
 
+	// Notify file change
+	NotifyFileChange(path, "modified")
+
 	// Generate diff-like output for confirmation
 	var diffOutput strings.Builder
 	diffOutput.WriteString(fmt.Sprintf("File edited: %s\n", path))
 	diffOutput.WriteString(fmt.Sprintf("Operation: %s\n", operation))
-	
+
 	// Show what was changed
 	if operation == "replace" {
 		diffOutput.WriteString(fmt.Sprintf("\nLines %d-%d replaced:\n", startLine, endLine))
@@ -182,7 +185,7 @@ func (t *EditFileTool) Execute(input map[string]interface{}) (string, error) {
 	// Add summary
 	oldLineCount := len(lines)
 	newLineCount := len(result)
-	diffOutput.WriteString(fmt.Sprintf("\nFile line count: %d → %d (%+d lines)\n", 
+	diffOutput.WriteString(fmt.Sprintf("\nFile line count: %d → %d (%+d lines)\n",
 		oldLineCount, newLineCount, newLineCount-oldLineCount))
 
 	return diffOutput.String(), nil

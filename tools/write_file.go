@@ -61,6 +61,12 @@ func (t *WriteFileTool) Execute(input map[string]interface{}) (string, error) {
 		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to create directory: %s", dir)))
 	}
 
+	// Check if file exists (to determine if it's a create or modify)
+	fileExists := false
+	if _, err := os.Stat(expandedPath); err == nil {
+		fileExists = true
+	}
+
 	// Write the file
 	if err := os.WriteFile(expandedPath, []byte(content), 0644); err != nil {
 		if os.IsPermission(err) {
@@ -68,6 +74,13 @@ func (t *WriteFileTool) Execute(input map[string]interface{}) (string, error) {
 		}
 		// Other errors might be temporary (disk full, file locked, etc)
 		return "", WrapFileSystemError(serr.Wrap(err, fmt.Sprintf("Failed to write file: %s", path)))
+	}
+
+	// Notify file change
+	if fileExists {
+		NotifyFileChange(path, "modified")
+	} else {
+		NotifyFileChange(path, "created")
 	}
 
 	return fmt.Sprintf("Successfully wrote %d bytes to %s", len(content), path), nil

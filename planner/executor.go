@@ -22,6 +22,13 @@ func NewStepExecutor() *StepExecutor {
 	}
 }
 
+// NewStepExecutorWithRegistry creates a new step executor with a custom registry
+func NewStepExecutorWithRegistry(registry *tools.Registry) *StepExecutor {
+	return &StepExecutor{
+		toolRegistry: registry,
+	}
+}
+
 // Execute executes a single step
 func (e *StepExecutor) Execute(step *TaskStep, context *TaskContext) (*StepResult, error) {
 	startTime := time.Now()

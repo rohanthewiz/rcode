@@ -17,11 +17,11 @@ type SearchTool struct{}
 
 // SearchResult represents a single search match
 type SearchResult struct {
-	File       string
-	Line       int
-	Column     int
-	Match      string
-	Context    string
+	File    string
+	Line    int
+	Column  int
+	Match   string
+	Context string
 }
 
 // GetDefinition returns the tool definition for the AI
@@ -83,7 +83,7 @@ func (t *SearchTool) Execute(input map[string]interface{}) (string, error) {
 	}
 
 	filePattern, _ := GetString(input, "file_pattern")
-	
+
 	caseSensitive := true
 	if val, exists := input["case_sensitive"]; exists {
 		if boolVal, ok := val.(bool); ok {
@@ -208,9 +208,9 @@ func (t *SearchTool) Execute(input map[string]interface{}) (string, error) {
 		if rel, err := filepath.Rel(searchPath, file); err == nil {
 			relPath = rel
 		}
-		
+
 		output.WriteString(fmt.Sprintf("=== %s ===\n", relPath))
-		
+
 		for _, result := range fileGroups[file] {
 			output.WriteString(fmt.Sprintf("  Line %d: %s\n", result.Line, result.Match))
 			if result.Context != "" {
@@ -238,12 +238,12 @@ func searchInFile(path string, regex *regexp.Regexp, contextLines int) ([]Search
 	var results []SearchResult
 	var lines []string
 	scanner := bufio.NewScanner(file)
-	
+
 	// Read all lines first (for context)
 	for scanner.Scan() {
 		lines = append(lines, scanner.Text())
 	}
-	
+
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
@@ -262,13 +262,13 @@ func searchInFile(path string, regex *regexp.Regexp, contextLines int) ([]Search
 			// Add context
 			if contextLines > 0 {
 				var contextBuilder strings.Builder
-				
+
 				// Before context
 				startLine := i - contextLines
 				if startLine < 0 {
 					startLine = 0
 				}
-				
+
 				// After context
 				endLine := i + contextLines
 				if endLine >= len(lines) {
@@ -283,7 +283,7 @@ func searchInFile(path string, regex *regexp.Regexp, contextLines int) ([]Search
 					}
 					contextBuilder.WriteString(fmt.Sprintf("  %s%d: %s\n", prefix, j+1, lines[j]))
 				}
-				
+
 				result.Context = contextBuilder.String()
 			}
 
@@ -304,7 +304,7 @@ func isBinaryFile(path string) bool {
 		".pdf": true, ".zip": true, ".tar": true, ".gz": true,
 		".db": true, ".sqlite": true, ".bin": true, ".dat": true,
 	}
-	
+
 	if binaryExts[ext] {
 		return true
 	}
