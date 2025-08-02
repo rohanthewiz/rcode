@@ -2067,13 +2067,19 @@ function handleToolExecutionComplete(data) {
   // Remove from active executions
   activeToolExecutions.delete(data.toolId);
   
-  // If no more active tools, update header
+  // If no more active tools, remove the container entirely
   if (activeToolExecutions.size === 0) {
     const toolsContainer = document.querySelector('.tool-execution-container.active');
     if (toolsContainer) {
-      const title = toolsContainer.querySelector('.tool-title');
-      title.textContent = 'Tools completed';
+      // Remove the active class to hide it visually
       toolsContainer.classList.remove('active');
+      // Optionally remove the container entirely after a short delay
+      // to allow the last tool animation to complete
+      setTimeout(() => {
+        if (toolsContainer.parentNode) {
+          toolsContainer.remove();
+        }
+      }, 500);
     }
   }
 }
