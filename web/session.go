@@ -20,6 +20,44 @@ import (
 // Session represents a chat session (alias for db.Session for backward compatibility)
 type Session = db.Session
 
+// readClaudeMDFiles reads CLAUDE.md files from both the global and project locations
+// and returns their combined content with appropriate headers
+func readClaudeMDFiles() string {
+	var result strings.Builder
+	
+	// Read global CLAUDE.md from $HOME/.claude/
+	homeDir, err := os.UserHomeDir()
+	if err == nil {
+		globalPath := filepath.Join(homeDir, ".claude", "CLAUDE.md")
+		if content, err := os.ReadFile(globalPath); err == nil {
+			result.WriteString("## User Instructions (Global)\n")
+			result.WriteString(string(content))
+			result.WriteString("\n\n")
+			logger.Info("Read global CLAUDE.md", "path", globalPath, "size", len(content))
+		} else if !os.IsNotExist(err) {
+			// Log errors other than file not existing
+			logger.LogErr(err, "failed to read global CLAUDE.md", "path", globalPath)
+		}
+	}
+	
+	// Read project CLAUDE.md from current working directory
+	workDir, err := os.Getwd()
+	if err == nil {
+		projectPath := filepath.Join(workDir, "CLAUDE.md")
+		if content, err := os.ReadFile(projectPath); err == nil {
+			result.WriteString("## Project Context (Local)\n")
+			result.WriteString(string(content))
+			result.WriteString("\n\n")
+			logger.Info("Read project CLAUDE.md", "path", projectPath, "size", len(content))
+		} else if !os.IsNotExist(err) {
+			// Log errors other than file not existing
+			logger.LogErr(err, "failed to read project CLAUDE.md", "path", projectPath)
+		}
+	}
+	
+	return result.String()
+}
+
 // getContextPrompt returns context information as an initial prompt
 func getContextPrompt() string {
 	cm := GetContextManager()
@@ -90,19 +128,37 @@ func createSession(req *CreateSessionRequest) (*Session, error) {
 		return nil, err
 	}
 
-	// Add the initial prompts as the first message if any exist
+	// Build the initial message with all context
+	var initialContent strings.Builder
+	
+	// Add initial prompts from database
 	if len(session.InitialPrompts) > 0 {
-		initialPrompt := strings.Join(session.InitialPrompts, "\n")
-
-		// Add context information if available
-		contextInfo := getContextPrompt()
-		if contextInfo != "" {
-			initialPrompt = initialPrompt + "\n\n" + contextInfo
+		initialContent.WriteString(strings.Join(session.InitialPrompts, "\n"))
+	}
+	
+	// Add CLAUDE.md files content
+	claudeMDContent := readClaudeMDFiles()
+	if claudeMDContent != "" {
+		if initialContent.Len() > 0 {
+			initialContent.WriteString("\n\n")
 		}
-
+		initialContent.WriteString(claudeMDContent)
+	}
+	
+	// Add context information if available
+	contextInfo := getContextPrompt()
+	if contextInfo != "" {
+		if initialContent.Len() > 0 {
+			initialContent.WriteString("\n\n## System Context\n")
+		}
+		initialContent.WriteString(contextInfo)
+	}
+	
+	// Add the combined content as the first message if we have any content
+	if initialContent.Len() > 0 {
 		err = database.AddMessage(session.ID, providers.ChatMessage{
 			Role:    "user",
-			Content: initialPrompt,
+			Content: initialContent.String(),
 		}, "", nil)
 		if err != nil {
 			logger.LogErr(err, "failed to add initial message")
