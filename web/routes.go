@@ -96,7 +96,8 @@ func SetupRoutes(s *rweb.Server) {
 
 	// File Explorer endpoints
 	s.Get("/api/files/tree", getFileTreeHandler)
-	s.Get("/api/files/content/:path", getFileContentHandler)
+	s.Get("/api/files/cwd", getCurrentWorkingDirectoryHandler)
+	s.Get("/api/files/content/*", getFileContentHandler)
 	s.Post("/api/files/search", searchFilesHandler)
 	s.Post("/api/session/:id/files/open", openFileHandler)
 	s.Post("/api/session/:id/files/close", closeFileInSessionHandler)

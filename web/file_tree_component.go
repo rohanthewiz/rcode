@@ -29,7 +29,7 @@ func (f FileTreeComponent) Render(b *element.Builder) (x any) {
 func renderFileNode(b *element.Builder, node FileNode, depth int) {
 	// Calculate indentation based on depth
 	indent := depth * 20
-	
+
 	// Node attributes
 	attrs := []string{
 		"class", "tree-node",
@@ -37,7 +37,7 @@ func renderFileNode(b *element.Builder, node FileNode, depth int) {
 		"data-is-dir", fmt.Sprintf("%v", node.IsDir),
 		"style", fmt.Sprintf("padding-left: %dpx", indent),
 	}
-	
+
 	b.Div(attrs...).R(
 		// Expand/collapse icon for directories
 		func() (x any) {
@@ -53,10 +53,10 @@ func renderFileNode(b *element.Builder, node FileNode, depth int) {
 			b.Span("class", fmt.Sprintf("tree-icon file-icon file-icon-%s", node.Icon))
 			return
 		}(),
-		
+
 		// Node name
 		b.Span("class", "node-name").T(node.Name),
-		
+
 		// File size for files
 		func() (x any) {
 			if !node.IsDir && node.Size > 0 {
@@ -65,7 +65,7 @@ func renderFileNode(b *element.Builder, node FileNode, depth int) {
 			return
 		}(),
 	)
-	
+
 	// Render children if directory is open
 	if node.IsDir && node.IsOpen && len(node.Children) > 0 {
 		b.Div("class", "tree-children").R(
@@ -98,7 +98,7 @@ func (f FileExplorerTabs) Render(b *element.Builder) (x any) {
 		b.Div("class", getTabClass("files", f.ActiveTab), "data-tab", "files").T("Files"),
 		b.Div("class", getTabClass("tools", f.ActiveTab), "data-tab", "tools").T("Tools"),
 	)
-	
+
 	// Tab content
 	b.Div("class", "sidebar-content").R(
 		// Sessions tab
@@ -112,9 +112,15 @@ func (f FileExplorerTabs) Render(b *element.Builder) (x any) {
 				}),
 			),
 		),
-		
+
 		// Files tab
 		b.Div("class", getTabContentClass("files", f.ActiveTab), "id", "files-tab").R(
+			b.Div("class", "file-explorer-header").R(
+				b.Div("class", "current-directory").R(
+					b.Span("class", "dir-icon").T("📁"),
+					b.Span("id", "current-directory-path").T("/"),
+				),
+			),
 			b.Div("class", "file-search").R(
 				b.Input("type", "text", "id", "file-search-input", "placeholder", "Search files...", "class", "search-input"),
 			),
@@ -130,7 +136,7 @@ func (f FileExplorerTabs) Render(b *element.Builder) (x any) {
 				}(),
 			),
 		),
-		
+
 		// Tools tab
 		b.Div("class", getTabContentClass("tools", f.ActiveTab), "id", "tools-tab").R(
 			b.Div("class", "tools-header").R(
@@ -168,7 +174,7 @@ func formatFileSize(size int64) string {
 		MB = KB * 1024
 		GB = MB * 1024
 	)
-	
+
 	switch {
 	case size >= GB:
 		return fmt.Sprintf("%.1f GB", float64(size)/float64(GB))
@@ -183,15 +189,15 @@ func formatFileSize(size int64) string {
 
 // FileViewerComponent represents the file viewer panel
 type FileViewerComponent struct {
-	OpenFiles []OpenFile
+	OpenFiles  []OpenFile
 	ActiveFile string
 }
 
 // OpenFile represents an open file in the viewer
 type OpenFile struct {
-	Path    string
-	Name    string
-	Content string
+	Path     string
+	Name     string
+	Content  string
 	Language string
 }
 
@@ -200,7 +206,7 @@ func (f FileViewerComponent) Render(b *element.Builder) (x any) {
 	if len(f.OpenFiles) == 0 {
 		return
 	}
-	
+
 	b.Div("id", "file-viewer", "class", "file-viewer").R(
 		// File tabs
 		b.Div("class", "file-tabs").R(
@@ -215,7 +221,7 @@ func (f FileViewerComponent) Render(b *element.Builder) (x any) {
 				)
 			}),
 		),
-		
+
 		// File content area
 		b.Div("class", "file-content").R(
 			func() (x any) {
@@ -238,45 +244,45 @@ func getFileLanguage(filename string) string {
 	if idx := strings.LastIndex(filename, "."); idx >= 0 {
 		ext = strings.ToLower(filename[idx+1:])
 	}
-	
+
 	languageMap := map[string]string{
-		"go":     "go",
-		"js":     "javascript",
-		"mjs":    "javascript",
-		"cjs":    "javascript",
-		"ts":     "typescript",
-		"tsx":    "typescript",
-		"jsx":    "javascript",
-		"py":     "python",
-		"java":   "java",
-		"rb":     "ruby",
-		"rs":     "rust",
-		"c":      "c",
-		"h":      "c",
-		"cpp":    "cpp",
-		"cxx":    "cpp",
-		"cc":     "cpp",
-		"hpp":    "cpp",
-		"cs":     "csharp",
-		"php":    "php",
-		"html":   "html",
-		"css":    "css",
-		"scss":   "scss",
-		"sass":   "scss",
-		"less":   "less",
-		"json":   "json",
-		"xml":    "xml",
-		"yaml":   "yaml",
-		"yml":    "yaml",
-		"md":     "markdown",
-		"sql":    "sql",
-		"sh":     "shell",
-		"bash":   "shell",
-		"vim":    "vim",
+		"go":         "go",
+		"js":         "javascript",
+		"mjs":        "javascript",
+		"cjs":        "javascript",
+		"ts":         "typescript",
+		"tsx":        "typescript",
+		"jsx":        "javascript",
+		"py":         "python",
+		"java":       "java",
+		"rb":         "ruby",
+		"rs":         "rust",
+		"c":          "c",
+		"h":          "c",
+		"cpp":        "cpp",
+		"cxx":        "cpp",
+		"cc":         "cpp",
+		"hpp":        "cpp",
+		"cs":         "csharp",
+		"php":        "php",
+		"html":       "html",
+		"css":        "css",
+		"scss":       "scss",
+		"sass":       "scss",
+		"less":       "less",
+		"json":       "json",
+		"xml":        "xml",
+		"yaml":       "yaml",
+		"yml":        "yaml",
+		"md":         "markdown",
+		"sql":        "sql",
+		"sh":         "shell",
+		"bash":       "shell",
+		"vim":        "vim",
 		"dockerfile": "dockerfile",
 		"makefile":   "makefile",
 	}
-	
+
 	if lang, ok := languageMap[ext]; ok {
 		return lang
 	}

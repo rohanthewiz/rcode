@@ -7,6 +7,7 @@ const FileExplorer = (function() {
     let activeFile = null;
     let fileViewerEditor = null;
     let modifiedFiles = new Set(); // Track files with available diffs
+    let currentDirectory = '/'; // Track the current directory being viewed
 
     // Initialize the file explorer
     async function init() {
@@ -91,6 +92,9 @@ const FileExplorer = (function() {
             
             if (path === '') {
                 fileTree = data.children || [];
+                // Update current directory based on the root path
+                currentDirectory = data.path || await getCurrentWorkingDirectory();
+                updateCurrentDirectoryDisplay();
             }
             
             renderFileTree();
@@ -98,6 +102,37 @@ const FileExplorer = (function() {
         } catch (error) {
             console.error('Error loading file tree:', error);
             showError('Failed to load file tree');
+        }
+    }
+    
+    // Get current working directory from server
+    async function getCurrentWorkingDirectory() {
+        try {
+            const response = await fetch('/api/files/cwd');
+            if (response.ok) {
+                const data = await response.json();
+                return data.path || '/';
+            }
+        } catch (error) {
+            console.error('Error getting current directory:', error);
+        }
+        return '/';
+    }
+    
+    // Update the current directory display
+    function updateCurrentDirectoryDisplay() {
+        const dirElement = document.getElementById('current-directory-path');
+        if (dirElement) {
+            // Truncate long paths for display
+            let displayPath = currentDirectory;
+            if (displayPath.length > 50) {
+                const parts = displayPath.split('/');
+                if (parts.length > 4) {
+                    displayPath = '/' + parts.slice(1, 2).join('/') + '/.../' + parts.slice(-2).join('/');
+                }
+            }
+            dirElement.textContent = displayPath || '/';
+            dirElement.title = currentDirectory; // Show full path on hover
         }
     }
 
@@ -170,7 +205,7 @@ const FileExplorer = (function() {
         selectNode(path);
     }
 
-    // Handle double-click to open files
+    // Handle double-click to open files or toggle folders
     async function handleTreeDoubleClick(event) {
         const node = event.target.closest('.tree-node');
         if (!node) return;
@@ -178,7 +213,11 @@ const FileExplorer = (function() {
         const path = node.dataset.path;
         const isDir = node.dataset.isDir === 'true';
 
-        if (!isDir) {
+        if (isDir) {
+            // Toggle folder open/closed on double-click
+            await toggleFolder(path);
+        } else {
+            // Open file on double-click
             await openFile(path);
         }
     }
@@ -242,7 +281,8 @@ const FileExplorer = (function() {
     // Open a file
     async function openFile(path) {
         try {
-            const response = await fetch(`/api/files/content/${encodeURIComponent(path)}`);
+            // Use encodeURI instead of encodeURIComponent to preserve slashes
+            const response = await fetch(`/api/files/content/${encodeURI(path)}`);
             if (!response.ok) throw new Error('Failed to load file');
             
             const data = await response.json();

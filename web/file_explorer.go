@@ -507,7 +507,33 @@ func getFileTreeHandler(c rweb.Context) error {
 		return c.WriteError(serr.Wrap(err, "failed to get tree"), 400)
 	}
 
-	return c.WriteJSON(tree)
+	// Add the absolute root path to the response
+	// If path is empty, we're at the root
+	absolutePath := fileExplorer.rootPath
+	if path != "" && path != "." {
+		absolutePath = filepath.Join(fileExplorer.rootPath, path)
+	}
+
+	// Create a wrapper response with the working directory
+	response := map[string]interface{}{
+		"path":     absolutePath,
+		"children": tree.Children,
+		"name":     tree.Name,
+		"isDir":    tree.IsDir,
+	}
+
+	return c.WriteJSON(response)
+}
+
+// getCurrentWorkingDirectoryHandler returns the current working directory
+func getCurrentWorkingDirectoryHandler(c rweb.Context) error {
+	if fileExplorer == nil {
+		return c.WriteError(serr.New("file explorer not initialized"), 500)
+	}
+
+	return c.WriteJSON(map[string]string{
+		"path": fileExplorer.rootPath,
+	})
 }
 
 // getFileContentHandler returns file content
@@ -516,7 +542,14 @@ func getFileContentHandler(c rweb.Context) error {
 		return c.WriteError(serr.New("file explorer not initialized"), 500)
 	}
 
-	path := c.Request().Param("path")
+	// Get the path from the URL after /api/files/content/
+	fullPath := c.Request().Path()
+	prefix := "/api/files/content/"
+	if !strings.HasPrefix(fullPath, prefix) {
+		return c.WriteError(serr.New("invalid path"), 400)
+	}
+
+	path := strings.TrimPrefix(fullPath, prefix)
 	if path == "" {
 		return c.WriteError(serr.New("path parameter required"), 400)
 	}

@@ -1583,6 +1583,32 @@ body.plan-executing .plan-overlay {
 }
 
 /* File Search */
+.file-explorer-header {
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.current-directory {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.current-directory .dir-icon {
+  font-size: 1rem;
+}
+
+.current-directory #current-directory-path {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .file-search {
   padding: 1rem;
   border-bottom: 1px solid var(--border);
