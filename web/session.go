@@ -573,10 +573,25 @@ func sendMessageHandler(c rweb.Context) error {
 					toolResults = append(toolResults, result)
 				}
 
+				// Clean up tool uses before saving - remove input_json field
+				// that was used for streaming accumulation but should not be saved
+				cleanedToolUses := make([]interface{}, len(currentToolUses))
+				for i, toolUseData := range currentToolUses {
+					if toolUseMap, ok := toolUseData.(map[string]interface{}); ok {
+						// Remove the input_json field if it exists - this field is only
+						// used during streaming to accumulate the JSON and should not
+						// be included in the final message
+						delete(toolUseMap, "input_json")
+						cleanedToolUses[i] = toolUseMap
+					} else {
+						cleanedToolUses[i] = toolUseData
+					}
+				}
+
 				// Add the assistant's message with tool uses to database
 				assistantMsg := providers.ChatMessage{
 					Role:    "assistant",
-					Content: currentToolUses,
+					Content: cleanedToolUses,
 				}
 				err = database.AddMessage(sessionID, assistantMsg, assistantModel, usage)
 				if err != nil {
