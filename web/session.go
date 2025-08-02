@@ -215,9 +215,6 @@ func sendMessageHandler(c rweb.Context) error {
 	sessionID := c.Request().Param("id")
 	logger.Info("Sending message to session: " + sessionID)
 
-	// Track tool usage for this request
-	var toolSummaries []string
-
 	// Get database instance
 	database, err := db.GetDB()
 	if err != nil {
@@ -427,7 +424,7 @@ func sendMessageHandler(c rweb.Context) error {
 				if err := json.Unmarshal(event.Delta, &delta); err != nil {
 					logger.LogErr(err, "Failed to parse content delta", "raw", string(event.Delta))
 				} else {
-					logger.Info("Content delta parsed", "type", delta.Type, "text", delta.Text)
+					// logger.Info("Content delta parsed", "type", delta.Type, "text", delta.Text)
 					if delta.Type == "text_delta" {
 						// Accumulate text and broadcast delta
 						streamingContent += delta.Text
@@ -566,9 +563,6 @@ func sendMessageHandler(c rweb.Context) error {
 					logger.Info("Broadcasting tool usage", "tool", toolUse.Name, "summary", summary)
 					BroadcastToolUsage(sessionID, toolUse.Name, summary)
 
-					// Collect tool summaries for response
-					toolSummaries = append(toolSummaries, summary)
-
 					// Add tool result to results
 					toolResults = append(toolResults, result)
 				}
@@ -638,11 +632,10 @@ func sendMessageHandler(c rweb.Context) error {
 
 				// Return response metadata (content already streamed via deltas)
 				return c.WriteJSON(map[string]interface{}{
-					"role":          "assistant",
-					"streamed":      true,
-					"usage":         usage,
-					"model":         assistantModel,
-					"toolSummaries": toolSummaries,
+					"role":     "assistant",
+					"streamed": true,
+					"usage":    usage,
+					"model":    assistantModel,
 				})
 			} else {
 				// No tool use and no text content - this shouldn't happen
@@ -660,10 +653,9 @@ func sendMessageHandler(c rweb.Context) error {
 	// Should not reach here
 	logger.Error("Reached end of sendMessageHandler without proper response")
 	return c.WriteJSON(map[string]interface{}{
-		"role":          "assistant",
-		"content":       "",
-		"toolSummaries": toolSummaries,
-		"error":         "No response received from streaming",
+		"role":    "assistant",
+		"content": "",
+		"error":   "No response received from streaming",
 	})
 }
 
