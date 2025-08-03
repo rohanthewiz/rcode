@@ -12,7 +12,7 @@ func (f *FileEventNotifier) NotifyFileChanged(path string, changeType string) {
 
 // NotifyFileTreeUpdate broadcasts when the file tree needs refresh
 func (f *FileEventNotifier) NotifyFileTreeUpdate(path string) {
-	BroadcastFileTreeUpdate(path)
+	BroadcastFileTreeUpdate("", path)
 }
 
 // InitFileChangeNotifier initializes the file change notifier

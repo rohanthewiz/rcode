@@ -383,6 +383,182 @@ func isBinaryContent(content []byte) bool {
 	return false
 }
 
+// CreateFile creates a new file with optional content
+func (s *FileExplorerService) CreateFile(relativePath string, content string) error {
+	// Validate and clean the path
+	cleanPath := filepath.Clean(relativePath)
+	fullPath := filepath.Join(s.rootPath, cleanPath)
+
+	// Security check: ensure path is within root
+	if !strings.HasPrefix(fullPath, s.rootPath) {
+		return serr.New("access denied: path outside project root")
+	}
+
+	// Check if file already exists
+	if _, err := os.Stat(fullPath); err == nil {
+		return serr.New("file already exists")
+	}
+
+	// Create parent directories if they don't exist
+	dir := filepath.Dir(fullPath)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return serr.Wrap(err, "failed to create parent directories")
+	}
+
+	// Create the file
+	if err := os.WriteFile(fullPath, []byte(content), 0644); err != nil {
+		return serr.Wrap(err, "failed to create file")
+	}
+
+	// Clear cache for parent directory
+	s.clearCacheForPath(filepath.Dir(cleanPath))
+
+	return nil
+}
+
+// CreateDirectory creates a new directory
+func (s *FileExplorerService) CreateDirectory(relativePath string) error {
+	// Validate and clean the path
+	cleanPath := filepath.Clean(relativePath)
+	fullPath := filepath.Join(s.rootPath, cleanPath)
+
+	// Security check: ensure path is within root
+	if !strings.HasPrefix(fullPath, s.rootPath) {
+		return serr.New("access denied: path outside project root")
+	}
+
+	// Check if directory already exists
+	if _, err := os.Stat(fullPath); err == nil {
+		return serr.New("directory already exists")
+	}
+
+	// Create the directory (including parent directories)
+	if err := os.MkdirAll(fullPath, 0755); err != nil {
+		return serr.Wrap(err, "failed to create directory")
+	}
+
+	// Clear cache for parent directory
+	s.clearCacheForPath(filepath.Dir(cleanPath))
+
+	return nil
+}
+
+// RenameFile renames a file or directory
+func (s *FileExplorerService) RenameFile(oldPath, newName string) error {
+	// Validate and clean the paths
+	cleanOldPath := filepath.Clean(oldPath)
+	fullOldPath := filepath.Join(s.rootPath, cleanOldPath)
+
+	// Build new path (in same directory as old file)
+	dir := filepath.Dir(cleanOldPath)
+	cleanNewPath := filepath.Join(dir, newName)
+	fullNewPath := filepath.Join(s.rootPath, cleanNewPath)
+
+	// Security checks
+	if !strings.HasPrefix(fullOldPath, s.rootPath) || !strings.HasPrefix(fullNewPath, s.rootPath) {
+		return serr.New("access denied: path outside project root")
+	}
+
+	// Check if old path exists
+	if _, err := os.Stat(fullOldPath); err != nil {
+		return serr.Wrap(err, "source file/directory not found")
+	}
+
+	// Check if new path already exists
+	if _, err := os.Stat(fullNewPath); err == nil {
+		return serr.New("destination already exists")
+	}
+
+	// Validate new name
+	if strings.ContainsAny(newName, "/\\") {
+		return serr.New("invalid file name: cannot contain path separators")
+	}
+
+	// Perform the rename
+	if err := os.Rename(fullOldPath, fullNewPath); err != nil {
+		return serr.Wrap(err, "failed to rename")
+	}
+
+	// Clear cache for parent directory
+	s.clearCacheForPath(dir)
+
+	return nil
+}
+
+// DeleteFile deletes a file or directory
+func (s *FileExplorerService) DeleteFile(relativePath string) error {
+	// Validate and clean the path
+	cleanPath := filepath.Clean(relativePath)
+	fullPath := filepath.Join(s.rootPath, cleanPath)
+
+	// Security check: ensure path is within root
+	if !strings.HasPrefix(fullPath, s.rootPath) {
+		return serr.New("access denied: path outside project root")
+	}
+
+	// Prevent deletion of critical files
+	base := filepath.Base(fullPath)
+	criticalFiles := []string{".git", "go.mod", "go.sum", "package.json", "package-lock.json", "yarn.lock", "Gemfile", "Gemfile.lock"}
+	for _, critical := range criticalFiles {
+		if base == critical {
+			return serr.New("cannot delete critical project file")
+		}
+	}
+
+	// Check if path exists
+	info, err := os.Stat(fullPath)
+	if err != nil {
+		return serr.Wrap(err, "file/directory not found")
+	}
+
+	// Delete the file or directory
+	if info.IsDir() {
+		// For directories, use RemoveAll for recursive deletion
+		if err := os.RemoveAll(fullPath); err != nil {
+			return serr.Wrap(err, "failed to delete directory")
+		}
+	} else {
+		// For files, use Remove
+		if err := os.Remove(fullPath); err != nil {
+			return serr.Wrap(err, "failed to delete file")
+		}
+	}
+
+	// Clear cache for parent directory
+	s.clearCacheForPath(filepath.Dir(cleanPath))
+
+	return nil
+}
+
+// clearCacheForPath clears the cache for a specific path and its parents
+func (s *FileExplorerService) clearCacheForPath(relativePath string) {
+	s.cacheMutex.Lock()
+	defer s.cacheMutex.Unlock()
+
+	// Clear cache for the specific path
+	fullPath := filepath.Join(s.rootPath, relativePath)
+	delete(s.cache, fullPath)
+	delete(s.cacheTimestamp, fullPath)
+
+	// Clear cache for parent directories up to root
+	current := relativePath
+	for current != "" && current != "." && current != "/" {
+		parent := filepath.Dir(current)
+		parentFullPath := filepath.Join(s.rootPath, parent)
+		delete(s.cache, parentFullPath)
+		delete(s.cacheTimestamp, parentFullPath)
+
+		if parent == current || parent == "." {
+			break
+		}
+		current = parent
+	}
+
+	// Also clear root cache
+	delete(s.cache, s.rootPath)
+	delete(s.cacheTimestamp, s.rootPath)
+}
+
 // SearchFiles searches for files by name or content
 func (s *FileExplorerService) SearchFiles(query string, searchContent bool) ([]FileNode, error) {
 	var results []FileNode
@@ -514,12 +690,20 @@ func getFileTreeHandler(c rweb.Context) error {
 		absolutePath = filepath.Join(fileExplorer.rootPath, path)
 	}
 
+	// Abbreviate home directory to ~ for display
+	displayPath := absolutePath
+	homeDir, err := os.UserHomeDir()
+	if err == nil && strings.HasPrefix(displayPath, homeDir) {
+		displayPath = "~" + strings.TrimPrefix(displayPath, homeDir)
+	}
+
 	// Create a wrapper response with the working directory
 	response := map[string]interface{}{
-		"path":     absolutePath,
-		"children": tree.Children,
-		"name":     tree.Name,
-		"isDir":    tree.IsDir,
+		"path":        absolutePath,
+		"displayPath": displayPath,
+		"children":    tree.Children,
+		"name":        tree.Name,
+		"isDir":       tree.IsDir,
 	}
 
 	return c.WriteJSON(response)
@@ -531,8 +715,16 @@ func getCurrentWorkingDirectoryHandler(c rweb.Context) error {
 		return c.WriteError(serr.New("file explorer not initialized"), 500)
 	}
 
+	// Abbreviate home directory to ~ for display
+	displayPath := fileExplorer.rootPath
+	homeDir, err := os.UserHomeDir()
+	if err == nil && strings.HasPrefix(displayPath, homeDir) {
+		displayPath = "~" + strings.TrimPrefix(displayPath, homeDir)
+	}
+
 	return c.WriteJSON(map[string]string{
-		"path": fileExplorer.rootPath,
+		"path":        fileExplorer.rootPath,
+		"displayPath": displayPath,
 	})
 }
 
@@ -669,5 +861,123 @@ func getRecentFilesHandler(c rweb.Context) error {
 	return c.WriteJSON(map[string]interface{}{
 		"files": fileNodes,
 		"count": len(fileNodes),
+	})
+}
+
+// createFileHandler creates a new file or directory
+func createFileHandler(c rweb.Context) error {
+	if fileExplorer == nil {
+		return c.WriteError(serr.New("file explorer not initialized"), 500)
+	}
+
+	var req struct {
+		Path    string `json:"path"`
+		Type    string `json:"type"` // "file" or "directory"
+		Content string `json:"content,omitempty"`
+	}
+
+	body := c.Request().Body()
+	if err := json.Unmarshal(body, &req); err != nil {
+		return c.WriteError(serr.New("invalid request body"), 400)
+	}
+
+	if req.Path == "" {
+		return c.WriteError(serr.New("path parameter required"), 400)
+	}
+
+	if req.Type != "file" && req.Type != "directory" {
+		return c.WriteError(serr.New("type must be 'file' or 'directory'"), 400)
+	}
+
+	var err error
+	if req.Type == "file" {
+		err = fileExplorer.CreateFile(req.Path, req.Content)
+	} else {
+		err = fileExplorer.CreateDirectory(req.Path)
+	}
+
+	if err != nil {
+		return c.WriteError(err, 400)
+	}
+
+	// Broadcast file tree update event
+	BroadcastFileTreeUpdate("", filepath.Dir(req.Path))
+
+	return c.WriteJSON(map[string]interface{}{
+		"status": "ok",
+		"path":   req.Path,
+		"type":   req.Type,
+	})
+}
+
+// renameFileHandler renames a file or directory
+func renameFileHandler(c rweb.Context) error {
+	if fileExplorer == nil {
+		return c.WriteError(serr.New("file explorer not initialized"), 500)
+	}
+
+	var req struct {
+		OldPath string `json:"oldPath"`
+		NewName string `json:"newName"`
+	}
+
+	body := c.Request().Body()
+	if err := json.Unmarshal(body, &req); err != nil {
+		return c.WriteError(serr.New("invalid request body"), 400)
+	}
+
+	if req.OldPath == "" || req.NewName == "" {
+		return c.WriteError(serr.New("oldPath and newName parameters required"), 400)
+	}
+
+	err := fileExplorer.RenameFile(req.OldPath, req.NewName)
+	if err != nil {
+		return c.WriteError(err, 400)
+	}
+
+	// Build new path for response
+	dir := filepath.Dir(req.OldPath)
+	newPath := filepath.Join(dir, req.NewName)
+
+	// Broadcast file tree update event
+	BroadcastFileTreeUpdate("", dir)
+
+	return c.WriteJSON(map[string]interface{}{
+		"status":  "ok",
+		"oldPath": req.OldPath,
+		"newPath": newPath,
+	})
+}
+
+// deleteFileHandler deletes a file or directory
+func deleteFileHandler(c rweb.Context) error {
+	if fileExplorer == nil {
+		return c.WriteError(serr.New("file explorer not initialized"), 500)
+	}
+
+	var req struct {
+		Path string `json:"path"`
+	}
+
+	body := c.Request().Body()
+	if err := json.Unmarshal(body, &req); err != nil {
+		return c.WriteError(serr.New("invalid request body"), 400)
+	}
+
+	if req.Path == "" {
+		return c.WriteError(serr.New("path parameter required"), 400)
+	}
+
+	err := fileExplorer.DeleteFile(req.Path)
+	if err != nil {
+		return c.WriteError(err, 400)
+	}
+
+	// Broadcast file tree update event
+	BroadcastFileTreeUpdate("", filepath.Dir(req.Path))
+
+	return c.WriteJSON(map[string]interface{}{
+		"status": "ok",
+		"path":   req.Path,
 	})
 }

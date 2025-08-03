@@ -1707,20 +1707,31 @@ body.plan-executing .plan-overlay {
   font-size: 0.75rem;
 }
 
-/* Diff indicator for modified files */
+/* Diff indicator for modified and new files */
 .diff-indicator {
-  color: var(--warning);
   font-size: 0.875rem;
   margin-left: 0.5rem;
   opacity: 0.8;
   transition: opacity 0.2s;
 }
 
-.tree-node.modified:hover .diff-indicator {
+/* Orange dot for modified files */
+.diff-indicator.modified {
+  color: var(--warning);
+}
+
+/* Green dot for newly created files */
+.diff-indicator.new {
+  color: var(--success);
+}
+
+.tree-node.modified:hover .diff-indicator.modified,
+.tree-node.new:hover .diff-indicator.new {
   opacity: 1;
 }
 
-.tree-node.modified {
+.tree-node.modified,
+.tree-node.new {
   position: relative;
 }
 
@@ -1732,6 +1743,17 @@ body.plan-executing .plan-overlay {
   bottom: 0;
   width: 3px;
   background: var(--warning);
+  opacity: 0.6;
+}
+
+.tree-node.new::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--success);
   opacity: 0.6;
 }
 

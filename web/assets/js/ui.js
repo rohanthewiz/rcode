@@ -325,10 +325,19 @@ function handleServerEvent(event) {
   } else if (event.type === 'diff_available' && event.sessionId === currentSessionId) {
     // Handle diff available event
     console.log('Diff available:', event.data);
-    if (window.diffViewer && event.data && event.data.diffId) {
-      // Show notification that diff is available
-      const notification = `📝 Changes detected in ${event.data.path}`;
-      addSystemMessageToUI(notification, 'info');
+    if (event.data && event.data.filePath) {
+      // For diff_available, we'll mark as modified since it implies the file was changed
+      // The file_changed event will handle marking as new if it's a creation
+      if (window.FileExplorer && window.FileExplorer.markFileModified) {
+        window.FileExplorer.markFileModified(event.data.filePath);
+      }
+      
+      // Store the diff in the diff viewer
+      if (window.diffViewer && event.data.diffId) {
+        // Show notification that diff is available
+        const notification = `📝 Changes detected in ${event.data.filePath}`;
+        addSystemMessageToUI(notification, 'info');
+      }
     }
   } else if (event.type === 'tool_permission_update' && event.sessionId === currentSessionId) {
     // Handle tool permission update event

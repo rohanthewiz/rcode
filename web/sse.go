@@ -145,20 +145,21 @@ func BroadcastFileOpened(sessionID string, filePath string) {
 	})
 }
 
+// BroadcastFileTreeUpdate broadcasts when the file tree needs updating
+func BroadcastFileTreeUpdate(sessionID string, path string) {
+	BroadcastFileEvent("file_tree_update", map[string]interface{}{
+		"sessionId": sessionID,
+		"path":      path,
+		"timestamp": fmt.Sprintf("%d", time.Now().Unix()),
+	})
+}
+
 // BroadcastFileChanged broadcasts when a file is modified
 func BroadcastFileChanged(filePath string, changeType string) {
 	BroadcastFileEvent("file_changed", map[string]interface{}{
 		"path":       filePath,
 		"changeType": changeType, // "created", "modified", "deleted", "renamed"
 		"timestamp":  fmt.Sprintf("%d", time.Now().Unix()),
-	})
-}
-
-// BroadcastFileTreeUpdate broadcasts when the file tree needs refresh
-func BroadcastFileTreeUpdate(path string) {
-	BroadcastFileEvent("file_tree_update", map[string]interface{}{
-		"path":      path,
-		"timestamp": fmt.Sprintf("%d", time.Now().Unix()),
 	})
 }
 

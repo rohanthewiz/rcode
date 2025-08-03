@@ -1,0 +1,7 @@
+This is a test file to verify the green dot indicator for newly created files.
+
+Testing:
+1. This file should show a green dot (●) in the file explorer
+2. The dot should be in green color (var(--success) from CSS)
+3. The left border should also be green
+4. On hover, the tooltip should say "New file"

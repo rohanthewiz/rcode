@@ -21,6 +21,9 @@ var fileExplorerJS string
 //go:embed assets/js/diffViewer.js
 var diffViewerJS string
 
+//go:embed assets/js/fileOperations.js
+var fileOperationsJS string
+
 // //go:embed assets/js/monacoLoader.js
 // var monacoLoaderJS string
 
@@ -29,6 +32,9 @@ var uiCSS string
 
 //go:embed assets/css/diffViewer.css
 var diffViewerCSS string
+
+//go:embed assets/css/fileOperations.css
+var fileOperationsCSS string
 
 // UIHandler serves the main chat interface using element package
 func UIHandler(c rweb.Context) error {
@@ -328,7 +334,7 @@ func generateMainUI(isAuthenticated bool) string {
 }
 
 func generateCSS() string {
-	return uiCSS + "\n\n" + diffViewerCSS
+	return uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS
 }
 
 func generateJavaScript(isAuthenticated bool) string {
@@ -342,8 +348,8 @@ func generateJavaScript(isAuthenticated bool) string {
 		`
 	}
 
-	// Include file explorer and diff viewer for authenticated users
-	return fileExplorerJS + "\n\n" + diffViewerJS + "\n\n" + uiJS + `
+	// Include file explorer, file operations, and diff viewer for authenticated users
+	return fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" + diffViewerJS + "\n\n" + uiJS + `
 		// Initialize file explorer and diff viewer after UI is ready
 		document.addEventListener('DOMContentLoaded', function() {
 			// Initialize file explorer after a short delay to ensure Monaco is loaded

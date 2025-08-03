@@ -6,7 +6,8 @@ const FileExplorer = (function() {
     let openFiles = new Map(); // path -> {name, content, language}
     let activeFile = null;
     let fileViewerEditor = null;
-    let modifiedFiles = new Set(); // Track files with available diffs
+    let modifiedFiles = new Set(); // Track files that have been modified
+    let newFiles = new Set(); // Track files that have been newly created
     let currentDirectory = '/'; // Track the current directory being viewed
 
     // Initialize the file explorer
@@ -94,6 +95,10 @@ const FileExplorer = (function() {
                 fileTree = data.children || [];
                 // Update current directory based on the root path
                 currentDirectory = data.path || await getCurrentWorkingDirectory();
+                // Store the display path if provided
+                if (data.displayPath) {
+                    window.fileExplorerDisplayPath = data.displayPath;
+                }
                 updateCurrentDirectoryDisplay();
             }
             
@@ -111,6 +116,10 @@ const FileExplorer = (function() {
             const response = await fetch('/api/files/cwd');
             if (response.ok) {
                 const data = await response.json();
+                // Store both the actual path and display path
+                if (data.displayPath) {
+                    window.fileExplorerDisplayPath = data.displayPath;
+                }
                 return data.path || '/';
             }
         } catch (error) {
@@ -123,12 +132,17 @@ const FileExplorer = (function() {
     function updateCurrentDirectoryDisplay() {
         const dirElement = document.getElementById('current-directory-path');
         if (dirElement) {
-            // Truncate long paths for display
-            let displayPath = currentDirectory;
+            // Use the abbreviated display path if available
+            let displayPath = window.fileExplorerDisplayPath || currentDirectory;
+            
+            // Further truncate if still too long (over 50 chars)
             if (displayPath.length > 50) {
                 const parts = displayPath.split('/');
                 if (parts.length > 4) {
-                    displayPath = '/' + parts.slice(1, 2).join('/') + '/.../' + parts.slice(-2).join('/');
+                    // Keep the tilde if present
+                    const prefix = displayPath.startsWith('~') ? '~' : '/';
+                    const startIdx = displayPath.startsWith('~') ? 1 : 1;
+                    displayPath = prefix + parts.slice(startIdx, startIdx + 1).join('/') + '/.../' + parts.slice(-2).join('/');
                 }
             }
             dirElement.textContent = displayPath || '/';
@@ -164,17 +178,20 @@ const FileExplorer = (function() {
                 iconClass += `file-icon file-icon-${node.icon || 'file'}`;
             }
 
-            // Check if file has been modified (has diff available)
+            // Check file status (new or modified)
+            const isNew = !node.isDir && newFiles.has(node.path);
             const isModified = !node.isDir && modifiedFiles.has(node.path);
+            const fileStatus = isNew ? 'new' : (isModified ? 'modified' : '');
             
             let html = `
-                <div class="tree-node ${isSelected ? 'selected' : ''} ${isModified ? 'modified' : ''}" 
+                <div class="tree-node ${isSelected ? 'selected' : ''} ${fileStatus}" 
                      data-path="${node.path}" 
                      data-is-dir="${node.isDir}"
                      style="padding-left: ${indent}px">
                     <span class="${iconClass}" data-action="toggle"></span>
                     <span class="node-name">${node.name}</span>
-                    ${isModified ? '<span class="diff-indicator" title="File has been modified">●</span>' : ''}
+                    ${isNew ? '<span class="diff-indicator new" title="New file">●</span>' : 
+                      isModified ? '<span class="diff-indicator modified" title="File has been modified">●</span>' : ''}
                     ${!node.isDir && node.size ? `<span class="node-size">${formatFileSize(node.size)}</span>` : ''}
                 </div>
             `;
@@ -598,10 +615,24 @@ const FileExplorer = (function() {
     function handleFileChange(data) {
         const { path, changeType } = data;
         
+        // Handle different change types
+        if (changeType === 'created') {
+            markFileNew(path);
+        } else if (changeType === 'modified') {
+            // If file was previously new, keep it as new
+            if (!newFiles.has(path)) {
+                markFileModified(path);
+            }
+        } else if (changeType === 'deleted') {
+            unmarkFileModified(path);
+            unmarkFileNew(path);
+        }
+        
         // If the changed file is currently open, show a notification
         if (openFiles.has(path) && activeFile === path) {
-            // TODO: Show notification that file was modified externally
+            // Show notification that file was modified externally
             console.log(`Open file ${path} was ${changeType} externally`);
+            // Could show a banner or dialog asking if user wants to reload
         }
         
         // Refresh the parent directory in the tree
@@ -633,7 +664,17 @@ const FileExplorer = (function() {
 
     // Mark a file as modified (has diff available)
     function markFileModified(path) {
+        // Remove from new files if it was there
+        newFiles.delete(path);
         modifiedFiles.add(path);
+        renderFileTree();
+    }
+    
+    // Mark a file as new
+    function markFileNew(path) {
+        // Remove from modified if it was there
+        modifiedFiles.delete(path);
+        newFiles.add(path);
         renderFileTree();
     }
     
@@ -643,9 +684,20 @@ const FileExplorer = (function() {
         renderFileTree();
     }
     
+    // Unmark a file as new
+    function unmarkFileNew(path) {
+        newFiles.delete(path);
+        renderFileTree();
+    }
+    
     // Check if a file is modified
     function isFileModified(path) {
         return modifiedFiles.has(path);
+    }
+    
+    // Check if a file is new
+    function isFileNew(path) {
+        return newFiles.has(path);
     }
 
     // Create context menu
@@ -693,6 +745,7 @@ const FileExplorer = (function() {
 
         // Build context menu items
         const menuItems = [];
+        const nodeName = node.querySelector('.node-name')?.textContent || path.split('/').pop() || 'item';
 
         if (!isDir) {
             menuItems.push({
@@ -712,6 +765,21 @@ const FileExplorer = (function() {
             menuItems.push({ separator: true });
 
             menuItems.push({
+                label: 'Rename',
+                icon: '✏️',
+                action: () => handleRename(path, nodeName)
+            });
+
+            menuItems.push({
+                label: 'Delete',
+                icon: '🗑️',
+                className: 'danger',
+                action: () => handleDelete(path, nodeName, false)
+            });
+
+            menuItems.push({ separator: true });
+
+            menuItems.push({
                 label: 'Copy Path',
                 icon: '📋',
                 action: () => copyPath(path)
@@ -722,6 +790,35 @@ const FileExplorer = (function() {
                 label: isOpen ? 'Collapse' : 'Expand',
                 icon: isOpen ? '📂' : '📁',
                 action: () => toggleFolder(path)
+            });
+
+            menuItems.push({ separator: true });
+
+            menuItems.push({
+                label: 'New File',
+                icon: '📄',
+                action: () => handleCreateNew(path, 'file')
+            });
+
+            menuItems.push({
+                label: 'New Folder',
+                icon: '📁',
+                action: () => handleCreateNew(path, 'directory')
+            });
+
+            menuItems.push({ separator: true });
+
+            menuItems.push({
+                label: 'Rename',
+                icon: '✏️',
+                action: () => handleRename(path, nodeName)
+            });
+
+            menuItems.push({
+                label: 'Delete',
+                icon: '🗑️',
+                className: 'danger',
+                action: () => handleDelete(path, nodeName, true)
             });
 
             menuItems.push({ separator: true });
@@ -818,6 +915,96 @@ const FileExplorer = (function() {
         }
     }
 
+    // Handle create new file/folder
+    async function handleCreateNew(parentPath, type) {
+        if (!window.FileOperations) {
+            showError('File operations not available');
+            return;
+        }
+
+        try {
+            const result = await window.FileOperations.showCreateDialog(parentPath);
+            console.log(`Created ${type}:`, result);
+            
+            // Refresh the parent directory
+            await refreshPath(parentPath);
+            
+            // If it's a file, optionally open it
+            if (type === 'file' && result.path) {
+                // Could open the newly created file
+                // await openFile(result.path);
+            }
+        } catch (error) {
+            if (error.message !== 'Cancelled') {
+                console.error('Create failed:', error);
+            }
+        }
+    }
+
+    // Handle rename
+    async function handleRename(path, oldName) {
+        if (!window.FileOperations) {
+            showError('File operations not available');
+            return;
+        }
+
+        try {
+            const result = await window.FileOperations.showRenameDialog(path, oldName);
+            console.log('Renamed:', result);
+            
+            // Refresh the parent directory
+            const parentPath = path.substring(0, path.lastIndexOf('/')) || '';
+            await refreshPath(parentPath);
+            
+            // If the renamed file was open, update it
+            if (openFiles.has(path)) {
+                const fileData = openFiles.get(path);
+                openFiles.delete(path);
+                openFiles.set(result.newPath, {
+                    ...fileData,
+                    name: result.newPath.split('/').pop()
+                });
+                
+                // If it was the active file, update that too
+                if (activeFile === path) {
+                    activeFile = result.newPath;
+                }
+                
+                updateFileTabs();
+            }
+        } catch (error) {
+            if (error.message !== 'Cancelled' && error.message !== 'No change') {
+                console.error('Rename failed:', error);
+            }
+        }
+    }
+
+    // Handle delete
+    async function handleDelete(path, name, isDir) {
+        if (!window.FileOperations) {
+            showError('File operations not available');
+            return;
+        }
+
+        try {
+            const result = await window.FileOperations.showDeleteDialog(path, name, isDir);
+            console.log('Deleted:', result);
+            
+            // Close the file if it's open
+            if (openFiles.has(path)) {
+                await closeFile(path);
+            }
+            
+            // Refresh the parent directory
+            const parentPath = path.substring(0, path.lastIndexOf('/')) || '';
+            await refreshPath(parentPath);
+        } catch (error) {
+            if (error.message !== 'Cancelled') {
+                console.error('Delete failed:', error);
+            }
+        }
+    }
+
     // Public API
     return {
         init,
@@ -829,8 +1016,11 @@ const FileExplorer = (function() {
         handleFileEvent,
         refreshPath,
         markFileModified,
+        markFileNew,
         unmarkFileModified,
+        unmarkFileNew,
         isFileModified,
+        isFileNew,
         switchTab  // Export switchTab function for external use
     };
 })();

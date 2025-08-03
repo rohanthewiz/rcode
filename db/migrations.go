@@ -357,6 +357,30 @@ var migrations = []Migration{
 			);
 		`,
 	},
+	{
+		Version:     7,
+		Description: "Fix file_access table auto-increment",
+		SQL: `
+			-- Drop the old file_access table (preserving data if needed)
+			DROP TABLE IF EXISTS file_access;
+			
+			-- Create sequence for file_access
+			CREATE SEQUENCE IF NOT EXISTS file_access_id_seq;
+			
+			-- Recreate file_access table with proper auto-increment
+			CREATE TABLE file_access (
+				id INTEGER PRIMARY KEY DEFAULT nextval('file_access_id_seq'),
+				session_id TEXT NOT NULL,
+				file_path TEXT NOT NULL,
+				accessed_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+				access_type TEXT NOT NULL DEFAULT 'open', -- 'open', 'edit', 'create', 'delete'
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
+			);
+			CREATE INDEX idx_file_access_session ON file_access(session_id);
+			CREATE INDEX idx_file_access_path ON file_access(file_path);
+			CREATE INDEX idx_file_access_time ON file_access(accessed_at);
+		`,
+	},
 }
 
 // Migrate runs all pending database migrations
