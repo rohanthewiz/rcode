@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -328,6 +329,69 @@ func (s *ProjectScanner) detectFromExtensions(ctx *ProjectContext) {
 			maxCount = count
 		}
 	}
+}
+
+// findRelevantFilesWithRipgrep uses ripgrep to quickly find relevant source files
+// This is much faster than walking the entire directory tree for large projects
+// Returns nil if ripgrep is not available, allowing fallback to regular file walking
+func (s *ProjectScanner) findRelevantFilesWithRipgrep(rootPath string) ([]string, error) {
+	// Check if ripgrep is available
+	if _, err := exec.LookPath("rg"); err != nil {
+		// Ripgrep not available, return nil to fall back to regular file walking
+		return nil, nil
+	}
+
+	// Use ripgrep to find all source files, respecting .gitignore by default
+	// We look for common programming patterns to identify source files
+	allFiles := []string{}
+
+	// Get all files using ripgrep's built-in file type detection
+	// This is more efficient than multiple type-specific searches
+	cmd := exec.Command("rg", 
+		"--files",           // List files that would be searched
+		"--hidden",          // Include hidden files (but still respect .gitignore)
+		"--no-ignore-vcs",   // Don't ignore VCS ignore files
+		"--ignore-file", filepath.Join(rootPath, ".gitignore"), // Use project's gitignore
+		rootPath,
+	)
+
+	output, err := cmd.Output()
+	if err != nil {
+		// If ripgrep fails, return nil to fall back to regular walking
+		return nil, nil
+	}
+
+	files := strings.Split(string(output), "\n")
+	for _, file := range files {
+		if file != "" {
+			// Filter to relevant source and config files
+			ext := strings.ToLower(filepath.Ext(file))
+			base := filepath.Base(file)
+			
+			// Check if it's a relevant file type
+			relevantExts := map[string]bool{
+				".go": true, ".js": true, ".ts": true, ".jsx": true, ".tsx": true,
+				".py": true, ".java": true, ".cpp": true, ".c": true, ".h": true,
+				".cs": true, ".rb": true, ".php": true, ".swift": true, ".kt": true,
+				".rs": true, ".scala": true, ".json": true, ".yaml": true, ".yml": true,
+				".toml": true, ".xml": true, ".md": true, ".txt": true, ".sql": true,
+				".sh": true, ".bash": true, ".zsh": true, ".fish": true,
+			}
+			
+			relevantFiles := map[string]bool{
+				"Makefile": true, "Dockerfile": true, "docker-compose.yml": true,
+				"package.json": true, "go.mod": true, "go.sum": true,
+				"requirements.txt": true, "Pipfile": true, "Cargo.toml": true,
+				"pom.xml": true, "build.gradle": true, ".gitignore": true,
+			}
+			
+			if relevantExts[ext] || relevantFiles[base] {
+				allFiles = append(allFiles, file)
+			}
+		}
+	}
+
+	return allFiles, nil
 }
 
 // buildFileTree builds the file tree structure

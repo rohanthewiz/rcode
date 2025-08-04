@@ -25,9 +25,19 @@ func DefaultRegistry() *Registry {
 	editTool := &EditFileTool{}
 	registry.Register(editTool.GetDefinition(), editTool)
 
+	// Register smart edit tool for token-efficient editing
+	// Provides multiple modes: patch, replace, sed, line with optimized responses
+	smartEditTool := &SmartEditTool{}
+	registry.Register(smartEditTool.GetDefinition(), smartEditTool)
+
 	// Register search tool
 	searchTool := &SearchTool{}
 	registry.Register(searchTool.GetDefinition(), searchTool)
+
+	// Register ripgrep tool for high-performance search
+	// Ripgrep offers better performance and token efficiency with multiple output modes
+	ripgrepTool := &RipgrepTool{}
+	registry.Register(ripgrepTool.GetDefinition(), ripgrepTool)
 
 	// Register directory operation tools
 	listDirTool := &ListDirTool{}
