@@ -59,6 +59,14 @@ function stopCurrentOperation() {
   // Reset UI state
   toggleStopButton(false);
   isProcessing = false;
+  isLLMProcessing = false; // Reset LLM processing state
+  toolsAnnounced = false; // Reset tools announced flag
+  
+  // Clear any pending thinking return timer
+  if (thinkingReturnTimer) {
+    clearTimeout(thinkingReturnTimer);
+    thinkingReturnTimer = null;
+  }
   
   // Remove any thinking indicators
   const thinkingIndicators = document.querySelectorAll('.message.thinking');
@@ -86,6 +94,12 @@ const maxReconnectAttempts = 5;
 const maxReconnectDelay = 30000; // Max 30 seconds
 let isManuallyDisconnected = false;
 let connectionStatus = 'disconnected'; // 'connected', 'disconnected', 'reconnecting'
+
+// LLM response state tracking
+let isLLMProcessing = false; // Track if LLM is still processing
+let thinkingReturnTimer = null; // Timer to return to thinking state after tool completion
+const THINKING_RETURN_DELAY = 2000; // 2 seconds delay before returning to thinking
+let toolsAnnounced = false; // Track if tools have been announced for this response
 
 console.log('Initializing JavaScript...');
 
@@ -320,21 +334,36 @@ function handleServerEvent(event) {
 
   if (event.type === 'message_start' && event.sessionId === currentSessionId) {
     console.log('Message streaming started');
-    // Don't remove thinking here - wait for content_start
+    isLLMProcessing = true; // LLM is now processing
+    toolsAnnounced = false; // Reset tools announced flag for new message
+    // Clear any pending thinking return timer
+    if (thinkingReturnTimer) {
+      clearTimeout(thinkingReturnTimer);
+      thinkingReturnTimer = null;
+    }
   } else if (event.type === 'content_start' && event.sessionId === currentSessionId) {
-    console.log('Content started (text or tool) - removing thinking indicators');
-    // Remove any thinking indicators when ANY content starts
-    const thinkingIndicators = document.querySelectorAll('.message.thinking');
-    console.log('Found thinking indicators:', thinkingIndicators.length);
-    thinkingIndicators.forEach(indicator => {
-      console.log('Removing thinking indicator:', indicator.id);
-      indicator.remove();
-    });
+    console.log('Content started (text or tool) - checking if tools announced:', toolsAnnounced);
+    // Only handle thinking indicator if NOT expecting tools
+    if (!toolsAnnounced) {
+      // This is pure text content, remove thinking indicator
+      const thinkingIndicator = document.querySelector('.message.thinking');
+      if (thinkingIndicator) {
+        console.log('Removing thinking indicator for pure text content');
+        thinkingIndicator.remove();
+      }
+    }
+    // If tools were announced, keep the thinking/tool execution indicator
   } else if (event.type === 'tool_use_start' && event.sessionId === currentSessionId) {
-    console.log('Tool use started');
-    // Remove any thinking indicators when tool use begins
-    const thinkingIndicators = document.querySelectorAll('.message.thinking');
-    thinkingIndicators.forEach(indicator => indicator.remove());
+    console.log('Tool use started - tools announced');
+    toolsAnnounced = true; // Mark that tools have been announced
+    // Transform thinking indicator to show tools are coming
+    const thinkingIndicator = document.querySelector('.message.thinking');
+    if (thinkingIndicator) {
+      const content = thinkingIndicator.querySelector('.message-content');
+      if (content) {
+        content.innerHTML = '<span class="tool-executing">🛠️ Executing tools...</span>';
+      }
+    }
   } else if (event.type === 'message_delta' && event.sessionId === currentSessionId) {
     console.log('Message delta received:', event.data.delta);
     // Create streaming message container if it doesn't exist
@@ -350,6 +379,18 @@ function handleServerEvent(event) {
     // Hide stop button when message completes
     toggleStopButton(false);
     isProcessing = false;
+    isLLMProcessing = false; // LLM has finished processing
+    toolsAnnounced = false; // Reset tools announced flag
+    
+    // Clear any pending thinking return timer
+    if (thinkingReturnTimer) {
+      clearTimeout(thinkingReturnTimer);
+      thinkingReturnTimer = null;
+    }
+    
+    // Remove any remaining thinking indicators
+    const thinkingIndicators = document.querySelectorAll('.message.thinking');
+    thinkingIndicators.forEach(indicator => indicator.remove());
   } else if (event.type === 'tool_execution_start' && event.sessionId === currentSessionId) {
     console.log('Tool execution started:', event.data);
     handleToolExecutionStart(event.data);
@@ -861,6 +902,7 @@ async function sendMessage() {
   // Show stop button and hide send button
   toggleStopButton(true);
   isProcessing = true;
+  isLLMProcessing = true; // Mark LLM as processing
 
   try {
     // Create abort controller for this request
@@ -888,6 +930,15 @@ async function sendMessage() {
     if (!response.ok) {
       // Remove thinking indicator only on error
       removeThinkingIndicator(thinkingId);
+      isLLMProcessing = false; // Reset LLM processing on error
+      toolsAnnounced = false; // Reset tools announced flag
+      
+      // Clear any pending thinking return timer
+      if (thinkingReturnTimer) {
+        clearTimeout(thinkingReturnTimer);
+        thinkingReturnTimer = null;
+      }
+      
       const errorText = await response.text();
       console.error('Response error:', errorText);
       
@@ -961,7 +1012,15 @@ async function sendMessage() {
     // Reset UI state
     toggleStopButton(false);
     isProcessing = false;
+    isLLMProcessing = false; // Reset LLM processing state
+    toolsAnnounced = false; // Reset tools announced flag
     currentRequestController = null;
+    
+    // Clear any pending thinking return timer
+    if (thinkingReturnTimer) {
+      clearTimeout(thinkingReturnTimer);
+      thinkingReturnTimer = null;
+    }
   }
 }
 
@@ -2108,6 +2167,12 @@ function updateWorkingIndicator() {
 function handleToolExecutionStart(data) {
   const messagesContainer = document.getElementById('messages');
   
+  // Clear any pending thinking return timer when new tool starts
+  if (thinkingReturnTimer) {
+    clearTimeout(thinkingReturnTimer);
+    thinkingReturnTimer = null;
+  }
+  
   // Transform thinking indicator into tool execution display instead of removing it
   const thinkingIndicator = messagesContainer.querySelector('.message.thinking');
   if (thinkingIndicator) {
@@ -2186,14 +2251,10 @@ function handleToolExecutionProgress(data) {
 
 // Handle tool execution complete event
 function handleToolExecutionComplete(data) {
-  // Check if all tools are complete
-  const remainingTools = document.querySelectorAll('.tool-item.executing');
-  if (remainingTools.length === 0) {
-    // Remove or update thinking indicator when all tools complete
-    const thinkingIndicator = document.querySelector('.message.thinking');
-    if (thinkingIndicator) {
-      thinkingIndicator.remove();
-    }
+  // Clear any existing thinking return timer
+  if (thinkingReturnTimer) {
+    clearTimeout(thinkingReturnTimer);
+    thinkingReturnTimer = null;
   }
   
   const toolInfo = activeToolExecutions.get(data.toolId);
@@ -2231,7 +2292,7 @@ function handleToolExecutionComplete(data) {
   // Update working indicator
   updateWorkingIndicator();
   
-  // If no more active tools, remove the container entirely
+  // If no more active tools, handle state transition
   if (activeToolExecutions.size === 0) {
     const toolsContainer = document.querySelector('.tool-execution-container.active');
     if (toolsContainer) {
@@ -2244,6 +2305,37 @@ function handleToolExecutionComplete(data) {
           toolsContainer.remove();
         }
       }, 500);
+    }
+    
+    // If LLM is still processing, return to thinking state after delay
+    if (isLLMProcessing) {
+      console.log('All tools complete, scheduling return to thinking state');
+      thinkingReturnTimer = setTimeout(() => {
+        // Only show thinking if LLM is still processing and no new tools/content started
+        if (isLLMProcessing && activeToolExecutions.size === 0 && !currentStreamingMessageDiv) {
+          console.log('Returning to thinking state after tool completion');
+          const messagesContainer = document.getElementById('messages');
+          
+          // Check if thinking indicator already exists
+          let thinkingIndicator = messagesContainer.querySelector('.message.thinking');
+          if (!thinkingIndicator) {
+            // Create new thinking indicator
+            const thinkingId = 'thinking-return-' + Date.now();
+            addThinkingIndicator(thinkingId);
+          } else {
+            // Update existing thinking indicator back to thinking state
+            const content = thinkingIndicator.querySelector('.message-content');
+            if (content) {
+              content.innerHTML = '<span class="thinking-dots">Thinking<span>.</span><span>.</span><span>.</span></span>';
+            }
+          }
+        }
+        thinkingReturnTimer = null;
+      }, THINKING_RETURN_DELAY);
+    } else {
+      // LLM not processing, remove any remaining thinking indicators
+      const thinkingIndicators = document.querySelectorAll('.message.thinking');
+      thinkingIndicators.forEach(indicator => indicator.remove());
     }
   }
 }
