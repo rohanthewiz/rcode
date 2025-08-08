@@ -5,6 +5,79 @@ let editor = null;
 let pendingNewSession = false; // Track if we're waiting to create a new session
 let hasReceivedFirstResponse = false; // Track first response per message
 let fileRefreshDelay = 9000 // Warn: must be greater than the cacheTTL of the backend which is currently 7s
+let currentRequestController = null; // AbortController for current request
+let isProcessing = false; // Track if currently processing a request
+
+// Function to toggle between Send and Stop buttons
+function toggleStopButton(show) {
+  const sendBtn = document.getElementById('send-btn');
+  const stopBtn = document.getElementById('stop-btn');
+  const createPlanBtn = document.getElementById('create-plan-btn');
+  
+  if (!stopBtn) {
+    // Create stop button if it doesn't exist
+    const stopButton = document.createElement('button');
+    stopButton.id = 'stop-btn';
+    stopButton.className = 'btn-warning';
+    stopButton.textContent = 'Stop';
+    stopButton.style.display = 'none';
+    stopButton.onclick = stopCurrentOperation;
+    
+    // Insert stop button after send button
+    if (sendBtn) {
+      sendBtn.parentNode.insertBefore(stopButton, sendBtn.nextSibling);
+    }
+  }
+  
+  const stopBtnElement = document.getElementById('stop-btn');
+  if (show) {
+    if (sendBtn) sendBtn.style.display = 'none';
+    if (createPlanBtn) createPlanBtn.style.display = 'none';
+    if (stopBtnElement) stopBtnElement.style.display = 'inline-block';
+  } else {
+    if (sendBtn) sendBtn.style.display = 'inline-block';
+    if (stopBtnElement) stopBtnElement.style.display = 'none';
+    // Show create plan button if in plan mode
+    const planModeSwitch = document.getElementById('plan-mode-switch');
+    if (planModeSwitch && planModeSwitch.checked && createPlanBtn) {
+      createPlanBtn.style.display = 'inline-block';
+      if (sendBtn) sendBtn.style.display = 'none';
+    }
+  }
+}
+
+// Function to stop the current operation
+function stopCurrentOperation() {
+  console.log('Stopping current operation...');
+  
+  // Abort the current request if any
+  if (currentRequestController) {
+    currentRequestController.abort();
+    currentRequestController = null;
+  }
+  
+  // Reset UI state
+  toggleStopButton(false);
+  isProcessing = false;
+  
+  // Remove any thinking indicators
+  const thinkingIndicators = document.querySelectorAll('.message.thinking');
+  thinkingIndicators.forEach(indicator => indicator.remove());
+  
+  // Mark any executing tools as cancelled
+  const executingTools = document.querySelectorAll('.tool-item.executing');
+  executingTools.forEach(tool => {
+    tool.classList.remove('executing');
+    tool.classList.add('cancelled');
+    const statusIcon = tool.querySelector('.tool-status-icon');
+    if (statusIcon) statusIcon.textContent = '⚠️';
+    const metrics = tool.querySelector('.tool-metrics');
+    if (metrics) metrics.textContent = 'Cancelled';
+  });
+  
+  // Clear active tool executions
+  activeToolExecutions.clear();
+}
 
 // SSE connection tracking
 let reconnectAttempts = 0;
@@ -274,6 +347,9 @@ function handleServerEvent(event) {
     console.log('Message streaming stopped');
     // Finalize streaming message
     finalizeStreamingMessage();
+    // Hide stop button when message completes
+    toggleStopButton(false);
+    isProcessing = false;
   } else if (event.type === 'tool_execution_start' && event.sessionId === currentSessionId) {
     console.log('Tool execution started:', event.data);
     handleToolExecutionStart(event.data);
@@ -538,7 +614,9 @@ function addMessageToUI(message) {
     let modelName = 'Assistant';
     const modelId = message.model || '';
 
-    if (modelId.includes('opus-4')) {
+    if (modelId.includes('opus-4-1')) {
+      modelName = 'Claude Opus 4.1';
+    } else if (modelId.includes('opus-4')) {
       modelName = 'Claude Opus 4';
     } else if (modelId.includes('sonnet-4')) {
       modelName = 'Claude Sonnet 4';
@@ -552,6 +630,7 @@ function addMessageToUI(message) {
       modelName = 'Claude 3 Sonnet';
     }
     header.textContent = modelName;
+    console.log('Model name:', modelName);
   }
 
   const content = document.createElement('div');
@@ -595,7 +674,9 @@ function addThinkingIndicator(id) {
   let modelName = 'Assistant';
   if (modelSelector) {
     const value = modelSelector.value;
-    if (value.includes('opus-4')) {
+    if (value.includes('opus-4-1')) {
+      modelName = 'Claude Opus 4.1';
+    } else if (value.includes('opus-4')) {
       modelName = 'Claude Opus 4';
     } else if (value.includes('sonnet-4')) {
       modelName = 'Claude Sonnet 4';
@@ -777,7 +858,14 @@ async function sendMessage() {
   const thinkingId = 'thinking-' + Date.now();
   addThinkingIndicator(thinkingId);
 
+  // Show stop button and hide send button
+  toggleStopButton(true);
+  isProcessing = true;
+
   try {
+    // Create abort controller for this request
+    currentRequestController = new AbortController();
+
     // Get selected model
     const modelSelector = document.getElementById('model-selector');
     const selectedModel = modelSelector ? modelSelector.value : 'claude-sonnet-4-20250514';
@@ -789,7 +877,8 @@ async function sendMessage() {
       body: JSON.stringify({
         content: content,
         model: selectedModel
-      })
+      }),
+      signal: currentRequestController.signal
     });
 
     console.log('Response status:', response.status);
@@ -856,8 +945,23 @@ async function sendMessage() {
   } catch (error) {
     // Remove thinking indicator on error
     removeThinkingIndicator(thinkingId);
-    console.error('Failed to send message:', error);
-    alert('Failed to send message: ' + error.message);
+    
+    // Only show error if not aborted by user
+    if (error.name !== 'AbortError') {
+      console.error('Failed to send message:', error);
+      alert('Failed to send message: ' + error.message);
+    } else {
+      console.log('Request cancelled by user');
+      addMessageToUI({
+        role: 'assistant',
+        content: '⚠️ Operation cancelled by user'
+      });
+    }
+  } finally {
+    // Reset UI state
+    toggleStopButton(false);
+    isProcessing = false;
+    currentRequestController = null;
   }
 }
 
@@ -1971,13 +2075,48 @@ window.loadSessionTools = loadSessionTools;
 // Active tool executions tracker
 const activeToolExecutions = new Map();
 
+// Function to update working indicator
+function updateWorkingIndicator() {
+  const toolCount = activeToolExecutions.size;
+  let indicator = document.getElementById('working-indicator');
+  
+  if (toolCount > 0) {
+    // Create indicator if it doesn't exist
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.id = 'working-indicator';
+      indicator.className = 'working-indicator';
+      document.body.appendChild(indicator);
+    }
+    
+    // Update content with animated gear and count
+    indicator.innerHTML = `
+      <span class="working-text">Working</span>
+      <span class="gear-icon rotating">⚙️</span>
+      <span class="tool-count">(${toolCount} tool${toolCount !== 1 ? 's' : ''})</span>
+    `;
+    indicator.style.display = 'flex';
+  } else {
+    // Hide indicator when no tools are running
+    if (indicator) {
+      indicator.style.display = 'none';
+    }
+  }
+}
+
 // Handle tool execution start event
 function handleToolExecutionStart(data) {
   const messagesContainer = document.getElementById('messages');
   
-  // Remove any thinking indicators
-  const thinkingIndicators = document.querySelectorAll('.message.thinking');
-  thinkingIndicators.forEach(indicator => indicator.remove());
+  // Transform thinking indicator into tool execution display instead of removing it
+  const thinkingIndicator = messagesContainer.querySelector('.message.thinking');
+  if (thinkingIndicator) {
+    // Keep the indicator but change its content to show tool execution
+    const content = thinkingIndicator.querySelector('.message-content');
+    if (content) {
+      content.innerHTML = '<span class="tool-executing">🛠️ Executing tools...</span>';
+    }
+  }
   
   // Find or create the tool execution container
   let toolsContainer = document.querySelector('.tool-execution-container.active');
@@ -2018,6 +2157,9 @@ function handleToolExecutionStart(data) {
     element: toolItem
   });
   
+  // Update working indicator
+  updateWorkingIndicator();
+  
   // Scroll to bottom
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
 }
@@ -2044,6 +2186,16 @@ function handleToolExecutionProgress(data) {
 
 // Handle tool execution complete event
 function handleToolExecutionComplete(data) {
+  // Check if all tools are complete
+  const remainingTools = document.querySelectorAll('.tool-item.executing');
+  if (remainingTools.length === 0) {
+    // Remove or update thinking indicator when all tools complete
+    const thinkingIndicator = document.querySelector('.message.thinking');
+    if (thinkingIndicator) {
+      thinkingIndicator.remove();
+    }
+  }
+  
   const toolInfo = activeToolExecutions.get(data.toolId);
   if (!toolInfo) return;
   
@@ -2075,6 +2227,9 @@ function handleToolExecutionComplete(data) {
   
   // Remove from active executions
   activeToolExecutions.delete(data.toolId);
+  
+  // Update working indicator
+  updateWorkingIndicator();
   
   // If no more active tools, remove the container entirely
   if (activeToolExecutions.size === 0) {
@@ -2150,10 +2305,25 @@ function showPermissionModal(data) {
   } else {
     // Fallback to showing raw parameters
     const paramList = document.createElement('ul');
-    for (const [key, value] of Object.entries(data.parameters || {})) {
-      if (!key.startsWith('_')) { // Skip internal parameters
+    const params = data.parameters || {};
+    const paramKeys = Object.keys(params).filter(k => !k.startsWith('_'));
+    
+    if (paramKeys.length === 0) {
+      // No parameters to display
+      const li = document.createElement('li');
+      li.innerHTML = '<em>No parameters provided (this might be an error)</em>';
+      li.style.color = 'var(--warning)';
+      paramList.appendChild(li);
+    } else {
+      for (const key of paramKeys) {
         const li = document.createElement('li');
-        li.innerHTML = `<strong>${key}:</strong> ${JSON.stringify(value)}`;
+        const value = params[key];
+        // Truncate long values for display
+        let displayValue = JSON.stringify(value);
+        if (displayValue.length > 100) {
+          displayValue = displayValue.substring(0, 100) + '...';
+        }
+        li.innerHTML = `<strong>${key}:</strong> ${displayValue}`;
         paramList.appendChild(li);
       }
     }

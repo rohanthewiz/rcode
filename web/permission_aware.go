@@ -73,6 +73,12 @@ func (e *PermissionAwareExecutor) Execute(toolUse tools.ToolUse) (*tools.ToolRes
 				}
 			}
 
+			// Log the parameters being sent for debugging
+			logger.Debug("Asking permission for tool",
+				"tool", toolUse.Name,
+				"originalParams", toolUse.Input,
+				"cleanParams", cleanParams)
+
 			approved, err := e.onAskHandler(sessionID, toolUse.Name, cleanParams)
 			if err != nil {
 				return &tools.ToolResult{
@@ -213,8 +219,14 @@ func generateDiffPreview(toolName string, params map[string]interface{}) (*diff.
 		return nil, serr.New("diff service not initialized")
 	}
 
+	// Log the parameters for debugging
+	logger.Debug("Generating diff preview", "tool", toolName, "params", params)
+
 	path, ok := tools.GetString(params, "path")
 	if !ok || path == "" {
+		// If path is missing, we can't generate a diff preview
+		// This might happen if the tool hasn't been fully configured yet
+		logger.Warn("Cannot generate diff preview: path parameter is missing", "tool", toolName)
 		return nil, serr.New("path parameter is required")
 	}
 

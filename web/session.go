@@ -24,7 +24,7 @@ type Session = db.Session
 // and returns their combined content with appropriate headers
 func readClaudeMDFiles() string {
 	var result strings.Builder
-	
+
 	// Read global CLAUDE.md from $HOME/.claude/
 	homeDir, err := os.UserHomeDir()
 	if err == nil {
@@ -39,7 +39,7 @@ func readClaudeMDFiles() string {
 			logger.LogErr(err, "failed to read global CLAUDE.md", "path", globalPath)
 		}
 	}
-	
+
 	// Read project CLAUDE.md from current working directory
 	workDir, err := os.Getwd()
 	if err == nil {
@@ -54,7 +54,7 @@ func readClaudeMDFiles() string {
 			logger.LogErr(err, "failed to read project CLAUDE.md", "path", projectPath)
 		}
 	}
-	
+
 	return result.String()
 }
 
@@ -130,12 +130,12 @@ func createSession(req *CreateSessionRequest) (*Session, error) {
 
 	// Build the initial message with all context
 	var initialContent strings.Builder
-	
+
 	// Add initial prompts from database
 	if len(session.InitialPrompts) > 0 {
 		initialContent.WriteString(strings.Join(session.InitialPrompts, "\n"))
 	}
-	
+
 	// Add CLAUDE.md files content
 	claudeMDContent := readClaudeMDFiles()
 	if claudeMDContent != "" {
@@ -144,7 +144,7 @@ func createSession(req *CreateSessionRequest) (*Session, error) {
 		}
 		initialContent.WriteString(claudeMDContent)
 	}
-	
+
 	// Add context information if available
 	contextInfo := getContextPrompt()
 	if contextInfo != "" {
@@ -153,7 +153,7 @@ func createSession(req *CreateSessionRequest) (*Session, error) {
 		}
 		initialContent.WriteString(contextInfo)
 	}
-	
+
 	// Add the combined content as the first message if we have any content
 	if initialContent.Len() > 0 {
 		err = database.AddMessage(session.ID, providers.ChatMessage{
@@ -369,14 +369,15 @@ func sendMessageHandler(c rweb.Context) error {
 		model = "claude-sonnet-4-20250514"
 	}
 
-	logger.Info("Using model", "model", model)
+	logger.Info("Requesting model", "model", model)
 
 	// Get available tools
 	availableTools := toolRegistry.GetTools()
 
-	// Prepare request with tools
-	systemPrompt := "You are Claude Code, Anthropic's official CLI for Claude."
+	// System prompt cannot be changed!
+	const systemPrompt = "You are Claude Code, Anthropic's official CLI for Claude."
 
+	// Prepare request with tools
 	request := providers.CreateMessageRequest{
 		Model:     model,
 		Messages:  providers.ConvertToAPIMessages(messages),
@@ -505,23 +506,24 @@ func sendMessageHandler(c rweb.Context) error {
 				// Finalize tool use input if needed
 				if len(currentToolUses) > 0 {
 					if toolUse, ok := currentToolUses[len(currentToolUses)-1].(map[string]interface{}); ok {
-						if inputJSON, ok := toolUse["input_json"].(string); ok {
+						if inputJSON, ok := toolUse["input_json"].(string); ok && inputJSON != "" {
 							// Parse the accumulated JSON
 							var input map[string]interface{}
 							if err := json.Unmarshal([]byte(inputJSON), &input); err != nil {
 								logger.LogErr(err, "Failed to parse tool input JSON", "json", inputJSON)
-								// Set empty input on error
-								toolUse["input"] = make(map[string]interface{})
+								// Mark tool as having invalid input
+								toolUse["input"] = nil
+								toolUse["parse_error"] = err.Error()
 							} else {
 								toolUse["input"] = input
 								logger.Info("Tool input parsed", "toolName", toolUse["name"], "input", input)
 							}
 							delete(toolUse, "input_json")
 						} else {
-							// No input_json, ensure input is initialized
-							if _, hasInput := toolUse["input"]; !hasInput {
-								toolUse["input"] = make(map[string]interface{})
-							}
+							// No input_json accumulated - this shouldn't happen in normal flow
+							// Mark as having no input rather than empty map
+							logger.Warn("Tool use completed with no input JSON", "toolName", toolUse["name"])
+							toolUse["input"] = nil
 						}
 					}
 				}
@@ -568,11 +570,81 @@ func sendMessageHandler(c rweb.Context) error {
 				for _, toolUseData := range currentToolUses {
 					toolUseMap := toolUseData.(map[string]interface{})
 
+					// Check if tool has valid input before attempting execution
+					inputRaw, hasInput := toolUseMap["input"]
+					if !hasInput || inputRaw == nil {
+						// Tool has no valid input - likely due to parsing error
+						toolName := ""
+						if name, ok := toolUseMap["name"].(string); ok {
+							toolName = name
+						}
+						toolID := ""
+						if id, ok := toolUseMap["id"].(string); ok {
+							toolID = id
+						}
+
+						// Log the error
+						parseError := "No input parameters provided"
+						if errMsg, ok := toolUseMap["parse_error"].(string); ok {
+							parseError = errMsg
+						}
+						logger.Error("Skipping tool execution due to invalid input",
+							"tool", toolName, "error", parseError)
+
+						// Broadcast tool execution failure
+						BroadcastToolExecutionStart(sessionID, toolID, toolName)
+						metrics := map[string]interface{}{
+							"error": parseError,
+						}
+						summary := fmt.Sprintf("❌ Failed: %s", parseError)
+						BroadcastToolExecutionComplete(sessionID, toolName, toolID, "failed", summary, 0, metrics)
+
+						// Add error result
+						toolResults = append(toolResults, tools.ToolResult{
+							Type:      "tool_result",
+							ToolUseID: toolID,
+							Content:   fmt.Sprintf("Tool execution failed: %s", parseError),
+						})
+						continue
+					}
+
+					// Cast input to map
+					inputMap, ok := inputRaw.(map[string]interface{})
+					if !ok {
+						// Input exists but is not a map - shouldn't happen but handle it
+						toolName := ""
+						if name, ok := toolUseMap["name"].(string); ok {
+							toolName = name
+						}
+						toolID := ""
+						if id, ok := toolUseMap["id"].(string); ok {
+							toolID = id
+						}
+
+						logger.Error("Tool input is not a map", "tool", toolName, "inputType", fmt.Sprintf("%T", inputRaw))
+
+						// Broadcast tool execution failure
+						BroadcastToolExecutionStart(sessionID, toolID, toolName)
+						metrics := map[string]interface{}{
+							"error": "Invalid input format",
+						}
+						summary := "❌ Failed: Invalid input format"
+						BroadcastToolExecutionComplete(sessionID, toolName, toolID, "failed", summary, 0, metrics)
+
+						// Add error result
+						toolResults = append(toolResults, tools.ToolResult{
+							Type:      "tool_result",
+							ToolUseID: toolID,
+							Content:   "Tool execution failed: Invalid input format",
+						})
+						continue
+					}
+
 					// Create tool use struct
 					toolUse := tools.ToolUse{
 						ID:    toolUseMap["id"].(string),
 						Name:  toolUseMap["name"].(string),
-						Input: toolUseMap["input"].(map[string]interface{}),
+						Input: inputMap,
 					}
 
 					logger.Info("Executing tool", "name", toolUse.Name)

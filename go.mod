@@ -7,7 +7,7 @@ toolchain go1.24.4
 require (
 	github.com/marcboeker/go-duckdb/v2 v2.3.3
 	github.com/rohanthewiz/element v0.5.4
-	github.com/rohanthewiz/logger v1.2.16
+	github.com/rohanthewiz/logger v1.2.20
 	github.com/rohanthewiz/rweb v0.1.20
 	github.com/rohanthewiz/serr v1.2.16
 )

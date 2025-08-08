@@ -161,7 +161,8 @@ func generateMainUI(isAuthenticated bool) string {
 									b.Div("class", "model-selector-container").R(
 										b.Label("for", "model-selector", "class", "model-label").T("Model:"),
 										b.Select("id", "model-selector", "class", "model-selector").R(
-											b.Option("value", "claude-opus-4-20250514").T("Claude Opus 4 (Latest)"),
+											b.Option("value", "claude-opus-4-1-20250805").T("Claude Opus 4.1 (Latest)"),
+											b.Option("value", "claude-opus-4-20250514").T("Claude Opus 4"),
 											b.Option("value", "claude-sonnet-4-20250514").T("Claude Sonnet 4 (Latest)"),
 											b.Option("value", "claude-3-5-sonnet-20241022").T("Claude 3.5 Sonnet"),
 											b.Option("value", "claude-3-opus-20240229").T("Claude 3 Opus"),

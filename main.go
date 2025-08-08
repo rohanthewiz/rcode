@@ -19,6 +19,8 @@ func main() {
 	config.Initialize()
 	cfg := config.Get()
 
+	logger.SetLogLevel("debug")
+
 	// Log API endpoint configuration
 	if cfg.AnthropicAPIURL != "https://api.anthropic.com/v1/messages" {
 		logger.Info("Using proxy for Anthropic API", "url", cfg.AnthropicAPIURL)
@@ -106,7 +108,7 @@ func main() {
 			log.Printf("Starting RCode server on :8000")
 			err = s.Run()
 		}
-		
+
 		if err != nil {
 			logger.Err(err, "where", "at server exit")
 		}
