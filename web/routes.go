@@ -44,8 +44,9 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/session/:id/tools", getSessionToolsHandler)
 	s.Put("/api/session/:id/tools/:tool", updateToolPermissionHandler)
 
-	// Permission response endpoint
+	// Permission response endpoints
 	s.Post("/api/permission-response", handlePermissionResponseHandler)
+	s.Post("/api/permission-abort", handlePermissionAbortHandler)
 
 	// Context management endpoints
 	s.Get("/api/context", getProjectContextHandler)
