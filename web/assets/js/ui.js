@@ -1454,6 +1454,9 @@ document.addEventListener('DOMContentLoaded', function() {
   
   // Initialize Usage Panel
   initializeUsagePanel();
+  
+  // Load initial usage data (global and daily) regardless of session
+  loadGlobalUsage();
 
   // Initialize model selector
   const modelSelector = document.getElementById('model-selector');
