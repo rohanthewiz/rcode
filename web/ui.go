@@ -315,11 +315,7 @@ func generateMainUI(isAuthenticated bool) string {
 					b.Div("class", "modal-footer permission-actions").R(
 						b.Button("id", "permission-deny", "class", "btn-secondary").T("Deny"),
 						b.Button("id", "permission-approve", "class", "btn-primary").T("Approve"),
-					),
-					b.Div("class", "permission-timeout").R(
-						b.Span().T("This request will timeout in "),
-						b.Span("id", "permission-timeout-seconds").T("30"),
-						b.T(" seconds"),
+						b.Button("id", "permission-abort", "class", "btn-danger", "title", "Completely stop the current operation").T("ABORT"),
 					),
 				),
 			),

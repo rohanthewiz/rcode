@@ -38,7 +38,7 @@ type PermissionManager struct {
 }
 
 // Global permission manager instance
-var permissionManager = NewPermissionManager(30 * time.Second)
+var permissionManager = NewPermissionManager(900 * time.Second) // 15mins so the llm isn't totally left hanging
 
 // NewPermissionManager creates a new permission manager
 func NewPermissionManager(timeout time.Duration) *PermissionManager {
@@ -119,10 +119,10 @@ func (pm *PermissionManager) WaitForResponse(requestID string) (PermissionRespon
 		pm.removeRequest(requestID)
 		return response, response.Error
 
-	case <-time.After(pm.timeout):
-		// Timeout occurred
-		pm.removeRequest(requestID)
-		return PermissionResponse{}, serr.New("permission request timed out")
+		// case <-time.After(pm.timeout):
+		// 	// Timeout occurred
+		// 	pm.removeRequest(requestID)
+		// 	return PermissionResponse{}, serr.New("permission request timed out")
 	}
 }
 

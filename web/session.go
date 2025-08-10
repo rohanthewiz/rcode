@@ -674,8 +674,36 @@ func sendMessageHandler(c rweb.Context) error {
 						metrics["error"] = err.Error()
 					}
 
-					// Create tool summary
+					// Create tool summary (without diff for edit tools)
 					summary := createToolSummary(toolUse.Name, toolUse.Input, result.Content, err)
+
+					// For edit tools, also broadcast the diff separately
+					// TODO validate this block
+					if (toolUse.Name == "edit_file" || toolUse.Name == "smart_edit") && err == nil {
+						if path, ok := tools.GetString(toolUse.Input, "path"); ok {
+							var diffContent string
+							if toolUse.Name == "edit_file" {
+								diffContent = generateEditDiffSummary(toolUse.Input, result.Content)
+							} else if toolUse.Name == "smart_edit" {
+								// Always generate diff for smart_edit for UI visibility
+								// First check if response already contains a diff (when response_mode is "diff")
+								responseMode, _ := tools.GetString(toolUse.Input, "response_mode")
+								if responseMode == "diff" { // TODO is this ever firing?
+									diffContent = extractDiffFromResult(result.Content)
+								}
+
+								// If no diff was extracted, generate one from the operation
+								if diffContent == "" {
+									diffContent = generateSmartEditDiff(toolUse.Input, result.Content)
+								}
+							}
+
+							if diffContent != "" {
+								// Broadcast diff as a separate event
+								BroadcastFileDiff(sessionID, path, toolUse.Name, diffContent)
+							}
+						}
+					}
 
 					// Broadcast tool execution complete
 					BroadcastToolExecutionComplete(sessionID, toolUse.Name, toolUse.ID, status, summary, int64(durationMs), metrics)
@@ -806,6 +834,7 @@ func createToolSummary(toolName string, input map[string]interface{}, result str
 
 	case "edit_file":
 		if path, ok := tools.GetString(input, "path"); ok {
+			// Simple summary since diff will be shown separately
 			if startLine, ok := tools.GetInt(input, "start_line"); ok {
 				if endLine, ok := tools.GetInt(input, "end_line"); ok && endLine > startLine {
 					return fmt.Sprintf("✓ Edited %s (lines %d-%d)", filepath.Base(path), startLine, endLine)
@@ -903,6 +932,28 @@ func createToolSummary(toolName string, input map[string]interface{}, result str
 		// Count branches
 		branches := strings.Count(result, "\n") + 1
 		return fmt.Sprintf("✓ Git branches: %d total", branches)
+
+	case "smart_edit":
+		if path, ok := tools.GetString(input, "path"); ok {
+			// Check response mode
+			responseMode, _ := tools.GetString(input, "response_mode")
+
+			// For diff mode, include the diff in the summary
+			// TODO - Is this ever firing?
+			if responseMode == "diff" && strings.Contains(result, "@@") {
+				diffSummary := extractDiffFromResult(result)
+				if diffSummary != "" {
+					return fmt.Sprintf("✓ Edited %s\n%s", filepath.Base(path), diffSummary)
+				}
+			}
+
+			// Extract statistics from result if available
+			if strings.Contains(result, "lines modified") || strings.Contains(result, "+") || strings.Contains(result, "-") {
+				return fmt.Sprintf("✓ Edited %s: %s", filepath.Base(path), extractEditStats(result))
+			}
+
+			return fmt.Sprintf("✓ Edited %s", filepath.Base(path))
+		}
 	}
 
 	// Default summary
@@ -931,4 +982,245 @@ func getSessionMessagesHandler(c rweb.Context) error {
 
 	logger.F("Found session with messages: %d", len(messages))
 	return c.WriteJSON(messages)
+}
+
+// generateEditDiffSummary generates a smart diff summary for edit operations
+// Returns a diff display limited to 80 lines for UI readability
+// TODO - Let's make sure this gets used somehow
+func generateEditDiffSummary(input map[string]interface{}, result string) string {
+	// Check if we have before/after content in the result
+	if !strings.Contains(result, "--- Before:") && !strings.Contains(result, "+++ After:") {
+		return ""
+	}
+
+	// Parse the result to extract the diff
+	lines := strings.Split(result, "\n")
+	var diffLines []string
+	lineCount := 0
+	maxLines := 80
+	inBeforeSection := false
+	inAfterSection := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Check for section markers
+		if strings.HasPrefix(line, "--- Before:") {
+			inBeforeSection = true
+			inAfterSection = false
+			if lineCount < maxLines {
+				diffLines = append(diffLines, line)
+				lineCount++
+			}
+			continue
+		} else if strings.HasPrefix(line, "+++ After:") {
+			inBeforeSection = false
+			inAfterSection = true
+			if lineCount < maxLines {
+				diffLines = append(diffLines, line)
+				lineCount++
+			}
+			continue
+		} else if strings.HasPrefix(line, "File line count:") || strings.HasPrefix(line, "Lines ") {
+			// Include summary lines
+			if lineCount < maxLines {
+				diffLines = append(diffLines, line)
+				lineCount++
+			}
+			continue
+		}
+
+		// Include numbered lines from before/after sections
+		if (inBeforeSection || inAfterSection) && trimmed != "" {
+			// Check if line starts with a number followed by colon (line number format)
+			if len(trimmed) > 0 && strings.Contains(trimmed, ":") {
+				parts := strings.SplitN(trimmed, ":", 2)
+				if len(parts) == 2 {
+					// Format as diff line
+					prefix := "-"
+					if inAfterSection {
+						prefix = "+"
+					}
+					if lineCount < maxLines {
+						diffLines = append(diffLines, fmt.Sprintf("%s %s", prefix, strings.TrimSpace(parts[1])))
+						lineCount++
+					}
+				}
+			} else if strings.HasPrefix(trimmed, "+") || strings.HasPrefix(trimmed, "(lines deleted)") {
+				// Handle insertion format or deletion message
+				if lineCount < maxLines {
+					diffLines = append(diffLines, line)
+					lineCount++
+				}
+			}
+		}
+
+		// Stop if we've reached the limit
+		if lineCount >= maxLines {
+			diffLines = append(diffLines, "... (diff truncated at 80 lines)")
+			break
+		}
+	}
+
+	if len(diffLines) > 0 {
+		return strings.Join(diffLines, "\n")
+	}
+
+	return ""
+}
+
+// extractDiffFromResult extracts diff content from smart_edit tool result
+// Limited to 80 lines for UI display
+func extractDiffFromResult(result string) string {
+	lines := strings.Split(result, "\n")
+	var diffLines []string
+	lineCount := 0
+	maxLines := 80
+
+	for _, line := range lines {
+		// Look for diff-like lines
+		if strings.HasPrefix(line, "@@") ||
+			strings.HasPrefix(line, "-") ||
+			strings.HasPrefix(line, "+") ||
+			strings.Contains(line, "File:") {
+			if lineCount < maxLines {
+				diffLines = append(diffLines, line)
+				lineCount++
+			} else {
+				diffLines = append(diffLines, "... (diff truncated at 80 lines)")
+				break
+			}
+		}
+	}
+
+	return strings.Join(diffLines, "\n")
+}
+
+// generateSmartEditDiff generates a diff display for smart_edit operations
+// when the response doesn't already contain a diff (e.g., in minimal mode)
+func generateSmartEditDiff(input map[string]interface{}, result string) string {
+	// Extract operation details from input
+	mode, _ := tools.GetString(input, "mode")
+	path, _ := tools.GetString(input, "path")
+
+	var diffContent strings.Builder
+	diffContent.WriteString(fmt.Sprintf("=== File: %s ===\n", path))
+	diffContent.WriteString(fmt.Sprintf("Mode: %s\n", mode))
+
+	switch mode {
+	case "replace":
+		// For replace mode, show the pattern and replacement
+		pattern, _ := tools.GetString(input, "pattern")
+		replacement, _ := tools.GetString(input, "replacement")
+		replaceAll := true // default
+		if val, ok := input["replace_all"]; ok {
+			if b, ok := val.(bool); ok {
+				replaceAll = b
+			}
+		}
+
+		diffContent.WriteString("\n--- Pattern to replace:\n")
+		for _, line := range strings.Split(pattern, "\n") {
+			diffContent.WriteString(fmt.Sprintf("- %s\n", line))
+		}
+
+		diffContent.WriteString("\n+++ Replacement:\n")
+		for _, line := range strings.Split(replacement, "\n") {
+			diffContent.WriteString(fmt.Sprintf("+ %s\n", line))
+		}
+
+		if replaceAll {
+			diffContent.WriteString("\n(All occurrences replaced)\n")
+		} else {
+			diffContent.WriteString("\n(First occurrence replaced)\n")
+		}
+
+	case "line":
+		// For line mode, show the operation details
+		operation, _ := tools.GetString(input, "operation")
+		startLine, _ := tools.GetInt(input, "start_line")
+		endLine, _ := tools.GetInt(input, "end_line")
+		newContent, _ := tools.GetString(input, "new_content")
+
+		diffContent.WriteString(fmt.Sprintf("\nOperation: %s\n", operation))
+
+		if endLine > 0 && endLine != startLine {
+			diffContent.WriteString(fmt.Sprintf("Lines: %d-%d\n", startLine, endLine))
+		} else if startLine > 0 {
+			diffContent.WriteString(fmt.Sprintf("Line: %d\n", startLine))
+		}
+
+		if operation == "delete" {
+			diffContent.WriteString("\n--- Lines deleted\n")
+		} else if newContent != "" {
+			diffContent.WriteString("\n+++ New content:\n")
+			for _, line := range strings.Split(newContent, "\n") {
+				diffContent.WriteString(fmt.Sprintf("+ %s\n", line))
+			}
+		}
+
+	case "sed":
+		// For sed mode, show the commands
+		if commandsRaw, ok := input["commands"]; ok {
+			if commands, ok := commandsRaw.([]interface{}); ok {
+				diffContent.WriteString("\nSed commands:\n")
+				for _, cmdRaw := range commands {
+					if cmd, ok := cmdRaw.(string); ok {
+						diffContent.WriteString(fmt.Sprintf("  %s\n", cmd))
+					}
+				}
+			}
+		}
+
+	case "patch":
+		// For patch mode, the diff is already in the input
+		diff, _ := tools.GetString(input, "diff")
+		if diff != "" {
+			diffContent.WriteString("\n")
+			diffContent.WriteString(diff)
+		}
+	}
+
+	// Add result summary if available
+	if result != "" && !strings.Contains(result, "@@") {
+		diffContent.WriteString(fmt.Sprintf("\nResult: %s\n", result))
+	}
+
+	return diffContent.String()
+}
+
+// min returns the minimum of two integers
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// extractEditStats extracts statistics from edit tool results
+func extractEditStats(result string) string {
+	// Look for common statistics patterns
+	if strings.Contains(result, "lines modified") {
+		// Extract the stats line
+		lines := strings.Split(result, "\n")
+		for _, line := range lines {
+			if strings.Contains(line, "lines modified") ||
+				strings.Contains(line, "Lines added") ||
+				strings.Contains(line, "Lines deleted") {
+				return strings.TrimSpace(line)
+			}
+		}
+	}
+
+	// Look for simple +/- stats
+	if strings.Contains(result, "+") && strings.Contains(result, "-") {
+		// Extract lines with + and - prefixes
+		added := strings.Count(result, "\n+")
+		deleted := strings.Count(result, "\n-")
+		if added > 0 || deleted > 0 {
+			return fmt.Sprintf("+%d/-%d lines", added, deleted)
+		}
+	}
+
+	return ""
 }

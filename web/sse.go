@@ -327,3 +327,19 @@ func BroadcastPermissionTimeout(sessionID string, requestID string) {
 	}
 	sseHub.Broadcast(event)
 }
+
+// BroadcastFileDiff broadcasts file diff content for display in UI
+func BroadcastFileDiff(sessionID string, filePath string, toolName string, diffContent string) {
+	event := SSEEvent{
+		Type:      "file_diff",
+		SessionId: sessionID,
+		Data: map[string]interface{}{
+			"filePath":  filePath,
+			"toolName":  toolName,
+			"diff":      diffContent,
+			"timestamp": time.Now().Unix(),
+		},
+	}
+	logger.Info("BroadcastFileDiff", "sessionID", sessionID, "filePath", filePath, "toolName", toolName)
+	sseHub.Broadcast(event)
+}

@@ -305,7 +305,7 @@ function handleServerEvent(event) {
   console.log('Global currentSessionId:', window.currentSessionId);
   
   // Special logging for permission events
-  if (event.type === 'permission_request' || event.type === 'permission_timeout') {
+  if (event.type === 'permission_request') {
     console.warn('PERMISSION EVENT RECEIVED:', {
       type: event.type,
       eventSessionId: event.sessionId,
@@ -470,10 +470,10 @@ function handleServerEvent(event) {
     } else {
       console.warn('Permission request for different session, ignoring');
     }
-  } else if (event.type === 'permission_timeout' && event.sessionId === currentSessionId) {
-    // Handle permission timeout
-    console.log('Permission request timed out:', event.data);
-    handlePermissionTimeout(event.data.requestId);
+  } else if (event.type === 'file_diff' && event.sessionId === currentSessionId) {
+    // Handle file diff display
+    console.log('File diff received:', event.data);
+    displayFileDiff(event.data);
   }
 }
 
@@ -602,7 +602,24 @@ function addToolUsageSummaryToUI(toolData) {
   const toolsList = toolsSummary.querySelector('.tools-list');
   const toolItem = document.createElement('div');
   toolItem.className = 'tool-item';
-  toolItem.textContent = toolData.summary;
+  
+  // Check if summary contains newlines (for diffs)
+  if (toolData.summary && toolData.summary.includes('\n')) {
+    // For multiline content, preserve the formatting
+    const lines = toolData.summary.split('\n');
+    const firstLine = lines[0];
+    const diffContent = lines.slice(1).join('\n');
+    
+    // Create structure for expandable diff
+    toolItem.innerHTML = `
+      <div class="tool-summary-line">${escapeHtml(firstLine)}</div>
+      ${diffContent ? `<pre class="tool-diff-content">${escapeHtml(diffContent)}</pre>` : ''}
+    `;
+  } else {
+    // Single line summary
+    toolItem.textContent = toolData.summary;
+  }
+  
   toolsList.appendChild(toolItem);
   
   // Scroll to bottom
@@ -2356,25 +2373,16 @@ function toggleToolDetails(button) {
 
 // Permission Request Handling
 const activePermissionRequests = new Map();
-let permissionTimeoutInterval = null;
 
 // Handle incoming permission request
 function handlePermissionRequest(data) {
   console.error('HANDLE PERMISSION REQUEST CALLED:', data);
   
   // Store the request
-  activePermissionRequests.set(data.requestId, {
-    ...data,
-    timeRemaining: 30
-  });
+  activePermissionRequests.set(data.requestId, data);
   
   // Show the permission modal
   showPermissionModal(data);
-  
-  // Start timeout countdown if not already running
-  if (!permissionTimeoutInterval) {
-    permissionTimeoutInterval = setInterval(updatePermissionTimeouts, 1000);
-  }
 }
 
 // Show permission modal dialog
@@ -2429,7 +2437,7 @@ function showPermissionModal(data) {
   const diffContent = document.getElementById('permission-diff-content');
   const diffStats = document.getElementById('permission-diff-stats');
   
-  if (data.diffPreview && (data.toolName === 'write_file' || data.toolName === 'edit_file')) {
+  if (data.diffPreview && (data.toolName === 'write_file' || data.toolName === 'edit_file' || data.toolName === 'smart_edit')) {
     // Show diff section
     diffSection.style.display = 'block';
     
@@ -2456,10 +2464,10 @@ function showPermissionModal(data) {
       }
     };
     
-    // Initially collapsed
-    diffContainer.style.display = 'none';
-    diffToggle.classList.remove('expanded');
-    toggleIcon.textContent = '▶';
+    // Automatically expand diff for file write operations
+    diffContainer.style.display = 'block';
+    diffToggle.classList.add('expanded');
+    toggleIcon.textContent = '▼';
   } else {
     // Hide diff section
     diffSection.style.display = 'none';
@@ -2471,12 +2479,15 @@ function showPermissionModal(data) {
   // Set up button handlers
   const approveBtn = document.getElementById('permission-approve');
   const denyBtn = document.getElementById('permission-deny');
+  const abortBtn = document.getElementById('permission-abort');
   
   // Remove old handlers
   const newApproveBtn = approveBtn.cloneNode(true);
   const newDenyBtn = denyBtn.cloneNode(true);
+  const newAbortBtn = abortBtn.cloneNode(true);
   approveBtn.parentNode.replaceChild(newApproveBtn, approveBtn);
   denyBtn.parentNode.replaceChild(newDenyBtn, denyBtn);
+  abortBtn.parentNode.replaceChild(newAbortBtn, abortBtn);
   
   // Add new handlers
   newApproveBtn.addEventListener('click', () => {
@@ -2487,11 +2498,12 @@ function showPermissionModal(data) {
     handlePermissionResponse(data.requestId, false);
   });
   
+  newAbortBtn.addEventListener('click', () => {
+    handlePermissionAbort(data.requestId);
+  });
+  
   // Show modal
   modal.style.display = 'block';
-  
-  // Update timeout display
-  updatePermissionTimeout(data.requestId);
 }
 
 // Render diff content in permission modal
@@ -2541,12 +2553,6 @@ async function handlePermissionResponse(requestId, approved) {
   // Remove from active requests
   activePermissionRequests.delete(requestId);
   
-  // Stop timeout interval if no more requests
-  if (activePermissionRequests.size === 0 && permissionTimeoutInterval) {
-    clearInterval(permissionTimeoutInterval);
-    permissionTimeoutInterval = null;
-  }
-  
   // Send response to backend
   try {
     const response = await fetch('/api/permission-response', {
@@ -2570,51 +2576,83 @@ async function handlePermissionResponse(requestId, approved) {
   }
 }
 
-// Handle permission timeout
-function handlePermissionTimeout(requestId) {
-  // Remove from active requests
-  activePermissionRequests.delete(requestId);
-  
-  // Hide modal if it's showing this request
-  const modal = document.getElementById('permission-modal');
-  if (modal.style.display === 'block') {
-    // Check if current modal is for this request
-    // (In a more complex implementation, we'd track which request is shown)
-    modal.style.display = 'none';
-  }
-  
-  // Stop timeout interval if no more requests
-  if (activePermissionRequests.size === 0 && permissionTimeoutInterval) {
-    clearInterval(permissionTimeoutInterval);
-    permissionTimeoutInterval = null;
-  }
-  
-  // Show notification
-  addSystemMessageToUI('⏱️ Permission request timed out', 'warning');
-}
-
-// Update permission timeouts
-function updatePermissionTimeouts() {
-  for (const [requestId, request] of activePermissionRequests) {
-    request.timeRemaining--;
-    
-    if (request.timeRemaining <= 0) {
-      // Timeout reached, but let backend handle it
-      continue;
-    }
-    
-    // Update display if this request is shown
-    updatePermissionTimeout(requestId);
-  }
-}
-
-// Update timeout display for specific request
-function updatePermissionTimeout(requestId) {
+// Handle permission abort - completely stop the current operation
+async function handlePermissionAbort(requestId) {
   const request = activePermissionRequests.get(requestId);
   if (!request) return;
   
-  const timeoutElement = document.getElementById('permission-timeout-seconds');
-  if (timeoutElement) {
-    timeoutElement.textContent = request.timeRemaining;
+  // Hide modal
+  document.getElementById('permission-modal').style.display = 'none';
+  
+  // Remove from active requests
+  activePermissionRequests.delete(requestId);
+  
+  // Send abort signal to backend
+  try {
+    const response = await fetch('/api/permission-abort', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        requestId: requestId,
+        sessionId: window.currentSessionId
+      })
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to send permission abort:', response.status);
+    }
+    
+    // Send abort message to the LLM
+    await sendMessage('Important: ABORT!');
+    
+    // Show notification that the operation was aborted
+    addSystemMessageToUI('🛑 Operation completely aborted by user', 'error');
+  } catch (error) {
+    console.error('Error sending permission abort:', error);
   }
+}
+
+// Display file diff in a closable frame
+function displayFileDiff(data) {
+  const { filePath, toolName, diff } = data;
+  
+  // Create or find the diff container
+  let diffContainer = document.getElementById('file-diff-container');
+  if (!diffContainer) {
+    // Create the diff container
+    diffContainer = document.createElement('div');
+    diffContainer.id = 'file-diff-container';
+    diffContainer.className = 'file-diff-container';
+    document.body.appendChild(diffContainer);
+  }
+  
+  // Create the diff frame
+  const diffFrame = document.createElement('div');
+  diffFrame.className = 'diff-frame';
+  diffFrame.innerHTML = `
+    <div class="diff-header">
+      <div class="diff-title">
+        <span class="diff-icon">📝</span>
+        <span class="diff-file-path">${escapeHtml(filePath)}</span>
+        <span class="diff-tool">(${toolName})</span>
+      </div>
+      <button class="diff-close-btn" onclick="this.closest('.diff-frame').remove()">✕</button>
+    </div>
+    <div class="diff-content">
+      <pre class="diff-text">${escapeHtml(diff)}</pre>
+    </div>
+  `;
+  
+  // Add the frame to the container
+  diffContainer.appendChild(diffFrame);
+  
+  // Show the container
+  diffContainer.style.display = 'block';
+  
+  // Auto-hide after 30 seconds
+  setTimeout(() => {
+    diffFrame.style.opacity = '0.7';
+  }, 30000);
 }

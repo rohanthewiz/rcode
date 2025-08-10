@@ -530,6 +530,117 @@ main {
   font-size: 12px;
   padding-left: 12px;
   opacity: 0.9;
+  white-space: pre-wrap;  /* Preserve newlines and wrap long lines */
+  word-break: break-word; /* Break long words if needed */
+}
+
+/* Tool summary with diff display */
+.tool-summary-line {
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+.tool-diff-content {
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 11px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 8px;
+  margin-top: 4px;
+  margin-left: 12px;
+  max-height: 400px;
+  overflow-y: auto;
+  white-space: pre;
+  color: var(--text-secondary);
+}
+
+/* File diff container for separate diff display */
+.file-diff-container {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  max-width: 800px;
+  max-height: 60vh;
+  z-index: 1000;
+  display: none;
+}
+
+.diff-frame {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  margin-bottom: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  transition: opacity 0.3s ease;
+}
+
+.diff-frame .diff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 15px;
+  background: var(--bg-tertiary);
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+}
+
+.diff-frame .diff-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+}
+
+.diff-frame .diff-icon {
+  font-size: 16px;
+}
+
+.diff-frame .diff-file-path {
+  font-weight: 600;
+  color: var(--primary);
+}
+
+.diff-frame .diff-tool {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+
+.diff-frame .diff-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 18px;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s;
+}
+
+.diff-frame .diff-close-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.diff-frame .diff-content {
+  padding: 15px;
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.diff-frame .diff-text {
+  font-family: 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre;
+  color: var(--text-primary);
+  margin: 0;
 }
 
 /* Real-time tool execution container */
@@ -2168,8 +2279,11 @@ body.plan-executing .plan-overlay {
 
 /* Permission Dialog Styles */
 .permission-dialog {
-  max-width: 500px;
+  max-width: 70vh;
   width: 90%;
+  max-height: 88vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .permission-dialog .modal-header {
@@ -2192,6 +2306,9 @@ body.plan-executing .plan-overlay {
 
 .permission-dialog .modal-body {
   padding: 1.5rem;
+  flex: 1;
+  overflow-y: auto;
+  max-height: calc(88vh - 200px); /* Account for header and footer */
 }
 
 .permission-info {
@@ -2269,7 +2386,7 @@ body.plan-executing .plan-overlay {
 .permission-actions {
   display: flex;
   gap: 1rem;
-  justify-content: flex-end;
+  justify-content: space-between;
   padding: 1rem 1.5rem;
   background: var(--bg-secondary);
   border-top: 1px solid var(--border);
@@ -2277,6 +2394,18 @@ body.plan-executing .plan-overlay {
 
 .permission-actions button {
   min-width: 100px;
+}
+
+/* Place ABORT button on the right */
+#permission-abort {
+  margin-left: auto;
+  background: #dc2626;
+  color: white;
+  font-weight: bold;
+}
+
+#permission-abort:hover {
+  background: #b91c1c;
 }
 
 #permission-deny {
@@ -2293,20 +2422,6 @@ body.plan-executing .plan-overlay {
 
 #permission-approve:hover {
   background: #388e3c;
-}
-
-.permission-timeout {
-  text-align: center;
-  padding: 0.5rem;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  background: var(--bg-primary);
-  border-top: 1px solid var(--border);
-}
-
-#permission-timeout-seconds {
-  font-weight: bold;
-  color: var(--primary);
 }
 
 /* Diff Preview in Permission Modal */
@@ -2356,7 +2471,8 @@ body.plan-executing .plan-overlay {
 }
 
 .permission-diff-container {
-  max-height: 300px;
+  max-height: calc(88vh - 400px); /* Dynamic height based on dialog size */
+  min-height: 200px;
   overflow: auto;
   background: var(--bg-primary);
 }
