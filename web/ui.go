@@ -102,6 +102,82 @@ func generateMainUI(isAuthenticated bool) string {
 						),
 					),
 				),
+				// Usage Panel (collapsible)
+				func() any {
+					if isAuthenticated {
+						b.Div("id", "usage-panel", "class", "usage-panel collapsed").R(
+							b.Div("class", "usage-header").R(
+								b.Button("id", "usage-toggle", "class", "usage-toggle").R(
+									b.Span("class", "toggle-icon").T("▶"),
+									b.Span().T(" Usage & Limits"),
+								),
+								b.Div("class", "usage-summary").R(
+									b.Span("id", "usage-quick-info").T("Loading..."),
+								),
+							),
+							b.Div("class", "usage-content").R(
+								// Session Usage
+								b.Div("class", "usage-section").R(
+									b.H3().T("Current Session"),
+									b.Div("class", "usage-stats").R(
+										b.Div("class", "stat-item").R(
+											b.Span("class", "stat-label").T("Input:"),
+											b.Span("id", "session-input-tokens", "class", "stat-value").T("0"),
+										),
+										b.Div("class", "stat-item").R(
+											b.Span("class", "stat-label").T("Output:"),
+											b.Span("id", "session-output-tokens", "class", "stat-value").T("0"),
+										),
+										b.Div("class", "stat-item").R(
+											b.Span("class", "stat-label").T("Cost:"),
+											b.Span("id", "session-cost", "class", "stat-value").T("$0.00"),
+										),
+									),
+								),
+								// Rate Limits
+								b.Div("class", "usage-section").R(
+									b.H3().T("Rate Limits"),
+									b.Div("class", "rate-limits").R(
+										b.Div("class", "limit-bar").R(
+											b.Span("class", "limit-label").T("Requests"),
+											b.Div("class", "progress-bar").R(
+												b.Div("id", "requests-progress", "class", "progress-fill").R(),
+											),
+											b.Span("id", "requests-remaining", "class", "limit-text").T("--"),
+										),
+										b.Div("class", "limit-bar").R(
+											b.Span("class", "limit-label").T("Input Tokens"),
+											b.Div("class", "progress-bar").R(
+												b.Div("id", "input-tokens-progress", "class", "progress-fill").R(),
+											),
+											b.Span("id", "input-tokens-remaining", "class", "limit-text").T("--"),
+										),
+										b.Div("class", "limit-bar").R(
+											b.Span("class", "limit-label").T("Output Tokens"),
+											b.Div("class", "progress-bar").R(
+												b.Div("id", "output-tokens-progress", "class", "progress-fill").R(),
+											),
+											b.Span("id", "output-tokens-remaining", "class", "limit-text").T("--"),
+										),
+									),
+								),
+								// Daily Usage
+								b.Div("class", "usage-section").R(
+									b.H3().T("Today's Usage"),
+									b.Div("id", "daily-usage", "class", "usage-stats").T("Loading..."),
+								),
+								// Model indicator
+								b.Div("class", "usage-section").R(
+									b.Div("class", "model-indicator").R(
+										b.Span("class", "model-label").T("Current Model:"),
+										b.Span("id", "current-model", "class", "model-name").T("--"),
+									),
+								),
+							),
+						)
+					}
+					return nil
+				}(),
 				// Main content area
 				b.Main().R(
 					// Sidebar with tabs

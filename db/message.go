@@ -12,21 +12,21 @@ import (
 
 // Message represents a chat message in the database
 type Message struct {
-	ID         int                    `json:"id"`
-	SessionID  string                 `json:"session_id"`
-	Role       string                 `json:"role"`
-	Content    interface{}            `json:"content"`
-	CreatedAt  time.Time              `json:"created_at"`
-	Model      string                 `json:"model,omitempty"`
-	TokenUsage *providers.Usage       `json:"token_usage,omitempty"`
+	ID         int              `json:"id"`
+	SessionID  string           `json:"session_id"`
+	Role       string           `json:"role"`
+	Content    interface{}      `json:"content"`
+	CreatedAt  time.Time        `json:"created_at"`
+	Model      string           `json:"model,omitempty"`
+	TokenUsage *providers.Usage `json:"token_usage,omitempty"`
 }
 
-// AddMessage adds a message to a session
-func (db *DB) AddMessage(sessionID string, msg providers.ChatMessage, model string, usage *providers.Usage) error {
+// AddMessageWithID adds a message to a session and returns the message ID
+func (db *DB) AddMessageWithID(sessionID string, msg providers.ChatMessage, model string, usage *providers.Usage) (*int, error) {
 	// Convert content to JSON
 	contentJSON, err := json.Marshal(msg.Content)
 	if err != nil {
-		return serr.Wrap(err, "failed to marshal message content")
+		return nil, serr.Wrap(err, "failed to marshal message content")
 	}
 
 	// Convert token usage to JSON if present
@@ -34,7 +34,7 @@ func (db *DB) AddMessage(sessionID string, msg providers.ChatMessage, model stri
 	if usage != nil {
 		usageJSON, err := json.Marshal(usage)
 		if err != nil {
-			return serr.Wrap(err, "failed to marshal token usage")
+			return nil, serr.Wrap(err, "failed to marshal token usage")
 		}
 		usageJSONStr = string(usageJSON)
 	} else {
@@ -51,9 +51,17 @@ func (db *DB) AddMessage(sessionID string, msg providers.ChatMessage, model stri
 		VALUES (?, ?, ?::JSON, NULLIF(?, 'null'), ?::JSON, CURRENT_TIMESTAMP)
 	`
 
-	_, err = db.Exec(query, sessionID, msg.Role, string(contentJSON), model, usageJSONStr)
+	result, err := db.Exec(query, sessionID, msg.Role, string(contentJSON), model, usageJSONStr)
 	if err != nil {
-		return serr.Wrap(err, "failed to add message")
+		return nil, serr.Wrap(err, "failed to add message")
+	}
+	_ = result // Suppress unused variable warning
+
+	// Get the last insert ID using DuckDB's method
+	var messageID int
+	err = db.QueryRow("SELECT currval('messages_id_seq')").Scan(&messageID)
+	if err != nil {
+		return nil, serr.Wrap(err, "failed to get message ID")
 	}
 
 	// Update session's updated_at timestamp
@@ -62,8 +70,14 @@ func (db *DB) AddMessage(sessionID string, msg providers.ChatMessage, model stri
 		logger.LogErr(err, "failed to update session timestamp")
 	}
 
-	logger.Debug("Added message to session", "session_id", sessionID, "role", msg.Role)
-	return nil
+	logger.Debug("Added message to session", "session_id", sessionID, "role", msg.Role, "message_id", messageID)
+	return &messageID, nil
+}
+
+// AddMessage adds a message to a session (wrapper for backward compatibility)
+func (db *DB) AddMessage(sessionID string, msg providers.ChatMessage, model string, usage *providers.Usage) error {
+	_, err := db.AddMessageWithID(sessionID, msg, model, usage)
+	return err
 }
 
 // GetMessages retrieves all messages for a session
@@ -93,7 +107,7 @@ func (db *DB) GetMessages(sessionID string) ([]providers.ChatMessage, error) {
 
 		// Parse content based on type
 		var content interface{}
-		
+
 		// Try to parse as JSON first
 		var jsonContent interface{}
 		if err := json.Unmarshal([]byte(contentJSON), &jsonContent); err == nil {

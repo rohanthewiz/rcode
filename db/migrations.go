@@ -381,6 +381,29 @@ var migrations = []Migration{
 			CREATE INDEX idx_file_access_time ON file_access(accessed_at);
 		`,
 	},
+	{
+		Version:     8,
+		Description: "Add usage tracking table",
+		SQL: `
+			-- Create usage_tracking table for token usage and rate limits
+			CREATE SEQUENCE IF NOT EXISTS usage_tracking_id_seq;
+			
+			CREATE TABLE IF NOT EXISTS usage_tracking (
+				id INTEGER PRIMARY KEY DEFAULT nextval('usage_tracking_id_seq'),
+				session_id TEXT NOT NULL,
+				message_id INTEGER,
+				model TEXT NOT NULL,
+				input_tokens INTEGER NOT NULL DEFAULT 0,
+				output_tokens INTEGER NOT NULL DEFAULT 0,
+				rate_limits JSON,
+				created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				FOREIGN KEY (session_id) REFERENCES sessions(id),
+				FOREIGN KEY (message_id) REFERENCES messages(id)
+			);
+			CREATE INDEX IF NOT EXISTS idx_usage_session ON usage_tracking(session_id);
+			CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_tracking(created_at);
+		`,
+	},
 }
 
 // Migrate runs all pending database migrations

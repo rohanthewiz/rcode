@@ -401,6 +401,7 @@ func sendMessageHandler(c rweb.Context) error {
 		var streamComplete bool
 		var assistantModel string
 		var usage *providers.Usage
+		var rateLimits *providers.RateLimitInfo
 
 		// Only broadcast message start on first iteration
 		if !streamingStarted {
@@ -409,7 +410,7 @@ func sendMessageHandler(c rweb.Context) error {
 		}
 
 		// Handle streaming response
-		err = client.StreamMessageWithRetry(request, func(event providers.StreamEvent) error {
+		rateLimits, err = client.StreamMessageWithRetry(request, func(event providers.StreamEvent) error {
 			// logger.Info("Stream event received", "type", event.Type, "hasMessage", len(event.Message) > 0, "hasDelta", len(event.Delta) > 0, "index", event.Index)
 
 			// For content_block_start, try to log the raw event
@@ -708,10 +709,10 @@ func sendMessageHandler(c rweb.Context) error {
 					// Broadcast tool execution complete
 					BroadcastToolExecutionComplete(sessionID, toolUse.Name, toolUse.ID, status, summary, int64(durationMs), metrics)
 
-					// Log tool usage to database
-					if logErr := database.LogToolUsage(sessionID, toolUse.Name, toolUse.Input, result.Content, durationMs, err); logErr != nil {
-						logger.LogErr(logErr, "failed to log tool usage")
-					}
+					// TODO: Log tool usage to database (separate from token usage tracking)
+					// if logErr := database.LogToolUsage(sessionID, toolUse.Name, toolUse.Input, result.Content, durationMs, err); logErr != nil {
+					// 	logger.LogErr(logErr, "failed to log tool usage")
+					// }
 
 					if err != nil {
 						logger.LogErr(err, "tool execution failed")
@@ -743,9 +744,18 @@ func sendMessageHandler(c rweb.Context) error {
 					Role:    "assistant",
 					Content: cleanedToolUses,
 				}
-				err = database.AddMessage(sessionID, assistantMsg, assistantModel, usage)
+				msgID, err := database.AddMessageWithID(sessionID, assistantMsg, assistantModel, usage)
 				if err != nil {
 					logger.LogErr(err, "failed to add assistant message with tool use")
+				}
+
+				// Record usage with rate limits
+				if usage != nil || rateLimits != nil {
+					if recordErr := database.RecordUsage(sessionID, msgID, assistantModel, usage, rateLimits); recordErr != nil {
+						logger.LogErr(recordErr, "failed to record usage")
+					}
+					// Broadcast usage update
+					BroadcastUsageUpdate(sessionID, usage, rateLimits)
 				}
 
 				// Add tool results as user message
@@ -779,19 +789,29 @@ func sendMessageHandler(c rweb.Context) error {
 					Role:    "assistant",
 					Content: streamingContent,
 				}
-				err = database.AddMessage(sessionID, assistantMsg, assistantModel, usage)
+				msgID, err := database.AddMessageWithID(sessionID, assistantMsg, assistantModel, usage)
 				if err != nil {
 					logger.LogErr(err, "failed to add assistant message")
+				}
+
+				// Record usage with rate limits
+				if usage != nil || rateLimits != nil {
+					if recordErr := database.RecordUsage(sessionID, msgID, assistantModel, usage, rateLimits); recordErr != nil {
+						logger.LogErr(recordErr, "failed to record usage")
+					}
+					// Broadcast usage update
+					BroadcastUsageUpdate(sessionID, usage, rateLimits)
 				}
 
 				// Message already streamed via deltas - no need to broadcast complete message
 
 				// Return response metadata (content already streamed via deltas)
 				return c.WriteJSON(map[string]interface{}{
-					"role":     "assistant",
-					"streamed": true,
-					"usage":    usage,
-					"model":    assistantModel,
+					"role":       "assistant",
+					"streamed":   true,
+					"usage":      usage,
+					"model":      assistantModel,
+					"rateLimits": rateLimits,
 				})
 			} else {
 				// No tool use and no text content - this shouldn't happen

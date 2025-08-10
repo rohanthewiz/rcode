@@ -56,6 +56,11 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/context/stats", getContextStatsHandler)
 	s.Post("/api/context/suggest-tools", suggestToolsHandler)
 
+	// Usage tracking endpoints
+	s.Get("/api/session/:id/usage", GetSessionUsageHandler)
+	s.Get("/api/usage/daily", GetDailyUsageHandler)
+	s.Get("/api/usage/global", GetGlobalUsageHandler)
+
 	// Task planning endpoints
 	s.Post("/api/session/:id/plan", createPlanHandler)
 	s.Get("/api/session/:id/plans", listPlansHandler)

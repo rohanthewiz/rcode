@@ -343,3 +343,18 @@ func BroadcastFileDiff(sessionID string, filePath string, toolName string, diffC
 	logger.Info("BroadcastFileDiff", "sessionID", sessionID, "filePath", filePath, "toolName", toolName)
 	sseHub.Broadcast(event)
 }
+
+// BroadcastUsageUpdate broadcasts token usage and rate limit updates
+func BroadcastUsageUpdate(sessionID string, usage interface{}, rateLimits interface{}) {
+	event := SSEEvent{
+		Type:      "usage_update",
+		SessionId: sessionID,
+		Data: map[string]interface{}{
+			"usage":      usage,
+			"rateLimits": rateLimits,
+			"timestamp":  time.Now().Unix(),
+		},
+	}
+	logger.Info("BroadcastUsageUpdate", "sessionID", sessionID)
+	sseHub.Broadcast(event)
+}

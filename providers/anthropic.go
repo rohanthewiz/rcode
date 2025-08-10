@@ -78,12 +78,13 @@ type CreateMessageRequest struct {
 
 // CreateMessageResponse represents the response from creating a message
 type CreateMessageResponse struct {
-	ID      string    `json:"id"`
-	Type    string    `json:"type"`
-	Role    string    `json:"role"`
-	Content []Content `json:"content"`
-	Model   string    `json:"model"`
-	Usage   Usage     `json:"usage"`
+	ID         string         `json:"id"`
+	Type       string         `json:"type"`
+	Role       string         `json:"role"`
+	Content    []Content      `json:"content"`
+	Model      string         `json:"model"`
+	Usage      Usage          `json:"usage"`
+	RateLimits *RateLimitInfo `json:"-"` // Not from JSON, populated from headers
 }
 
 // Content represents content in the response
@@ -99,6 +100,17 @@ type Content struct {
 type Usage struct {
 	InputTokens  int `json:"input_tokens"`
 	OutputTokens int `json:"output_tokens"`
+}
+
+// RateLimitInfo represents rate limit information from response headers
+type RateLimitInfo struct {
+	RequestsLimit         int       `json:"requests_limit"`
+	RequestsRemaining     int       `json:"requests_remaining"`
+	RequestsReset         time.Time `json:"requests_reset"`
+	InputTokensLimit      int       `json:"input_tokens_limit"`
+	InputTokensRemaining  int       `json:"input_tokens_remaining"`
+	OutputTokensLimit     int       `json:"output_tokens_limit"`
+	OutputTokensRemaining int       `json:"output_tokens_remaining"`
 }
 
 // StreamEvent represents a server-sent event in the stream
@@ -125,12 +137,12 @@ func (c *AnthropicClient) SendMessage(request CreateMessageRequest) (*CreateMess
 
 	// Get API URL from config
 	apiURL := config.Get().AnthropicAPIURL
-	
+
 	// Log the request for debugging
 	logger.Info("Anthropic API Request ->" + string(requestBody))
 	logger.Info("Using model: " + request.Model)
 	logger.Info("API URL", "url", apiURL)
-	
+
 	// Create HTTP request
 	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(requestBody))
 	if err != nil {
@@ -165,7 +177,7 @@ func (c *AnthropicClient) SendMessage(request CreateMessageRequest) (*CreateMess
 	// Check for errors
 	if resp.StatusCode != http.StatusOK {
 		apiErr := serr.New(fmt.Sprintf("API error: %d - %s", resp.StatusCode, string(body)))
-		
+
 		// Classify API errors for retry handling
 		switch resp.StatusCode {
 		case 429: // Rate limit
@@ -196,8 +208,17 @@ func (c *AnthropicClient) SendMessage(request CreateMessageRequest) (*CreateMess
 		return nil, serr.Wrap(err, "failed to parse response")
 	}
 
+	// Extract rate limit headers
+	response.RateLimits = extractRateLimitHeaders(resp.Header)
+
 	// Log the model from the response
 	logger.Info("API Response model", "model", response.Model)
+	if response.RateLimits != nil {
+		logger.Info("Rate limits",
+			"requests_remaining", response.RateLimits.RequestsRemaining,
+			"input_tokens_remaining", response.RateLimits.InputTokensRemaining,
+			"output_tokens_remaining", response.RateLimits.OutputTokensRemaining)
+	}
 
 	return &response, nil
 }
@@ -213,9 +234,9 @@ func (c *AnthropicClient) SendMessageWithRetry(request CreateMessageRequest) (*C
 		Jitter:          true,
 		RetryableErrors: tools.IsRetryableError,
 	}
-	
+
 	var response *CreateMessageResponse
-	
+
 	operation := func(ctx context.Context) error {
 		resp, err := c.SendMessage(request)
 		if err != nil {
@@ -224,51 +245,51 @@ func (c *AnthropicClient) SendMessageWithRetry(request CreateMessageRequest) (*C
 		response = resp
 		return nil
 	}
-	
+
 	result := tools.Retry(context.Background(), retryPolicy, operation)
 	if result.LastError != nil {
 		// Log retry details if we had retries
 		if result.Attempts > 1 {
-			logger.LogErr(result.LastError, 
+			logger.LogErr(result.LastError,
 				fmt.Sprintf("Failed to send message after %d attempts", result.Attempts))
 		}
 		return nil, result.LastError
 	}
-	
+
 	// Log successful retry if needed
 	if result.Attempts > 1 {
 		logger.Info("Message sent successfully after retries",
 			"attempts", result.Attempts,
 			"duration", result.TotalDuration)
 	}
-	
+
 	return response, nil
 }
 
 // StreamMessage sends a message to Claude and streams the response
-func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent func(StreamEvent) error) error {
+func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent func(StreamEvent) error) (*RateLimitInfo, error) {
 	// Ensure streaming is enabled
 	request.Stream = true
 
 	// Get access token
 	accessToken, err := auth.GetAccessToken()
 	if err != nil {
-		return serr.Wrap(err, "failed to get access token")
+		return nil, serr.Wrap(err, "failed to get access token")
 	}
 
 	// Marshal request
 	requestBody, err := json.Marshal(request)
 	if err != nil {
-		return serr.Wrap(err, "failed to marshal request")
+		return nil, serr.Wrap(err, "failed to marshal request")
 	}
 
 	// Get API URL from config
 	apiURL := config.Get().AnthropicAPIURL
-	
+
 	// Create HTTP request
 	req, err := http.NewRequest("POST", apiURL, bytes.NewReader(requestBody))
 	if err != nil {
-		return serr.Wrap(err, "failed to create request")
+		return nil, serr.Wrap(err, "failed to create request")
 	}
 
 	// Set headers
@@ -281,15 +302,18 @@ func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent fu
 	// Send request
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return serr.Wrap(err, "failed to send request")
+		return nil, serr.Wrap(err, "failed to send request")
 	}
 	defer resp.Body.Close()
+
+	// Extract rate limit headers
+	rateLimits := extractRateLimitHeaders(resp.Header)
 
 	// Check for errors
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
 		apiErr := serr.New(fmt.Sprintf("API error: %d - %s", resp.StatusCode, string(body)))
-		
+
 		// Classify API errors for retry handling
 		switch resp.StatusCode {
 		case 429: // Rate limit
@@ -299,16 +323,16 @@ func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent fu
 					retryAfter = int(seconds.Seconds())
 				}
 			}
-			return tools.NewRateLimitError(apiErr, retryAfter)
+			return rateLimits, tools.NewRateLimitError(apiErr, retryAfter)
 		case 500, 502, 503, 504, 529: // Server errors including overloaded
-			return tools.NewRetryableError(apiErr, "server error")
+			return rateLimits, tools.NewRetryableError(apiErr, "server error")
 		case 400, 401, 403, 404: // Client errors
-			return tools.NewPermanentError(apiErr, "client error")
+			return rateLimits, tools.NewPermanentError(apiErr, "client error")
 		default:
 			if resp.StatusCode >= 500 {
-				return tools.NewRetryableError(apiErr, "server error")
+				return rateLimits, tools.NewRetryableError(apiErr, "server error")
 			}
-			return tools.NewPermanentError(apiErr, "client error")
+			return rateLimits, tools.NewPermanentError(apiErr, "client error")
 		}
 	}
 
@@ -318,28 +342,28 @@ func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent fu
 
 	for scanner.Scan() {
 		line := scanner.Text()
-		
+
 		// Handle event data
 		if strings.HasPrefix(line, "data: ") {
 			data := strings.TrimPrefix(line, "data: ")
 			if data == "[DONE]" {
-				return nil
+				return rateLimits, nil
 			}
 			currentEvent.WriteString(data)
 		} else if line == "" && currentEvent.Len() > 0 {
 			// Empty line indicates end of event
 			eventData := currentEvent.String()
 			currentEvent.Reset()
-			
+
 			// First try to get just the type
 			var typeCheck struct {
 				Type string `json:"type"`
 			}
 			if err := json.Unmarshal([]byte(eventData), &typeCheck); err != nil {
-				logger.LogErr(err, "failed to unmarshal SSE event type: " + eventData)
+				logger.LogErr(err, "failed to unmarshal SSE event type: "+eventData)
 				continue
 			}
-			
+
 			// For content_block_start, the structure might be different
 			if typeCheck.Type == "content_block_start" {
 				// Try parsing as a content block start event with content_block at top level
@@ -363,34 +387,34 @@ func (c *AnthropicClient) StreamMessage(request CreateMessageRequest, onEvent fu
 						event.Message = blockMsg
 					}
 					if err := onEvent(event); err != nil {
-						return serr.Wrap(err, "error in event handler")
+						return rateLimits, serr.Wrap(err, "error in event handler")
 					}
 					continue
 				}
 			}
-			
+
 			// Parse as regular StreamEvent
 			var event StreamEvent
 			if err := json.Unmarshal([]byte(eventData), &event); err != nil {
-				logger.LogErr(err, "failed to parse event: " + eventData)
+				logger.LogErr(err, "failed to parse event: "+eventData)
 				continue
 			}
 
 			if err := onEvent(event); err != nil {
-				return serr.Wrap(err, "error in event handler")
+				return rateLimits, serr.Wrap(err, "error in event handler")
 			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
-		return serr.Wrap(err, "failed to read stream")
+		return rateLimits, serr.Wrap(err, "failed to read stream")
 	}
 
-	return nil
+	return rateLimits, nil
 }
 
 // StreamMessageWithRetry sends a message to Claude and streams the response with retry
-func (c *AnthropicClient) StreamMessageWithRetry(request CreateMessageRequest, onEvent func(StreamEvent) error) error {
+func (c *AnthropicClient) StreamMessageWithRetry(request CreateMessageRequest, onEvent func(StreamEvent) error) (*RateLimitInfo, error) {
 	// Define retry policy for streaming API calls
 	retryPolicy := tools.RetryPolicy{
 		MaxAttempts:     5,
@@ -400,29 +424,32 @@ func (c *AnthropicClient) StreamMessageWithRetry(request CreateMessageRequest, o
 		Jitter:          true,
 		RetryableErrors: tools.IsRetryableError,
 	}
-	
+
+	var rateLimits *RateLimitInfo
 	operation := func(ctx context.Context) error {
-		return c.StreamMessage(request, onEvent)
+		limits, err := c.StreamMessage(request, onEvent)
+		rateLimits = limits
+		return err
 	}
-	
+
 	result := tools.Retry(context.Background(), retryPolicy, operation)
 	if result.LastError != nil {
 		// Log retry details if we had retries
 		if result.Attempts > 1 {
-			logger.LogErr(result.LastError, 
+			logger.LogErr(result.LastError,
 				fmt.Sprintf("Failed to stream message after %d attempts", result.Attempts))
 		}
-		return result.LastError
+		return rateLimits, result.LastError
 	}
-	
+
 	// Log successful retry if needed
 	if result.Attempts > 1 {
 		logger.Info("Message streamed successfully after retries",
 			"attempts", result.Attempts,
 			"duration", result.TotalDuration)
 	}
-	
-	return nil
+
+	return rateLimits, nil
 }
 
 // ConvertToAPIMessages converts internal messages to API format
@@ -471,32 +498,31 @@ func (c *AnthropicClient) InitializeContext(projectPath string) error {
 	if c.contextManager == nil {
 		return serr.New("context manager not initialized")
 	}
-	
+
 	_, err := c.contextManager.ScanProject(projectPath)
 	if err != nil {
 		return serr.Wrap(err, "failed to scan project")
 	}
-	
+
 	return nil
 }
-
 
 // GetRelevantFiles returns files relevant to the current task
 func (c *AnthropicClient) GetRelevantFiles(task string, maxFiles int) ([]string, error) {
 	if c.contextManager == nil || !c.contextManager.IsInitialized() {
 		return nil, nil
 	}
-	
+
 	files, err := c.contextManager.PrioritizeFiles(task)
 	if err != nil {
 		return nil, serr.Wrap(err, "failed to prioritize files")
 	}
-	
+
 	// Limit to maxFiles
 	if len(files) > maxFiles {
 		files = files[:maxFiles]
 	}
-	
+
 	return files, nil
 }
 
@@ -505,4 +531,73 @@ func (c *AnthropicClient) TrackFileChange(filepath string, changeType contextpkg
 	if c.contextManager != nil {
 		c.contextManager.TrackChange(filepath, changeType)
 	}
+}
+
+// extractRateLimitHeaders extracts rate limit information from response headers
+func extractRateLimitHeaders(headers http.Header) *RateLimitInfo {
+	info := &RateLimitInfo{}
+	hasHeaders := false
+
+	// Extract request limits
+	if val := headers.Get("anthropic-ratelimit-requests-limit"); val != "" {
+		if limit, err := parseIntHeader(val); err == nil {
+			info.RequestsLimit = limit
+			hasHeaders = true
+		}
+	}
+	if val := headers.Get("anthropic-ratelimit-requests-remaining"); val != "" {
+		if remaining, err := parseIntHeader(val); err == nil {
+			info.RequestsRemaining = remaining
+			hasHeaders = true
+		}
+	}
+	if val := headers.Get("anthropic-ratelimit-requests-reset"); val != "" {
+		if reset, err := time.Parse(time.RFC3339, val); err == nil {
+			info.RequestsReset = reset
+			hasHeaders = true
+		}
+	}
+
+	// Extract token limits
+	if val := headers.Get("anthropic-ratelimit-input-tokens-limit"); val != "" {
+		if limit, err := parseIntHeader(val); err == nil {
+			info.InputTokensLimit = limit
+			hasHeaders = true
+		}
+	}
+	if val := headers.Get("anthropic-ratelimit-input-tokens-remaining"); val != "" {
+		if remaining, err := parseIntHeader(val); err == nil {
+			info.InputTokensRemaining = remaining
+			hasHeaders = true
+		}
+	}
+	if val := headers.Get("anthropic-ratelimit-output-tokens-limit"); val != "" {
+		if limit, err := parseIntHeader(val); err == nil {
+			info.OutputTokensLimit = limit
+			hasHeaders = true
+		}
+	}
+	if val := headers.Get("anthropic-ratelimit-output-tokens-remaining"); val != "" {
+		if remaining, err := parseIntHeader(val); err == nil {
+			info.OutputTokensRemaining = remaining
+			hasHeaders = true
+		}
+	}
+
+	if !hasHeaders {
+		return nil
+	}
+	return info
+}
+
+// parseIntHeader parses an integer from a header value
+func parseIntHeader(val string) (int, error) {
+	if val == "" {
+		return 0, fmt.Errorf("empty header value")
+	}
+	var intVal int
+	if _, err := fmt.Sscanf(val, "%d", &intVal); err != nil {
+		return 0, err
+	}
+	return intVal, nil
 }
