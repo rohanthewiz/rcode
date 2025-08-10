@@ -50,7 +50,9 @@ func (h *SSEHub) Broadcast(event SSEEvent) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	logger.F("Broadcasting SSE event: type=%s, sessionID=%s, nbrOfClients=%d", event.Type, event.SessionId, len(h.clients))
+	if event.Type != "message_delta" {
+		logger.F("Broadcasting SSE event: type=%s, sessionID=%s, nbrOfClients=%d", event.Type, event.SessionId, len(h.clients))
+	}
 
 	// Prepare the payload
 	data := map[string]interface{}{
