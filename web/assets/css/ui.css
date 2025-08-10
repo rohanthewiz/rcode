@@ -2471,7 +2471,7 @@ body.plan-executing .plan-overlay {
 }
 
 .permission-diff-container {
-  max-height: calc(88vh - 400px); /* Dynamic height based on dialog size */
+  max-height: calc(88vh - 518px); /* Dynamic height based on dialog size */
   min-height: 200px;
   overflow: auto;
   background: var(--bg-primary);
