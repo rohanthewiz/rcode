@@ -51,6 +51,19 @@ type TextContent struct {
 	Text string `json:"text"`
 }
 
+// ImageContent represents image content in a message
+type ImageContent struct {
+	Type   string      `json:"type"` // "image"
+	Source ImageSource `json:"source"`
+}
+
+// ImageSource represents the source of an image
+type ImageSource struct {
+	Type      string `json:"type"`       // "base64"
+	MediaType string `json:"media_type"` // e.g., "image/png", "image/jpeg"
+	Data      string `json:"data"`       // base64 encoded image data
+}
+
 // ToolUse represents a tool use in the assistant's response
 type ToolUse struct {
 	Type  string                 `json:"type"`
@@ -119,6 +132,47 @@ type StreamEvent struct {
 	Message json.RawMessage `json:"message,omitempty"`
 	Delta   json.RawMessage `json:"delta,omitempty"`
 	Index   int             `json:"index,omitempty"`
+}
+
+// CreateMessageWithImage creates a message with both text and image content
+// This helper function properly formats messages with mixed content for the Anthropic API
+func CreateMessageWithImage(role string, text string, imageData string, mediaType string) Message {
+	// Messages with images need to have content as an array of content blocks
+	contents := []interface{}{}
+
+	// Add text content block if text is provided
+	if text != "" {
+		contents = append(contents, TextContent{
+			Type: "text",
+			Text: text,
+		})
+	}
+
+	// Add image content block if image data is provided
+	if imageData != "" {
+		contents = append(contents, ImageContent{
+			Type: "image",
+			Source: ImageSource{
+				Type:      "base64",
+				MediaType: mediaType,
+				Data:      imageData,
+			},
+		})
+	}
+
+	return Message{
+		Role:    role,
+		Content: contents,
+	}
+}
+
+// CreateTextMessage creates a simple text-only message
+// This maintains backward compatibility with existing code
+func CreateTextMessage(role string, text string) Message {
+	return Message{
+		Role:    role,
+		Content: text,
+	}
 }
 
 // SendMessage sends a message to Claude and returns the response
@@ -456,15 +510,64 @@ func (c *AnthropicClient) StreamMessageWithRetry(request CreateMessageRequest, o
 func ConvertToAPIMessages(messages []ChatMessage) []Message {
 	apiMessages := make([]Message, len(messages))
 	for i, msg := range messages {
+		// Check if message has images in metadata
+		hasImages := false
+		var images []interface{}
+		if msg.Metadata != nil {
+			if hasImg, ok := msg.Metadata["hasImages"].(bool); ok && hasImg {
+				hasImages = true
+				if imgData, ok := msg.Metadata["images"].([]interface{}); ok {
+					images = imgData
+				}
+			}
+		}
+
 		// Handle different content types
 		switch content := msg.Content.(type) {
 		case string:
-			apiMessages[i] = Message{
-				Role: msg.Role,
-				Content: []TextContent{{
-					Type: "text",
-					Text: content,
-				}},
+			if hasImages && len(images) > 0 {
+				// Create message with text and images
+				contents := []interface{}{}
+
+				// Add text content
+				if content != "" {
+					contents = append(contents, TextContent{
+						Type: "text",
+						Text: content,
+					})
+				}
+
+				// Add image content
+				for _, img := range images {
+					if imgMap, ok := img.(map[string]interface{}); ok {
+						if mediaType, ok := imgMap["mediaType"].(string); ok {
+							if data, ok := imgMap["data"].(string); ok {
+								contents = append(contents, ImageContent{
+									Type: "image",
+									Source: ImageSource{
+										Type:      "base64",
+										MediaType: mediaType,
+										Data:      data,
+									},
+								})
+							}
+						}
+					}
+				}
+
+				apiMessages[i] = Message{
+					Role:    msg.Role,
+					Content: contents,
+				}
+			} else {
+				// Regular text message
+				apiMessages[i] = Message{
+					Role: msg.Role,
+					Content: []TextContent{{
+						Type: "text",
+						Text: content,
+					}},
+				}
 			}
 		default:
 			// For complex content, pass through as-is
@@ -479,8 +582,9 @@ func ConvertToAPIMessages(messages []ChatMessage) []Message {
 
 // ChatMessage represents an internal chat message
 type ChatMessage struct {
-	Role    string      `json:"role"`
-	Content interface{} `json:"content"`
+	Role     string                 `json:"role"`
+	Content  interface{}            `json:"content"`
+	Metadata map[string]interface{} `json:"metadata,omitempty"` // Optional metadata including images
 }
 
 // SetContextManager sets the context manager for the client

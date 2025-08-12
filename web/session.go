@@ -170,8 +170,16 @@ func createSession(req *CreateSessionRequest) (*Session, error) {
 
 // MessageRequest represents a request to send a message
 type MessageRequest struct {
-	Content string `json:"content"`
-	Model   string `json:"model,omitempty"`
+	Content string      `json:"content"`
+	Model   string      `json:"model,omitempty"`
+	Images  []ImageData `json:"images,omitempty"` // Optional images from clipboard or upload
+}
+
+// ImageData represents image data in a message
+type ImageData struct {
+	Type      string `json:"type"`      // "image"
+	MediaType string `json:"mediaType"` // MIME type e.g., "image/png"
+	Data      string `json:"data"`      // Base64 encoded image data
 }
 
 // generateSessionTitle creates a friendly title from the first user message
@@ -294,10 +302,26 @@ func sendMessageHandler(c rweb.Context) error {
 		return c.WriteError(serr.Wrap(err, "invalid request body"), 400)
 	}
 
-	// Add user message to database
-	userMsg := providers.ChatMessage{
-		Role:    "user",
-		Content: msgReq.Content,
+	// Create user message with optional images
+	var userMsg providers.ChatMessage
+	if len(msgReq.Images) > 0 {
+		// If there are images, create a message with mixed content
+		// Store all images in metadata for API conversion
+		userMsg = providers.ChatMessage{
+			Role:    "user",
+			Content: msgReq.Content,
+			// Store image data in metadata for later use
+			Metadata: map[string]interface{}{
+				"hasImages": true,
+				"images":    msgReq.Images,
+			},
+		}
+	} else {
+		// Regular text message
+		userMsg = providers.ChatMessage{
+			Role:    "user",
+			Content: msgReq.Content,
+		}
 	}
 	err = database.AddMessage(sessionID, userMsg, "", nil)
 	if err != nil {

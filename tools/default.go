@@ -94,6 +94,10 @@ func DefaultRegistry() *Registry {
 	webFetchTool := &WebFetchTool{}
 	registry.Register(webFetchTool.GetDefinition(), webFetchTool)
 
+	// Register clipboard paste tool for handling clipboard content
+	clipboardTool := &ClipboardPasteTool{}
+	registry.Register(clipboardTool.GetDefinition(), clipboardTool)
+
 	return registry
 }
 

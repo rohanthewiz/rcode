@@ -123,6 +123,383 @@ function configureMarked() {
   }
 }
 
+// Setup clipboard and drag-drop handling for images
+function setupClipboardHandling(editor) {
+  // Variable to store pasted/dropped images
+  let pastedImages = [];
+  
+  // Handle paste events on the editor's DOM node
+  const editorDom = editor.getDomNode();
+  if (editorDom) {
+    editorDom.addEventListener('paste', async function(e) {
+      handlePasteEvent(e, editor, pastedImages);
+    });
+  }
+  
+  // Also handle paste on the document for when editor might not have focus
+  document.addEventListener('paste', async function(e) {
+    // Only handle if we're in the main chat area
+    const chatArea = document.getElementById('chat-area');
+    if (chatArea && chatArea.contains(e.target)) {
+      handlePasteEvent(e, editor, pastedImages);
+    }
+  });
+  
+  // Setup drag and drop handling
+  setupDragAndDrop(editor, pastedImages);
+  
+  // Store pasted images reference on the editor for access later
+  editor.pastedImages = pastedImages;
+}
+
+// Handle paste events
+async function handlePasteEvent(e, editor, pastedImages) {
+  const clipboardData = e.clipboardData || window.clipboardData;
+  if (!clipboardData) return;
+  
+  const items = clipboardData.items;
+  if (!items) return;
+  
+  // Check for images in clipboard
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    
+    // Check if the item is an image
+    if (item.type.indexOf('image') !== -1) {
+      e.preventDefault(); // Prevent default paste behavior
+      
+      const blob = item.getAsFile();
+      if (!blob) continue;
+      
+      // Convert blob to base64
+      const reader = new FileReader();
+      reader.onload = function(event) {
+        const base64Data = event.target.result;
+        // Remove the data URL prefix to get just the base64 string
+        const base64String = base64Data.split(',')[1];
+        
+        // Store the image data
+        const imageData = {
+          type: 'image',
+          mediaType: item.type,
+          data: base64String,
+          timestamp: Date.now()
+        };
+        pastedImages.push(imageData);
+        
+        // Add a visual indicator to the editor
+        const currentValue = editor.getValue();
+        const imageIndicator = `\n[Image pasted: ${item.type} - ${(blob.size / 1024).toFixed(1)}KB]`;
+        editor.setValue(currentValue + imageIndicator);
+        
+        // Show a notification
+        showImagePastedNotification(item.type, blob.size);
+      };
+      reader.readAsDataURL(blob);
+    }
+  }
+}
+
+// Show notification when image is pasted or dropped
+function showImagePastedNotification(mimeType, size, filename) {
+  const messagesContainer = document.getElementById('messages');
+  const notification = document.createElement('div');
+  notification.className = 'image-paste-notification';
+  notification.style.cssText = `
+    position: fixed;
+    bottom: 200px;
+    right: 20px;
+    background: var(--success);
+    color: white;
+    padding: 10px 15px;
+    border-radius: 4px;
+    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    z-index: 1000;
+    animation: slideIn 0.3s ease-out;
+  `;
+  const action = filename ? 'attached' : 'pasted';
+  const name = filename ? ` (${filename})` : '';
+  notification.textContent = `Image ${action}${name} - ${(size / 1024).toFixed(1)}KB`;
+  
+  document.body.appendChild(notification);
+  
+  // Remove notification after 3 seconds
+  setTimeout(() => {
+    notification.style.animation = 'slideOut 0.3s ease-out';
+    setTimeout(() => notification.remove(), 300);
+  }, 3000);
+}
+
+// Setup drag and drop for images
+function setupDragAndDrop(editor, pastedImages) {
+  const chatArea = document.getElementById('chat-area');
+  if (!chatArea) return;
+  
+  // Create drop zone overlay
+  const dropZone = document.createElement('div');
+  dropZone.id = 'drop-zone';
+  dropZone.className = 'drop-zone';
+  dropZone.innerHTML = `
+    <div class="drop-zone-content">
+      <div class="drop-icon">📎</div>
+      <div class="drop-text">Drop images here to attach</div>
+    </div>
+  `;
+  dropZone.style.display = 'none';
+  chatArea.appendChild(dropZone);
+  
+  // Prevent default drag behaviors
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    chatArea.addEventListener(eventName, preventDefaults, false);
+    document.body.addEventListener(eventName, preventDefaults, false);
+  });
+  
+  function preventDefaults(e) {
+    e.preventDefault();
+    e.stopPropagation();
+  }
+  
+  // Highlight drop zone when item is dragged over
+  ['dragenter', 'dragover'].forEach(eventName => {
+    chatArea.addEventListener(eventName, highlight, false);
+  });
+  
+  ['dragleave', 'drop'].forEach(eventName => {
+    chatArea.addEventListener(eventName, unhighlight, false);
+  });
+  
+  function highlight(e) {
+    dropZone.style.display = 'flex';
+    chatArea.classList.add('drag-over');
+  }
+  
+  function unhighlight(e) {
+    dropZone.style.display = 'none';
+    chatArea.classList.remove('drag-over');
+  }
+  
+  // Handle dropped files
+  chatArea.addEventListener('drop', handleDrop, false);
+  
+  function handleDrop(e) {
+    const dt = e.dataTransfer;
+    const files = dt.files;
+    
+    handleFiles(files, editor, pastedImages);
+  }
+}
+
+// Handle dropped files
+function handleFiles(files, editor, pastedImages) {
+  ([...files]).forEach(file => {
+    if (file.type.startsWith('image/')) {
+      processImageFile(file, editor, pastedImages);
+    }
+  });
+}
+
+// Process image file
+function processImageFile(file, editor, pastedImages) {
+  const reader = new FileReader();
+  
+  reader.onload = function(e) {
+    const base64Data = e.target.result;
+    // Remove the data URL prefix to get just the base64 string
+    const base64String = base64Data.split(',')[1];
+    
+    // Store the image data
+    const imageData = {
+      type: 'image',
+      mediaType: file.type,
+      data: base64String,
+      filename: file.name,
+      timestamp: Date.now()
+    };
+    pastedImages.push(imageData);
+    
+    // Add a visual indicator to the editor
+    const currentValue = editor.getValue();
+    const imageIndicator = `\n[Image attached: ${file.name} - ${(file.size / 1024).toFixed(1)}KB]`;
+    editor.setValue(currentValue + imageIndicator);
+    
+    // Show a notification
+    showImagePastedNotification(file.type, file.size, file.name);
+  };
+  
+  reader.readAsDataURL(file);
+}
+
+// Add CSS animations for notifications and drag-drop
+if (!document.getElementById('clipboard-styles')) {
+  const style = document.createElement('style');
+  style.id = 'clipboard-styles';
+  style.textContent = `
+    @keyframes slideIn {
+      from { transform: translateX(100%); opacity: 0; }
+      to { transform: translateX(0); opacity: 1; }
+    }
+    @keyframes slideOut {
+      from { transform: translateX(0); opacity: 1; }
+      to { transform: translateX(100%); opacity: 0; }
+    }
+    .drop-zone {
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      bottom: 0;
+      background: rgba(0, 0, 0, 0.8);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      pointer-events: none;
+    }
+    .drop-zone-content {
+      text-align: center;
+      color: white;
+      pointer-events: none;
+    }
+    .drop-icon {
+      font-size: 48px;
+      margin-bottom: 10px;
+    }
+    .drop-text {
+      font-size: 18px;
+      font-weight: 500;
+    }
+    .drag-over {
+      position: relative;
+      border: 2px dashed var(--primary) !important;
+    }
+    .image-preview {
+      display: inline-block;
+      max-width: 200px;
+      max-height: 200px;
+      margin: 5px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .image-preview img {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+    }
+    .attached-images {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      padding: 10px;
+      margin: 10px 0;
+      background: var(--background-secondary);
+      border-radius: 4px;
+    }
+    .attached-image {
+      position: relative;
+      width: 100px;
+      height: 100px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      overflow: hidden;
+    }
+    .attached-image img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    .attached-image-remove {
+      position: absolute;
+      top: 2px;
+      right: 2px;
+      background: rgba(0,0,0,0.6);
+      color: white;
+      border: none;
+      border-radius: 50%;
+      width: 20px;
+      height: 20px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 12px;
+    }
+    .message-images {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-top: 10px;
+    }
+    .message-image-container {
+      position: relative;
+      max-width: 300px;
+      max-height: 300px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      cursor: pointer;
+      transition: transform 0.2s;
+    }
+    .message-image-container:hover {
+      transform: scale(1.02);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    .message-image {
+      width: 100%;
+      height: 100%;
+      object-fit: contain;
+      display: block;
+    }
+    .image-viewer-modal {
+      display: none;
+      position: fixed;
+      z-index: 10000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background-color: rgba(0,0,0,0.9);
+      align-items: center;
+      justify-content: center;
+    }
+    .image-viewer-content {
+      position: relative;
+      max-width: 90%;
+      max-height: 90%;
+      margin: auto;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .image-viewer-close {
+      position: absolute;
+      top: -40px;
+      right: 0;
+      color: #fff;
+      font-size: 35px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: color 0.3s;
+    }
+    .image-viewer-close:hover {
+      color: var(--primary);
+    }
+    .image-viewer-image {
+      max-width: 100%;
+      max-height: calc(100vh - 120px);
+      object-fit: contain;
+    }
+    .image-viewer-caption {
+      color: #fff;
+      text-align: center;
+      padding: 10px;
+      font-size: 14px;
+      margin-top: 10px;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 function connectEventSource() {
   // Don't connect if manually disconnected
   if (isManuallyDisconnected) {
@@ -698,9 +1075,65 @@ function addMessageToUI(message) {
   const content = document.createElement('div');
   content.className = 'message-content';
 
-  if (message.role === 'assistant' && typeof marked !== 'undefined') {
+  // Check if message has images in metadata
+  let hasImages = false;
+  let images = [];
+  if (message.metadata && message.metadata.hasImages && message.metadata.images) {
+    hasImages = true;
+    images = message.metadata.images;
+  }
+
+  // For user messages with images, show both text and images
+  if (message.role === 'user' && hasImages) {
+    // Add text content if any
+    if (message.content) {
+      const textDiv = document.createElement('div');
+      textDiv.className = 'message-text';
+      textDiv.textContent = message.content;
+      content.appendChild(textDiv);
+    }
+    
+    // Add images
+    const imagesDiv = document.createElement('div');
+    imagesDiv.className = 'message-images';
+    
+    images.forEach((img, index) => {
+      const imgContainer = document.createElement('div');
+      imgContainer.className = 'message-image-container';
+      
+      const imgElement = document.createElement('img');
+      imgElement.src = `data:${img.mediaType || 'image/png'};base64,${img.data}`;
+      imgElement.alt = `Image ${index + 1}`;
+      imgElement.className = 'message-image';
+      imgElement.onclick = function() {
+        showImageModal(this.src, this.alt);
+      };
+      
+      imgContainer.appendChild(imgElement);
+      imagesDiv.appendChild(imgContainer);
+    });
+    
+    content.appendChild(imagesDiv);
+  } else if (message.role === 'assistant' && typeof marked !== 'undefined') {
     // Render markdown for assistant messages
-    content.innerHTML = marked.parse(message.content);
+    let processedContent = message.content;
+    
+    // Check for image results in the content (from tools)
+    // Look for patterns like "[Image file 'filename.png' (image/png) read successfully...]"
+    const imageResultPattern = /\[Image file '([^']+)' \(([^)]+)\) read successfully[^\]]*\]/g;
+    const imageResults = [...processedContent.matchAll(imageResultPattern)];
+    
+    if (imageResults.length > 0) {
+      // Replace image result placeholders with actual image tags if we have the data
+      // For now, just show a placeholder since we don't have the base64 data in the message
+      imageResults.forEach(match => {
+        const [fullMatch, filename, mimeType] = match;
+        const placeholder = `\n\n📷 *Image loaded: ${filename} (${mimeType})*\n\n`;
+        processedContent = processedContent.replace(fullMatch, placeholder);
+      });
+    }
+    
+    content.innerHTML = marked.parse(processedContent);
 
     // Highlight code blocks if highlight.js is available
     if (typeof hljs !== 'undefined') {
@@ -709,7 +1142,7 @@ function addMessageToUI(message) {
       });
     }
   } else {
-    // Plain text for user messages or if marked is not available
+    // Plain text for user messages without images or if marked is not available
     content.textContent = message.content;
   }
 
@@ -719,6 +1152,42 @@ function addMessageToUI(message) {
 
   // Scroll to bottom
   messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Show image in modal viewer
+function showImageModal(src, alt) {
+  // Create modal if it doesn't exist
+  let modal = document.getElementById('image-viewer-modal');
+  if (!modal) {
+    modal = document.createElement('div');
+    modal.id = 'image-viewer-modal';
+    modal.className = 'image-viewer-modal';
+    modal.innerHTML = `
+      <div class="image-viewer-content">
+        <span class="image-viewer-close">&times;</span>
+        <img class="image-viewer-image" src="" alt="">
+        <div class="image-viewer-caption"></div>
+      </div>
+    `;
+    document.body.appendChild(modal);
+    
+    // Close modal on click
+    modal.querySelector('.image-viewer-close').onclick = function() {
+      modal.style.display = 'none';
+    };
+    
+    modal.onclick = function(e) {
+      if (e.target === modal) {
+        modal.style.display = 'none';
+      }
+    };
+  }
+  
+  // Set image and show modal
+  modal.querySelector('.image-viewer-image').src = src;
+  modal.querySelector('.image-viewer-image').alt = alt;
+  modal.querySelector('.image-viewer-caption').textContent = alt;
+  modal.style.display = 'flex';
 }
 
 // Add thinking indicator
@@ -874,6 +1343,55 @@ function finalizeStreamingMessage() {
   currentStreamingContent = '';
 }
 
+// Detect file paths in message and offer to load images
+async function detectAndHandleFilePaths(content) {
+  // Regular expressions to detect file paths
+  const filePathPatterns = [
+    // Absolute paths
+    /(?:^|\s)(\/[\w\-_.\/]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi,
+    // Home directory paths
+    /(?:^|\s)(~\/[\w\-_.\/]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi,
+    // Relative paths
+    /(?:^|\s)(\.{1,2}\/[\w\-_.\/]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi,
+    // Simple filenames that look like images
+    /(?:^|\s)([\w\-_]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi
+  ];
+  
+  let detectedPaths = [];
+  let processedContent = content;
+  
+  // Find all file paths in the message
+  filePathPatterns.forEach(pattern => {
+    const matches = content.matchAll(pattern);
+    for (const match of matches) {
+      const path = match[1];
+      if (!detectedPaths.includes(path)) {
+        detectedPaths.push(path);
+      }
+    }
+  });
+  
+  // If we found image paths, ask if user wants to load them
+  if (detectedPaths.length > 0) {
+    const loadImages = confirm(
+      `Found ${detectedPaths.length} image path(s) in your message:\n\n` +
+      detectedPaths.join('\n') + 
+      '\n\nWould you like to load these images?'
+    );
+    
+    if (loadImages) {
+      // Add instruction to use read_file tool for each path
+      const imageInstructions = detectedPaths.map(path => 
+        `Please use the read_file tool to load the image at: ${path}`
+      ).join('\n');
+      
+      processedContent = content + '\n\n' + imageInstructions;
+    }
+  }
+  
+  return processedContent;
+}
+
 // Send message
 async function sendMessage() {
   console.log('sendMessage called');
@@ -883,8 +1401,11 @@ async function sendMessage() {
     return;
   }
 
-  const content = editor.getValue().trim();
+  let content = editor.getValue().trim();
   console.log('Message content:', content);
+  
+  // Check for file paths and potentially modify the message
+  content = await detectAndHandleFilePaths(content);
 
   if (!content) {
     console.log('No content, returning');
@@ -933,14 +1454,26 @@ async function sendMessage() {
     const modelSelector = document.getElementById('model-selector');
     const selectedModel = modelSelector ? modelSelector.value : 'claude-sonnet-4-20250514';
 
+    // Check if there are any pasted images to include
+    let requestBody = {
+      content: content,
+      model: selectedModel
+    };
+    
+    // Include pasted images if any
+    if (editor.pastedImages && editor.pastedImages.length > 0) {
+      requestBody.images = editor.pastedImages;
+      console.log(`Including ${editor.pastedImages.length} pasted image(s) with message`);
+      
+      // Clear the pasted images after including them
+      editor.pastedImages = [];
+    }
+
     console.log('Making API request with model:', selectedModel);
     const response = await fetch('/api/session/' + currentSessionId + '/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        content: content,
-        model: selectedModel
-      }),
+      body: JSON.stringify(requestBody),
       signal: currentRequestController.signal
     });
 
@@ -1578,6 +2111,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Focus the editor
     editor.focus();
     // console.log('Monaco editor initialized successfully');
+    
+    // Add clipboard image handling
+    setupClipboardHandling(editor);
 
     console.log('Monaco is ready');
     // resolve();

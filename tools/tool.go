@@ -122,6 +122,16 @@ func GetInt(input map[string]interface{}, key string) (int, bool) {
 	}
 }
 
+// Helper function to get bool from interface{}
+func GetBool(input map[string]interface{}, key string) (bool, bool) {
+	val, exists := input[key]
+	if !exists {
+		return false, false
+	}
+	boolVal, ok := val.(bool)
+	return boolVal, ok
+}
+
 // MarshalJSON for proper JSON encoding
 func (t Tool) MarshalJSON() ([]byte, error) {
 	return json.Marshal(struct {
