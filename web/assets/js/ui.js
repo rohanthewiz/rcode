@@ -128,19 +128,77 @@ function setupClipboardHandling(editor) {
   // Variable to store pasted/dropped images
   let pastedImages = [];
   
-  // Handle paste events on the editor's DOM node
-  const editorDom = editor.getDomNode();
-  if (editorDom) {
-    editorDom.addEventListener('paste', async function(e) {
-      handlePasteEvent(e, editor, pastedImages);
+  // Monaco Editor paste event handling
+  const editorContainer = editor.getDomNode();
+  if (editorContainer) {
+    // Add paste event listener with capture to intercept before Monaco
+    editorContainer.addEventListener('paste', async function(e) {
+      // Check if clipboard contains an image
+      const clipboardData = e.clipboardData || window.clipboardData;
+      if (clipboardData && clipboardData.items) {
+        for (let i = 0; i < clipboardData.items.length; i++) {
+          const item = clipboardData.items[i];
+          if (item.type.indexOf('image') !== -1) {
+            // Handle image paste
+            e.preventDefault(); // Prevent default Monaco paste
+            e.stopPropagation(); // Stop event propagation
+            handlePasteEvent(e, editor, pastedImages);
+            return;
+          }
+        }
+      }
+      // Let Monaco handle non-image pastes normally
+    }, true); // Use capture phase to intercept before Monaco
+    
+    // Also add a contextmenu handler to enable paste for images
+    editorContainer.addEventListener('contextmenu', function(e) {
+      // Check if clipboard might have an image
+      // We can't directly check clipboard on contextmenu due to security
+      // but we can ensure our paste handler is ready
+      setTimeout(() => {
+        // Focus the editor after context menu to ensure paste events work
+        editor.focus();
+      }, 100);
+    });
+    
+    // Add keyboard shortcut handler for Cmd/Ctrl+V
+    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyV, function() {
+      // Trigger a synthetic paste event
+      const pasteEvent = new ClipboardEvent('paste', {
+        clipboardData: new DataTransfer(),
+        bubbles: true,
+        cancelable: true
+      });
+      
+      // Try to read from clipboard using async API if available
+      if (navigator.clipboard && navigator.clipboard.read) {
+        navigator.clipboard.read().then(items => {
+          for (const item of items) {
+            for (const type of item.types) {
+              if (type.startsWith('image/')) {
+                item.getType(type).then(blob => {
+                  // Process the image blob
+                  processImageBlob(blob, type, editor, pastedImages);
+                });
+                return false; // Prevent default paste
+              }
+            }
+          }
+        }).catch(err => {
+          console.log('Clipboard API not available or permission denied:', err);
+          // Fall back to letting default paste happen
+        });
+        return false; // Prevent default behavior while we process
+      }
     });
   }
   
   // Also handle paste on the document for when editor might not have focus
   document.addEventListener('paste', async function(e) {
-    // Only handle if we're in the main chat area
+    // Only handle if we're in the main chat area but not in the editor itself
     const chatArea = document.getElementById('chat-area');
-    if (chatArea && chatArea.contains(e.target)) {
+    const editorContainer = editor.getDomNode();
+    if (chatArea && chatArea.contains(e.target) && !editorContainer.contains(e.target)) {
       handlePasteEvent(e, editor, pastedImages);
     }
   });
@@ -150,6 +208,38 @@ function setupClipboardHandling(editor) {
   
   // Store pasted images reference on the editor for access later
   editor.pastedImages = pastedImages;
+}
+
+// Helper function to process image blob
+function processImageBlob(blob, mimeType, editor, pastedImages) {
+  const reader = new FileReader();
+  reader.onload = function(event) {
+    const base64Data = event.target.result;
+    // Remove the data URL prefix to get just the base64 string
+    const base64String = base64Data.split(',')[1];
+    
+    // Store the image data
+    const imageData = {
+      type: 'image',
+      mediaType: mimeType,
+      data: base64String,
+      timestamp: Date.now()
+    };
+    // Clear any previous images and add only the new one
+    // This ensures we're only sending the most recently pasted image
+    pastedImages.length = 0;
+    pastedImages.push(imageData);
+    
+    // Add a visual indicator to the editor
+    const currentValue = editor.getValue();
+    // Use a clearer message that won't confuse the AI into thinking it should use clipboard tools
+    const imageIndicator = currentValue ? `\n[Image attached - ${(blob.size / 1024).toFixed(1)}KB]` : `Here's an image (${(blob.size / 1024).toFixed(1)}KB):`;
+    editor.setValue(currentValue + imageIndicator);
+    
+    // Show a notification
+    showImagePastedNotification(mimeType, blob.size);
+  };
+  reader.readAsDataURL(blob);
 }
 
 // Handle paste events
@@ -185,11 +275,15 @@ async function handlePasteEvent(e, editor, pastedImages) {
           data: base64String,
           timestamp: Date.now()
         };
+        // Clear any previous images and add only the new one
+        // This ensures we're only sending the most recently pasted image
+        pastedImages.length = 0;
         pastedImages.push(imageData);
         
         // Add a visual indicator to the editor
         const currentValue = editor.getValue();
-        const imageIndicator = `\n[Image pasted: ${item.type} - ${(blob.size / 1024).toFixed(1)}KB]`;
+        // Use a clearer message that won't confuse the AI
+        const imageIndicator = currentValue ? `\n[Image attached - ${(blob.size / 1024).toFixed(1)}KB]` : `Here's an image (${(blob.size / 1024).toFixed(1)}KB):`;
         editor.setValue(currentValue + imageIndicator);
         
         // Show a notification
@@ -1345,16 +1439,16 @@ function finalizeStreamingMessage() {
 
 // Detect file paths in message and offer to load images
 async function detectAndHandleFilePaths(content) {
-  // Regular expressions to detect file paths
+  // Regular expressions to detect file paths (now handles spaces in filenames)
   const filePathPatterns = [
-    // Absolute paths
-    /(?:^|\s)(\/[\w\-_.\/]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi,
-    // Home directory paths
-    /(?:^|\s)(~\/[\w\-_.\/]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi,
-    // Relative paths
-    /(?:^|\s)(\.{1,2}\/[\w\-_.\/]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi,
-    // Simple filenames that look like images
-    /(?:^|\s)([\w\-_]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi
+    // [Image attached: ...] pattern - captures filename before " - " file size indicator
+    /\[Image attached: (.+?\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?)) - .*?\]/gi,
+    // Absolute paths (includes spaces)
+    /(?:^|\s)(\/[\w\-_. \/]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi,
+    // Home directory paths (includes spaces)
+    /(?:^|\s)(~\/[\w\-_. \/]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi,
+    // Relative paths (includes spaces)
+    /(?:^|\s)(\.{1,2}\/[\w\-_. \/]+\.(?:png|jpg|jpeg|gif|webp|svg|bmp|ico|tiff?))\b/gi
   ];
   
   let detectedPaths = [];

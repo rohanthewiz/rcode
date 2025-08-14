@@ -396,7 +396,16 @@ func sendMessageHandler(c rweb.Context) error {
 	logger.Info("Requesting model", "model", model)
 
 	// Get available tools
-	availableTools := toolRegistry.GetTools()
+	allTools := toolRegistry.GetTools()
+
+	// Filter out internal tools that shouldn't be exposed to the AI
+	// The clipboard_paste tool is handled entirely on the frontend
+	availableTools := make([]tools.Tool, 0, len(allTools))
+	for _, tool := range allTools {
+		if tool.Name != "clipboard_paste" {
+			availableTools = append(availableTools, tool)
+		}
+	}
 
 	// System prompt cannot be changed!
 	const systemPrompt = "You are Claude Code, Anthropic's official CLI for Claude."
