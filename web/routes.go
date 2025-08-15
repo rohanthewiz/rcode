@@ -1,6 +1,9 @@
 package web
 
 import (
+	"net/http"
+	"strings"
+
 	"rcode/auth"
 
 	"github.com/rohanthewiz/rweb"
@@ -76,6 +79,34 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/plan/:id/full", getPlanFullDetailsHandler)
 	s.Post("/api/plan/:id/clone", clonePlanHandler)
 	s.Delete("/api/plan/:id", deletePlanHandler)
+
+	// Static assets endpoint - serve JavaScript modules and other assets
+	s.Get("/assets/*", func(c rweb.Context) error {
+		// Get the file path
+		reqPath := c.Request().Path()
+
+		// Build full path for embedded FS
+		filePath := "assets" + strings.TrimPrefix(reqPath, "/assets")
+
+		// Read the file from embedded FS
+		content, err := assetsFS.ReadFile(filePath)
+		if err != nil {
+			c.Response().SetStatus(http.StatusNotFound)
+			return c.WriteString("File not found")
+		}
+
+		// Set content type based on file extension
+		if strings.HasSuffix(filePath, ".js") {
+			c.Response().SetHeader("Content-Type", "application/javascript")
+		} else if strings.HasSuffix(filePath, ".css") {
+			c.Response().SetHeader("Content-Type", "text/css")
+		}
+
+		// Write the content
+		c.Response().SetStatus(http.StatusOK)
+		_, writeErr := c.Response().Write(content)
+		return writeErr
+	})
 
 	// SSE endpoint for streaming events
 	s.Get("/events",

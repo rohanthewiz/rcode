@@ -1,7 +1,9 @@
 package web
 
 import (
-	_ "embed"
+	"embed"
+	"fmt"
+	"strings"
 
 	"rcode/auth"
 
@@ -9,6 +11,13 @@ import (
 	"github.com/rohanthewiz/rweb"
 )
 
+// Embed all static assets
+//
+//go:embed assets/js/* assets/js/modules/* assets/css/*
+var assetsFS embed.FS
+
+// Individual embeds for backward compatibility
+//
 //go:embed assets/js/ui.js
 var uiJS string
 
@@ -23,9 +32,6 @@ var diffViewerJS string
 
 //go:embed assets/js/fileOperations.js
 var fileOperationsJS string
-
-// //go:embed assets/js/monacoLoader.js
-// var monacoLoaderJS string
 
 //go:embed assets/css/ui.css
 var uiCSS string
@@ -421,7 +427,12 @@ func generateJavaScript(isAuthenticated bool) string {
 		`
 	}
 
-	// Include file explorer, file operations, and diff viewer for authenticated users
+	// Use modular approach if modules exist, otherwise fall back to old approach
+	if hasModules() {
+		return generateModularJavaScript()
+	}
+
+	// Fallback: Include file explorer, file operations, and diff viewer for authenticated users
 	return fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" + diffViewerJS + "\n\n" + uiJS + `
 		// Initialize file explorer and diff viewer after UI is ready
 		document.addEventListener('DOMContentLoaded', function() {
@@ -437,4 +448,91 @@ func generateJavaScript(isAuthenticated bool) string {
 			}, 500);
 		});
 	`
+}
+
+// Check if modular JavaScript files exist
+func hasModules() bool {
+	_, err := assetsFS.ReadFile("assets/js/modules/main.js")
+	return err == nil
+}
+
+// Generate modular JavaScript that uses ES6 modules
+func generateModularJavaScript() string {
+	// For ES6 modules, we need to serve them as separate files and use import
+	// This requires serving the modules directory and using type="module" in script tags
+	// For now, we'll concatenate them in dependency order as a transitional approach
+
+	moduleFiles := []string{
+		"assets/js/modules/state.js",
+		"assets/js/modules/markdown.js",
+		"assets/js/modules/utils.js",
+		"assets/js/modules/clipboard.js",
+		"assets/js/modules/usage.js",
+		"assets/js/modules/permissions.js",
+		"assets/js/modules/messages.js",
+		"assets/js/modules/tools.js",
+		"assets/js/modules/session.js",
+		"assets/js/modules/sse.js",
+		"assets/js/modules/events.js",
+		"assets/js/modules/main.js",
+	}
+
+	var jsContent strings.Builder
+
+	// Add supporting files first
+	jsContent.WriteString(fileOperationsJS + "\n\n")
+	jsContent.WriteString(fileExplorerJS + "\n\n")
+	jsContent.WriteString(diffViewerJS + "\n\n")
+
+	// Wrap modules in an IIFE to avoid global pollution
+	jsContent.WriteString("(function() {\n")
+	jsContent.WriteString("'use strict';\n\n")
+
+	// Read and concatenate module files, converting ES6 imports/exports
+	for _, file := range moduleFiles {
+		content, err := assetsFS.ReadFile(file)
+		if err != nil {
+			fmt.Printf("Warning: Could not read module %s: %v\n", file, err)
+			continue
+		}
+
+		// Convert ES6 module syntax to compatible format
+		moduleContent := convertES6Module(string(content), file)
+		jsContent.WriteString(fmt.Sprintf("// Module: %s\n", file))
+		jsContent.WriteString(moduleContent)
+		jsContent.WriteString("\n\n")
+	}
+
+	jsContent.WriteString("})();\n")
+
+	return jsContent.String()
+}
+
+// Convert ES6 module syntax to browser-compatible format
+func convertES6Module(content, filename string) string {
+	// This is a simplified conversion that wraps modules in a way they can work
+	// In production, you'd want to use a proper bundler like esbuild or webpack
+
+	// Remove import statements (they'll be loaded in order)
+	lines := strings.Split(content, "\n")
+	var result []string
+
+	for _, line := range lines {
+		// Skip import statements
+		if strings.HasPrefix(strings.TrimSpace(line), "import ") {
+			continue
+		}
+
+		// Convert export statements to window assignments for global access
+		if strings.HasPrefix(strings.TrimSpace(line), "export ") {
+			line = strings.Replace(line, "export const ", "window.", 1)
+			line = strings.Replace(line, "export function ", "window.", 1)
+			line = strings.Replace(line, "export {", "// Export: {", 1)
+			line = strings.Replace(line, "export default ", "window.default_", 1)
+		}
+
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
 }
