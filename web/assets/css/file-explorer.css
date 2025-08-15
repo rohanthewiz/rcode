@@ -1,0 +1,310 @@
+/* ========================================
+   File Explorer - Tree View & File Viewer
+   ======================================== */
+
+/* File Explorer Header */
+.file-explorer-header {
+  padding: 0.75rem 1rem;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+}
+
+.current-directory {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.current-directory .dir-icon {
+  font-size: 1rem;
+}
+
+.current-directory #current-directory-path {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* File Search */
+.file-search {
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.search-input {
+  width: 100%;
+  padding: 0.5rem;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.875rem;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* File Tree */
+.file-explorer {
+  padding: 0.5rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+.file-tree {
+  font-size: 0.875rem;
+}
+
+.tree-node {
+  display: flex;
+  align-items: center;
+  padding: 0.25rem 0.5rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.1s ease;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.tree-node:hover {
+  background: var(--bg-tertiary);
+}
+
+.tree-node.selected {
+  background: var(--accent);
+  color: var(--text-primary);
+}
+
+.tree-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  margin-right: 0.5rem;
+  flex-shrink: 0;
+}
+
+/* File Icons */
+.folder-icon::before { content: "📁"; }
+.folder-open-icon::before { content: "📂"; }
+.file-icon::before { content: "📄"; }
+.file-icon-go::before { content: "🔵"; }
+.file-icon-javascript::before { content: "🟨"; }
+.file-icon-typescript::before { content: "🔷"; }
+.file-icon-python::before { content: "🐍"; }
+.file-icon-java::before { content: "☕"; }
+.file-icon-ruby::before { content: "💎"; }
+.file-icon-rust::before { content: "🦀"; }
+.file-icon-html::before { content: "🌐"; }
+.file-icon-css::before { content: "🎨"; }
+.file-icon-json::before { content: "📊"; }
+.file-icon-markdown::before { content: "📝"; }
+.file-icon-image::before { content: "🖼️"; }
+.file-icon-video::before { content: "🎥"; }
+.file-icon-audio::before { content: "🎵"; }
+.file-icon-archive::before { content: "📦"; }
+.file-icon-git::before { content: "🔀"; }
+.file-icon-env::before { content: "🔐"; }
+.file-icon-database::before { content: "🗄️"; }
+.file-icon-shell::before { content: "🖥️"; }
+
+.node-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.node-size {
+  margin-left: auto;
+  padding-left: 1rem;
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+}
+
+/* Diff Indicators */
+.diff-indicator {
+  font-size: 0.875rem;
+  margin-left: 0.5rem;
+  opacity: 0.8;
+  transition: opacity 0.2s;
+}
+
+.diff-indicator.modified {
+  color: var(--warning);
+}
+
+.diff-indicator.new {
+  color: var(--success);
+}
+
+.tree-node.modified:hover .diff-indicator.modified,
+.tree-node.new:hover .diff-indicator.new {
+  opacity: 1;
+}
+
+.tree-node.modified,
+.tree-node.new {
+  position: relative;
+}
+
+.tree-node.modified::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--warning);
+  opacity: 0.6;
+}
+
+.tree-node.new::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 3px;
+  background: var(--success);
+  opacity: 0.6;
+}
+
+.tree-children {
+  margin-left: 1rem;
+}
+
+/* File Viewer */
+.file-viewer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--border);
+  display: none;
+  flex-direction: column;
+  z-index: 10;
+}
+
+.file-viewer.active {
+  display: flex;
+}
+
+.file-tabs {
+  display: flex;
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  overflow-x: auto;
+  flex-shrink: 0;
+}
+
+.file-tab {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 1rem;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.1s ease;
+}
+
+.file-tab:hover {
+  background: var(--bg-tertiary);
+}
+
+.file-tab.active {
+  background: var(--bg-primary);
+  border-bottom: 1px solid var(--bg-primary);
+}
+
+.tab-name {
+  margin-right: 0.5rem;
+}
+
+.tab-close {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 3px;
+  transition: background 0.1s ease;
+}
+
+.tab-close:hover {
+  background: var(--bg-tertiary);
+}
+
+.file-content {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+#file-viewer-editor {
+  width: 100%;
+  height: 100%;
+}
+
+/* Context Menu */
+.context-menu {
+  position: fixed;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  padding: 0.5rem 0;
+  min-width: 180px;
+  z-index: 1000;
+  display: none;
+}
+
+.context-menu.active {
+  display: block;
+}
+
+.context-menu-item {
+  padding: 0.5rem 1rem;
+  cursor: pointer;
+  color: var(--text-primary);
+  transition: background-color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.context-menu-item:hover {
+  background: var(--bg-tertiary);
+}
+
+.context-menu-item.separator {
+  height: 1px;
+  background: var(--border);
+  margin: 0.25rem 0;
+  padding: 0;
+  cursor: default;
+}
+
+.context-menu-item.disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.context-menu-item.disabled:hover {
+  background: transparent;
+}
+
+.context-menu-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}

@@ -1,0 +1,59 @@
+/* ========================================
+   Base Styles - CSS Variables & Reset
+   ======================================== */
+
+/* CSS Variables */
+:root {
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #2a2a2a;
+  --bg-tertiary: #3a3a3a;
+  --text-primary: #ffffff;
+  --text-secondary: #b0b0b0;
+  --accent: #4a9eff;
+  --accent-hover: #3a8eef;
+  --border: #404040;
+  --success: #4caf50;
+  --error: #f44336;
+  --warning: #ff9800;
+  --plan-mode: #9c27b0;
+  --plan-mode-light: #ba68c8;
+}
+
+/* Reset & Base Styles */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* Plan Mode Visual Indicators */
+body.plan-mode {
+  --accent: var(--plan-mode);
+  --accent-hover: var(--plan-mode-light);
+}
+
+body.plan-mode #app {
+  border: 2px solid var(--plan-mode);
+  box-shadow: 0 0 20px rgba(156, 39, 176, 0.2);
+}
+
+body.plan-mode header {
+  background: linear-gradient(to bottom, rgba(156, 39, 176, 0.1), var(--bg-secondary));
+}
+
+body.plan-executing .plan-overlay {
+  display: block;
+}
+
+/* Smooth scrolling */
+#messages {
+  scroll-behavior: smooth;
+}
