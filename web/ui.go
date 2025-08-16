@@ -227,9 +227,10 @@ func generateMainUI(isAuthenticated bool) string {
 							element.RenderComponents(b, tabs)
 							return nil
 						}(),
-						// New session button (will be shown/hidden based on active tab)
+						// New session button and compaction controls (will be shown/hidden based on active tab)
 						b.Div("class", "sidebar-footer").R(
-							b.Button("id", "new-session-btn", "class", "btn-primary", "style", "width: 100%;").T("New Session"),
+							b.Button("id", "new-session-btn", "class", "btn-primary", "style", "width: 100%; margin-bottom: 0.5rem;").T("New Session"),
+							b.Button("id", "compact-session-btn", "class", "btn-secondary", "style", "width: 100%; display: none;").T("Compact Conversation"),
 						),
 					),
 					// Chat area
