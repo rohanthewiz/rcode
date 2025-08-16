@@ -8,6 +8,7 @@ import { setupClipboardHandling, setupDragAndDrop } from './clipboard.js';
 import { selectSession, createNewSession, loadSessions } from './session.js';
 import { addMessage, addSystemMessageToUI, addThinkingIndicator } from './messages.js';
 import { initializeUsagePanel } from './usage.js';
+import { compactSession, updateCompactionStats, checkAutoCompaction } from './compaction.js';
 
 // Store pastedImages globally for access
 window.pastedImages = [];
@@ -113,6 +114,12 @@ function setupEventListeners() {
   const planHistoryBtn = document.getElementById('plan-history-btn');
   if (planHistoryBtn) {
     planHistoryBtn.addEventListener('click', showPlanHistory);
+  }
+  
+  // Compact session button
+  const compactBtn = document.getElementById('compact-session-btn');
+  if (compactBtn) {
+    compactBtn.addEventListener('click', () => compactSession());
   }
 }
 

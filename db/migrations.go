@@ -404,6 +404,53 @@ var migrations = []Migration{
 			CREATE INDEX IF NOT EXISTS idx_usage_created ON usage_tracking(created_at);
 		`,
 	},
+	{
+		Version:     9,
+		Description: "Add conversation compaction support",
+		SQL: `
+			-- Create compacted_messages table to store summarized conversation sections
+			CREATE SEQUENCE IF NOT EXISTS compacted_messages_id_seq;
+			
+			CREATE TABLE IF NOT EXISTS compacted_messages (
+				id INTEGER PRIMARY KEY DEFAULT nextval('compacted_messages_id_seq'),
+				session_id TEXT NOT NULL,
+				summary TEXT NOT NULL,
+				original_message_ids INTEGER[], -- IDs of original messages that were compacted
+				start_message_id INTEGER NOT NULL, -- First message ID in the compacted range
+				end_message_id INTEGER NOT NULL,   -- Last message ID in the compacted range
+				token_count_before INTEGER NOT NULL, -- Token count before compaction
+				token_count_after INTEGER NOT NULL,  -- Token count after compaction
+				compacted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				metadata JSON, -- Store additional context like key decisions, errors, etc.
+				FOREIGN KEY (session_id) REFERENCES sessions(id)
+			);
+			CREATE INDEX IF NOT EXISTS idx_compacted_messages_session ON compacted_messages(session_id);
+			CREATE INDEX IF NOT EXISTS idx_compacted_messages_range ON compacted_messages(start_message_id, end_message_id);
+			
+			-- Add compaction metadata to sessions table
+			ALTER TABLE sessions ADD COLUMN IF NOT EXISTS compaction_metadata JSON;
+			ALTER TABLE sessions ADD COLUMN IF NOT EXISTS last_compacted_at TIMESTAMP;
+			ALTER TABLE sessions ADD COLUMN IF NOT EXISTS auto_compact_enabled BOOLEAN DEFAULT FALSE;
+			ALTER TABLE sessions ADD COLUMN IF NOT EXISTS compact_threshold INTEGER DEFAULT 50000; -- Token threshold for auto-compaction
+			
+			-- Create archived_messages table to store original messages before compaction
+			CREATE TABLE IF NOT EXISTS archived_messages (
+				id INTEGER PRIMARY KEY,
+				session_id TEXT NOT NULL,
+				role TEXT NOT NULL,
+				content JSON NOT NULL,
+				created_at TIMESTAMP NOT NULL,
+				model TEXT,
+				token_usage JSON,
+				archived_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+				compaction_id INTEGER,
+				FOREIGN KEY (session_id) REFERENCES sessions(id),
+				FOREIGN KEY (compaction_id) REFERENCES compacted_messages(id)
+			);
+			CREATE INDEX IF NOT EXISTS idx_archived_messages_session ON archived_messages(session_id);
+			CREATE INDEX IF NOT EXISTS idx_archived_messages_compaction ON archived_messages(compaction_id);
+		`,
+	},
 }
 
 // Migrate runs all pending database migrations

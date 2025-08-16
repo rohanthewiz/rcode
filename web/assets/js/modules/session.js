@@ -41,10 +41,15 @@ export async function selectSession(sessionId) {
     const messages = await response.json();
     
     // Display messages
+    const { addMessageToUI } = await import('./messages.js');
     messages.forEach(msg => {
       if (msg.role === 'user' || msg.role === 'assistant') {
         // Skip system messages as they're not shown in UI
         addMessageToUI(msg);
+      } else if (msg.role === 'system' && msg.content && msg.content.includes('=== Compacted Conversation')) {
+        // Handle compacted messages
+        const { addCompactedMessageToUI } = await import('./compaction.js');
+        addCompactedMessageToUI(msg.content);
       }
     });
     
@@ -52,6 +57,10 @@ export async function selectSession(sessionId) {
     if (chatContainer) {
       chatContainer.scrollTop = chatContainer.scrollHeight;
     }
+    
+    // Check compaction stats for this session
+    const { updateCompactionStats } = await import('./compaction.js');
+    await updateCompactionStats();
     
   } catch (error) {
     console.error('Error loading session:', error);

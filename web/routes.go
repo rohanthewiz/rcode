@@ -148,6 +148,13 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/diff/:sessionId/:path", getDiffHandler)
 	s.Post("/api/diff/snapshot", createSnapshotHandler)
 	s.Post("/api/diff/generate", generateDiffHandler)
+
+	// Conversation compaction endpoints
+	s.Post("/api/session/:id/compact", compactSessionHandler)
+	s.Get("/api/session/:id/compaction/stats", getCompactionStatsHandler)
+	s.Get("/api/session/:id/compaction/messages", getCompactedMessagesHandler)
+	s.Post("/api/session/:id/compaction/:compactionId/restore", restoreCompactedMessagesHandler)
+	s.Put("/api/session/:id/auto-compact", updateAutoCompactHandler)
 	s.Get("/api/session/:id/diffs", listSessionDiffsHandler)
 	s.Get("/api/diff/:id", getDiffByIdHandler)
 	s.Post("/api/diff/:id/viewed", markDiffViewedHandler)
