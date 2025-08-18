@@ -2,6 +2,8 @@ package web
 
 import (
 	_ "embed"
+	"fmt"
+	"strings"
 
 	"rcode/auth"
 
@@ -9,6 +11,13 @@ import (
 	"github.com/rohanthewiz/rweb"
 )
 
+// Embed all static assets
+//
+//go:embed assets/js/* assets/js/modules/* assets/css/*
+// var assetsFS embed.FS
+
+// Individual embeds for backward compatibility
+//
 //go:embed assets/js/ui.js
 var uiJS string
 
@@ -23,6 +32,9 @@ var diffViewerJS string
 
 //go:embed assets/js/fileOperations.js
 var fileOperationsJS string
+
+//go:embed assets/js/file-browser.js
+var fileBrowserJS string
 
 //go:embed assets/js/modules/clipboard.js
 var clipboardJS string
@@ -62,6 +74,9 @@ var utilsJS string
 
 //go:embed assets/css/ui.css
 var uiCSS string
+
+//go:embed assets/css/file-browser.css
+var fileBrowserCSS string
 
 //go:embed assets/css/diffViewer.css
 var diffViewerCSS string
@@ -441,7 +456,7 @@ func generateMainUI(isAuthenticated bool) string {
 }
 
 func generateCSS() string {
-	return uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS
+	return uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS + "\n\n" + fileBrowserCSS
 }
 
 func generateJavaScript(isAuthenticated bool) string {
@@ -557,6 +572,10 @@ func generateJavaScript(isAuthenticated bool) string {
 			setTimeout(() => {
 				if (window.FileExplorer) {
 					window.FileExplorer.init();
+				}
+				// Initialize file browser with context menu
+				if (window.FileBrowser) {
+					window.fileBrowser = new window.FileBrowser();
 				}
 				// Initialize diff viewer
 				if (window.DiffViewer) {
