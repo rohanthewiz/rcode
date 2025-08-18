@@ -1,0 +1,335 @@
+/* File Browser and Context Menu Styles */
+
+/* Context Menu */
+.context-menu {
+    position: fixed;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+    padding: 4px 0;
+    min-width: 200px;
+    z-index: 10000;
+    display: none;
+    font-size: 13px;
+}
+
+.context-menu-item {
+    padding: 8px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: var(--text-primary);
+    transition: background-color 0.2s;
+}
+
+.context-menu-item:hover {
+    background-color: var(--hover-bg);
+}
+
+.context-menu-item.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.context-menu-separator {
+    height: 1px;
+    background-color: var(--border-color);
+    margin: 4px 0;
+}
+
+.menu-icon {
+    width: 16px;
+    text-align: center;
+}
+
+.menu-shortcut {
+    margin-left: auto;
+    font-size: 11px;
+    opacity: 0.7;
+}
+
+/* File Selection */
+.tree-node.selected {
+    background-color: var(--selection-bg);
+    border-radius: 4px;
+}
+
+.tree-node.cut {
+    opacity: 0.5;
+}
+
+.tree-node.cut .node-name {
+    text-decoration: line-through;
+}
+
+/* Multi-select visual feedback */
+.file-tree {
+    user-select: none;
+}
+
+.tree-node {
+    cursor: pointer;
+    padding: 4px 8px;
+    transition: background-color 0.2s;
+}
+
+.tree-node:hover {
+    background-color: var(--hover-bg);
+}
+
+/* Notification Styles */
+.notification {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    padding: 12px 20px;
+    border-radius: 6px;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.2);
+    transform: translateX(400px);
+    transition: transform 0.3s ease;
+    z-index: 10001;
+    max-width: 300px;
+}
+
+.notification.show {
+    transform: translateX(0);
+}
+
+.notification-success {
+    background: #0f5132;
+    border-left: 4px solid #198754;
+}
+
+.notification-error {
+    background: #842029;
+    border-left: 4px solid #dc3545;
+}
+
+.notification-info {
+    background: #055160;
+    border-left: 4px solid #0dcaf0;
+}
+
+.notification-warning {
+    background: #664d03;
+    border-left: 4px solid #ffc107;
+}
+
+/* File Operations Toolbar */
+.file-operations-toolbar {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    border-bottom: 1px solid var(--border-color);
+    background: var(--bg-secondary);
+}
+
+.file-op-button {
+    padding: 4px 8px;
+    background: var(--button-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    cursor: pointer;
+    font-size: 12px;
+    transition: background-color 0.2s;
+}
+
+.file-op-button:hover {
+    background: var(--button-hover-bg);
+}
+
+.file-op-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Clipboard indicator */
+.clipboard-indicator {
+    position: fixed;
+    bottom: 20px;
+    right: 20px;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    font-size: 12px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+}
+
+.clipboard-indicator.active {
+    display: flex;
+}
+
+.clipboard-indicator .clear-clipboard {
+    cursor: pointer;
+    color: var(--text-secondary);
+    margin-left: 8px;
+}
+
+.clipboard-indicator .clear-clipboard:hover {
+    color: var(--text-primary);
+}
+
+/* CSS Variables (ensure these are defined in main CSS) */
+:root {
+    --bg-primary: #1e1e1e;
+    --bg-secondary: #252526;
+    --text-primary: #cccccc;
+    --text-secondary: #8c8c8c;
+    --border-color: #3c3c3c;
+    --hover-bg: #2a2d2e;
+    --selection-bg: #094771;
+    --button-bg: #0e639c;
+    --button-hover-bg: #1177bb;
+}
+
+/* Zip Dialog Styles */
+.zip-dialog {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10002;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.dialog-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.5);
+}
+
+.dialog-content {
+    position: relative;
+    background: var(--bg-primary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 24px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.dialog-content h3 {
+    margin: 0 0 12px 0;
+    color: var(--text-primary);
+    font-size: 18px;
+}
+
+.dialog-info {
+    color: var(--text-secondary);
+    margin-bottom: 20px;
+    font-size: 14px;
+}
+
+.form-group {
+    margin-bottom: 16px;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--text-primary);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.form-group input[type="text"] {
+    width: 100%;
+    padding: 8px 12px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 14px;
+}
+
+.form-group input[type="text"]:focus {
+    outline: none;
+    border-color: var(--button-bg);
+}
+
+.form-hint {
+    display: block;
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--text-secondary);
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    cursor: pointer;
+    font-size: 14px;
+}
+
+.checkbox-label input[type="checkbox"] {
+    margin-right: 8px;
+    cursor: pointer;
+}
+
+.dialog-buttons {
+    display: flex;
+    gap: 12px;
+    justify-content: flex-end;
+    margin-top: 24px;
+}
+
+.dialog-buttons button {
+    padding: 8px 16px;
+    border-radius: 4px;
+    border: none;
+    font-size: 14px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.dialog-buttons .btn-primary {
+    background: var(--button-bg);
+    color: white;
+}
+
+.dialog-buttons .btn-primary:hover {
+    background: var(--button-hover-bg);
+}
+
+.dialog-buttons .btn-secondary {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    border: 1px solid var(--border-color);
+}
+
+.dialog-buttons .btn-secondary:hover {
+    background: var(--hover-bg);
+}
+
+/* Dark theme adjustments */
+@media (prefers-color-scheme: dark) {
+    .context-menu {
+        background: #2d2d30;
+        border-color: #464647;
+    }
+    
+    .context-menu-item:hover {
+        background-color: #094771;
+    }
+    
+    .dialog-content {
+        background: #2d2d30;
+        border-color: #464647;
+    }
+}

@@ -144,6 +144,16 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/session/:id/files/recent", getRecentFilesHandler)
 	s.Get("/api/session/:id/files/open", getSessionOpenFilesHandler)
 
+	// File management endpoints
+	s.Get("/api/files", ListFilesHandler)
+	s.Post("/api/files/copy", CopyFilesHandler)
+	s.Post("/api/files/cut", CutFilesHandler)
+	s.Post("/api/files/paste", PasteFilesHandler)
+	s.Delete("/api/files", DeleteFilesHandler)
+	s.Get("/api/files/clipboard", GetClipboardHandler)
+	s.Post("/api/files/clipboard/clear", ClearClipboardHandler)
+	s.Post("/api/files/zip", ZipFilesHandler)
+
 	// Diff visualization endpoints
 	s.Get("/api/diff/:sessionId/:path", getDiffHandler)
 	s.Post("/api/diff/snapshot", createSnapshotHandler)

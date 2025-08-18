@@ -33,8 +33,14 @@ var diffViewerJS string
 //go:embed assets/js/fileOperations.js
 var fileOperationsJS string
 
+//go:embed assets/js/file-browser.js
+var fileBrowserJS string
+
 //go:embed assets/css/ui.css
 var uiCSS string
+
+//go:embed assets/css/file-browser.css
+var fileBrowserCSS string
 
 //go:embed assets/css/diffViewer.css
 var diffViewerCSS string
@@ -414,7 +420,7 @@ func generateMainUI(isAuthenticated bool) string {
 }
 
 func generateCSS() string {
-	return uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS
+	return uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS + "\n\n" + fileBrowserCSS
 }
 
 func generateJavaScript(isAuthenticated bool) string {
@@ -433,14 +439,18 @@ func generateJavaScript(isAuthenticated bool) string {
 		return generateModularJavaScript()
 	}
 
-	// Fallback: Include file explorer, file operations, and diff viewer for authenticated users
-	return fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" + diffViewerJS + "\n\n" + uiJS + `
-		// Initialize file explorer and diff viewer after UI is ready
+	// Fallback: Include file explorer, file operations, file browser, and diff viewer for authenticated users
+	return fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" + fileBrowserJS + "\n\n" + diffViewerJS + "\n\n" + uiJS + `
+		// Initialize file explorer, file browser and diff viewer after UI is ready
 		document.addEventListener('DOMContentLoaded', function() {
 			// Initialize file explorer after a short delay to ensure Monaco is loaded
 			setTimeout(() => {
 				if (window.FileExplorer) {
 					window.FileExplorer.init();
+				}
+				// Initialize file browser with context menu
+				if (window.FileBrowser) {
+					window.fileBrowser = new window.FileBrowser();
 				}
 				// Initialize diff viewer
 				if (window.DiffViewer) {
