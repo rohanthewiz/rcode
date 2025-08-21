@@ -478,6 +478,7 @@ func generateModularJavaScript() string {
 		"assets/js/modules/markdown.js",
 		"assets/js/modules/utils.js",
 		"assets/js/modules/clipboard.js",
+		"assets/js/modules/fileMention.js",
 		"assets/js/modules/usage.js",
 		"assets/js/modules/permissions.js",
 		"assets/js/modules/messages.js",
