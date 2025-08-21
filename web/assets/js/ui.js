@@ -1785,6 +1785,12 @@ document.addEventListener('DOMContentLoaded', function() {
       sendMessage();
     });
 
+    // Initialize file mention system
+    if (window.FileMentionSystem) {
+      window.fileMentionSystem = new FileMentionSystem(editor);
+      console.log('File mention system initialized');
+    }
+    
     // Focus the editor
     editor.focus();
     // console.log('Monaco editor initialized successfully');
