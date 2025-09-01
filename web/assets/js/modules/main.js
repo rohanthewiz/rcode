@@ -20,11 +20,7 @@ async function initialize() {
   // Configure marked.js for markdown rendering
   configureMarked();
   
-  // Get message input element
-  const messageInput = document.getElementById('message-input');
-  setState('messageInput', messageInput);
-  
-  // Setup editor (Monaco or textarea)
+  // Setup editor (Monaco or textarea) - this will create the message input
   setupEditor();
   
   // Initialize SSE connection
@@ -47,27 +43,46 @@ async function initialize() {
 
 // Setup editor (Monaco or textarea fallback)
 function setupEditor() {
-  const editorContainer = document.getElementById('editor-container');
-  const messageInput = document.getElementById('message-input');
+  const editorContainer = document.getElementById('monaco-container');
   
-  if (!editorContainer || !messageInput) {
-    console.error('Editor container or message input not found');
+  if (!editorContainer) {
+    console.error('Editor container not found');
     return;
   }
   
-  // For now, use the textarea as the editor
-  setState('editor', messageInput);
+  // For now, create a simple textarea as the editor
+  // Monaco editor will be initialized later when the loader is ready
+  const textarea = document.createElement('textarea');
+  textarea.id = 'message-input';
+  textarea.className = 'message-input';
+  textarea.placeholder = 'Type your message here...';
+  textarea.style.width = '100%';
+  textarea.style.minHeight = '100px';
+  textarea.style.padding = '10px';
+  textarea.style.border = 'none';
+  textarea.style.background = 'transparent';
+  textarea.style.color = 'inherit';
+  textarea.style.resize = 'vertical';
+  textarea.style.fontFamily = 'monospace';
+  
+  // Clear the container and add the textarea
+  editorContainer.innerHTML = '';
+  editorContainer.appendChild(textarea);
+  
+  // Store reference
+  setState('editor', textarea);
+  setState('messageInput', textarea);
   
   // Setup clipboard handling
-  setupClipboardHandling(messageInput, window.pastedImages);
+  setupClipboardHandling(textarea, window.pastedImages);
   
   // Setup drag and drop
-  setupDragAndDrop(messageInput, window.pastedImages);
+  setupDragAndDrop(textarea, window.pastedImages);
   
   // Auto-resize textarea
-  messageInput.addEventListener('input', () => {
-    messageInput.style.height = 'auto';
-    messageInput.style.height = messageInput.scrollHeight + 'px';
+  textarea.addEventListener('input', () => {
+    textarea.style.height = 'auto';
+    textarea.style.height = textarea.scrollHeight + 'px';
   });
 }
 

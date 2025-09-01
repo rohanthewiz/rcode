@@ -3,6 +3,7 @@ package web
 import (
 	"embed"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"rcode/auth"
@@ -482,6 +483,7 @@ func generateModularJavaScript() string {
 		"assets/js/modules/usage.js",
 		"assets/js/modules/permissions.js",
 		"assets/js/modules/messages.js",
+		"assets/js/modules/compaction.js", // Added before session.js which depends on it
 		"assets/js/modules/tools.js",
 		"assets/js/modules/session.js",
 		"assets/js/modules/sse.js",
@@ -525,22 +527,79 @@ func convertES6Module(content, filename string) string {
 	// This is a simplified conversion that wraps modules in a way they can work
 	// In production, you'd want to use a proper bundler like esbuild or webpack
 
-	// Remove import statements (they'll be loaded in order)
+	// Compile regex patterns for export function conversion
+	// Matches: export function functionName( OR export async function functionName(
+	exportFuncRegex := regexp.MustCompile(`export\s+function\s+(\w+)\s*\(`)
+	exportAsyncFuncRegex := regexp.MustCompile(`export\s+async\s+function\s+(\w+)\s*\(`)
+
+	// Pattern for dynamic imports: const { funcName } = await import('./module.js');
+	dynamicImportRegex := regexp.MustCompile(`const\s+\{\s*(\w+)\s*\}\s*=\s*await\s+import\(['"]\./[\w/]+\.js['"]\);?`)
+
+	// Pattern for multi-line import statements
+	// Matches from "import" to the closing ";" including destructured imports
+	multiLineImportRegex := regexp.MustCompile(`(?s)import\s+\{[^}]*\}\s+from\s+['"]\./[\w/]+\.js['"];?`)
+	// Also handle single-line imports
+	singleLineImportRegex := regexp.MustCompile(`import\s+.*from\s+['"]\./[\w/]+\.js['"];?`)
+
+	// First, remove all import statements (both single and multi-line)
+	content = multiLineImportRegex.ReplaceAllString(content, "")
+	content = singleLineImportRegex.ReplaceAllString(content, "")
+
+	// Process line by line for other conversions
 	lines := strings.Split(content, "\n")
 	var result []string
 
+	// Track if we're inside a multi-line construct that needs to be skipped
+	skipUntilBrace := false
+
 	for _, line := range lines {
-		// Skip import statements
-		if strings.HasPrefix(strings.TrimSpace(line), "import ") {
+		trimmedLine := strings.TrimSpace(line)
+
+		// Skip lines that are part of removed imports (orphaned closing braces or from statements)
+		if skipUntilBrace {
+			if strings.Contains(line, "}") || strings.Contains(line, "from") {
+				if strings.Contains(line, ";") {
+					skipUntilBrace = false
+				}
+				continue
+			}
+		}
+
+		// Check for orphaned destructuring patterns (leftover from multi-line imports)
+		if strings.HasPrefix(trimmedLine, "}") && strings.Contains(trimmedLine, "from") {
 			continue
 		}
 
+		// Skip any remaining import-related lines
+		if strings.Contains(trimmedLine, "} from ") {
+			continue
+		}
+
+		// Replace dynamic imports with direct window references
+		// Since all modules are already loaded, we can use the window functions directly
+		if dynamicImportRegex.MatchString(line) {
+			// Extract the function name and create a direct reference
+			line = dynamicImportRegex.ReplaceAllString(line, "const $1 = window.$1;")
+		}
+
 		// Convert export statements to window assignments for global access
-		if strings.HasPrefix(strings.TrimSpace(line), "export ") {
-			line = strings.Replace(line, "export const ", "window.", 1)
-			line = strings.Replace(line, "export function ", "window.", 1)
-			line = strings.Replace(line, "export {", "// Export: {", 1)
-			line = strings.Replace(line, "export default ", "window.default_", 1)
+		if strings.HasPrefix(trimmedLine, "export ") {
+			// Handle export async function first (more specific pattern)
+			// Convert: export async function selectSession(sessionId)
+			// To: window.selectSession = async function(sessionId)
+			if exportAsyncFuncRegex.MatchString(line) {
+				line = exportAsyncFuncRegex.ReplaceAllString(line, "window.$1 = async function(")
+			} else if exportFuncRegex.MatchString(line) {
+				// Handle regular export function
+				// Convert: export function setState(key, value)
+				// To: window.setState = function(key, value)
+				line = exportFuncRegex.ReplaceAllString(line, "window.$1 = function(")
+			} else {
+				// Handle other export types
+				line = strings.Replace(line, "export const ", "window.", 1)
+				line = strings.Replace(line, "export {", "// Export: {", 1)
+				line = strings.Replace(line, "export default ", "window.default_", 1)
+			}
 		}
 
 		result = append(result, line)
