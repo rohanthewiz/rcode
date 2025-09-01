@@ -80,13 +80,15 @@ func SetupRoutes(s *rweb.Server) {
 	s.Post("/api/plan/:id/clone", clonePlanHandler)
 	s.Delete("/api/plan/:id", deletePlanHandler)
 
-	// Static assets endpoint - serve JavaScript modules and other assets
-	s.Get("/assets/*", func(c rweb.Context) error {
-		// Get the file path
-		reqPath := c.Request().Path()
+	// Static assets endpoint - serve css/img/js, etc
+	s.Get("/static/*", func(c rweb.Context) error {
+		reqPath := c.Request().Path() // Get the file path
 
 		// Build full path for embedded FS
-		filePath := "assets" + strings.TrimPrefix(reqPath, "/assets")
+		// Example url: /static/css/base.css
+
+		// Map URL to filesystem
+		filePath := "assets" + strings.TrimPrefix(reqPath, "/static")
 
 		// Read the file from embedded FS
 		content, err := assetsFS.ReadFile(filePath)

@@ -96,6 +96,7 @@ func main() {
 
 		// Add middleware for request logging
 		s.Use(rweb.RequestInfo)
+
 		s.ElementDebugRoutes()
 
 		web.SetupRoutes(s)

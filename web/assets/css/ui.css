@@ -4,22 +4,22 @@
    ======================================== */
 
 /* Core Styles */
-@import 'base.css';
-@import 'animations.css';
+@import 'static/css/base.css';
+@import 'static/css/animations.css';
 
 /* Layout Components */
-@import 'layout.css';
-@import 'buttons.css';
+@import 'static/css/layout.css';
+@import 'static/css/buttons.css';
 
 /* Main UI Sections */
-@import 'sidebar.css';
-@import 'chat.css';
-@import 'tools.css';
+@import 'static/css/sidebar.css';
+@import 'static/css/chat.css';
+@import 'static/css/tools.css';
 
 /* Features */
-@import 'plan-mode.css';
-@import 'file-explorer.css';
-@import 'modals.css';
-@import 'usage.css';
-@import 'compaction.css';
-@import 'file-mention.css';
+@import 'static/css/plan-mode.css';
+@import 'static/css/file-explorer.css';
+@import 'static/css/modals.css';
+@import 'static/css/usage.css';
+@import 'static/css/compaction.css';
+@import 'static/css/file-mention.css';
