@@ -1,17 +1,52 @@
 package web
 
 import (
+	"embed"
+	"net/http"
 	"rcode/auth"
+	"strings"
 
 	"github.com/rohanthewiz/rweb"
 )
 
 const clientChanCap = 512
 
+//go:embed assets
+var assetsFS embed.FS
+
 // SetupRoutes configures all HTTP routes for the server
 func SetupRoutes(s *rweb.Server) {
 	// Root endpoint - serves the main web UI
 	s.Get("/", rootHandler)
+
+	// Static assets endpoint - serve css/img/js, etc
+	s.Get("/static/*", func(c rweb.Context) error {
+		reqPath := c.Request().Path() // Get the file path
+
+		// Map URL to filesystem - build full path for embedded FS
+		// Example url: /static/css/base.css
+		filePath := "assets" + strings.TrimPrefix(reqPath, "/static")
+
+		// Read the file from embedded FS
+		content, err := assetsFS.ReadFile(filePath)
+		if err != nil {
+			c.Response().SetStatus(http.StatusNotFound)
+			return c.WriteString("File not found")
+		}
+
+		// Set content type based on file extension
+		if strings.HasSuffix(filePath, ".js") {
+			c.Response().SetHeader("Content-Type", "application/javascript")
+		} else if strings.HasSuffix(filePath, ".css") {
+			c.Response().SetHeader("Content-Type", "text/css")
+		}
+
+		// Write the content
+		c.Response().SetHeader("Cache-Control", "public, max-age=43200")
+		c.Response().SetStatus(http.StatusOK)
+		_, writeErr := c.Response().Write(content)
+		return writeErr
+	})
 
 	// Auth endpoints
 	s.Get("/auth/anthropic/authorize", auth.AnthropicAuthorizeHandler)
