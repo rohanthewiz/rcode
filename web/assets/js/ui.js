@@ -1,3 +1,4 @@
+// Clipboard module functions are available via window.ClipboardModule
 let currentSessionId = null;
 let eventSource = null;
 let messageInput;
@@ -123,305 +124,7 @@ function configureMarked() {
   }
 }
 
-// Setup clipboard and drag-drop handling for images
-function setupClipboardHandling(editor) {
-  // Variable to store pasted/dropped images
-  let pastedImages = [];
-  
-  // Monaco Editor paste event handling
-  const editorContainer = editor.getDomNode();
-  if (editorContainer) {
-    // Add paste event listener with capture to intercept before Monaco
-    editorContainer.addEventListener('paste', async function(e) {
-      // Check if clipboard contains an image
-      const clipboardData = e.clipboardData || window.clipboardData;
-      if (clipboardData && clipboardData.items) {
-        for (let i = 0; i < clipboardData.items.length; i++) {
-          const item = clipboardData.items[i];
-          if (item.type.indexOf('image') !== -1) {
-            // Handle image paste
-            e.preventDefault(); // Prevent default Monaco paste
-            e.stopPropagation(); // Stop event propagation
-            handlePasteEvent(e, editor, pastedImages);
-            return;
-          }
-        }
-      }
-      // Let Monaco handle non-image pastes normally
-    }, true); // Use capture phase to intercept before Monaco
-    
-    // Also add a contextmenu handler to enable paste for images
-    editorContainer.addEventListener('contextmenu', function(e) {
-      // Check if clipboard might have an image
-      // We can't directly check clipboard on contextmenu due to security
-      // but we can ensure our paste handler is ready
-      setTimeout(() => {
-        // Focus the editor after context menu to ensure paste events work
-        editor.focus();
-      }, 100);
-    });
-    
-    // Add keyboard shortcut handler for Cmd/Ctrl+V
-    editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyV, function() {
-      // Trigger a synthetic paste event
-      const pasteEvent = new ClipboardEvent('paste', {
-        clipboardData: new DataTransfer(),
-        bubbles: true,
-        cancelable: true
-      });
-      
-      // Try to read from clipboard using async API if available
-      if (navigator.clipboard && navigator.clipboard.read) {
-        navigator.clipboard.read().then(items => {
-          for (const item of items) {
-            for (const type of item.types) {
-              if (type.startsWith('image/')) {
-                item.getType(type).then(blob => {
-                  // Process the image blob
-                  processImageBlob(blob, type, editor, pastedImages);
-                });
-                return false; // Prevent default paste
-              }
-            }
-          }
-        }).catch(err => {
-          console.log('Clipboard API not available or permission denied:', err);
-          // Fall back to letting default paste happen
-        });
-        return false; // Prevent default behavior while we process
-      }
-    });
-  }
-  
-  // Also handle paste on the document for when editor might not have focus
-  document.addEventListener('paste', async function(e) {
-    // Only handle if we're in the main chat area but not in the editor itself
-    const chatArea = document.getElementById('chat-area');
-    const editorContainer = editor.getDomNode();
-    if (chatArea && chatArea.contains(e.target) && !editorContainer.contains(e.target)) {
-      handlePasteEvent(e, editor, pastedImages);
-    }
-  });
-  
-  // Setup drag and drop handling
-  setupDragAndDrop(editor, pastedImages);
-  
-  // Store pasted images reference on the editor for access later
-  editor.pastedImages = pastedImages;
-}
-
-// Helper function to process image blob
-function processImageBlob(blob, mimeType, editor, pastedImages) {
-  const reader = new FileReader();
-  reader.onload = function(event) {
-    const base64Data = event.target.result;
-    // Remove the data URL prefix to get just the base64 string
-    const base64String = base64Data.split(',')[1];
-    
-    // Store the image data
-    const imageData = {
-      type: 'image',
-      mediaType: mimeType,
-      data: base64String,
-      timestamp: Date.now()
-    };
-    // Clear any previous images and add only the new one
-    // This ensures we're only sending the most recently pasted image
-    pastedImages.length = 0;
-    pastedImages.push(imageData);
-    
-    // Add a visual indicator to the editor
-    const currentValue = editor.getValue();
-    // Use a clearer message that won't confuse the AI into thinking it should use clipboard tools
-    const imageIndicator = currentValue ? `\n[Image attached - ${(blob.size / 1024).toFixed(1)}KB]` : `Here's an image (${(blob.size / 1024).toFixed(1)}KB):`;
-    editor.setValue(currentValue + imageIndicator);
-    
-    // Show a notification
-    showImagePastedNotification(mimeType, blob.size);
-  };
-  reader.readAsDataURL(blob);
-}
-
-// Handle paste events
-async function handlePasteEvent(e, editor, pastedImages) {
-  const clipboardData = e.clipboardData || window.clipboardData;
-  if (!clipboardData) return;
-  
-  const items = clipboardData.items;
-  if (!items) return;
-  
-  // Check for images in clipboard
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    
-    // Check if the item is an image
-    if (item.type.indexOf('image') !== -1) {
-      e.preventDefault(); // Prevent default paste behavior
-      
-      const blob = item.getAsFile();
-      if (!blob) continue;
-      
-      // Convert blob to base64
-      const reader = new FileReader();
-      reader.onload = function(event) {
-        const base64Data = event.target.result;
-        // Remove the data URL prefix to get just the base64 string
-        const base64String = base64Data.split(',')[1];
-        
-        // Store the image data
-        const imageData = {
-          type: 'image',
-          mediaType: item.type,
-          data: base64String,
-          timestamp: Date.now()
-        };
-        // Clear any previous images and add only the new one
-        // This ensures we're only sending the most recently pasted image
-        pastedImages.length = 0;
-        pastedImages.push(imageData);
-        
-        // Add a visual indicator to the editor
-        const currentValue = editor.getValue();
-        // Use a clearer message that won't confuse the AI
-        const imageIndicator = currentValue ? `\n[Image attached - ${(blob.size / 1024).toFixed(1)}KB]` : `Here's an image (${(blob.size / 1024).toFixed(1)}KB):`;
-        editor.setValue(currentValue + imageIndicator);
-        
-        // Show a notification
-        showImagePastedNotification(item.type, blob.size);
-      };
-      reader.readAsDataURL(blob);
-    }
-  }
-}
-
-// Show notification when image is pasted or dropped
-function showImagePastedNotification(mimeType, size, filename) {
-  const messagesContainer = document.getElementById('messages');
-  const notification = document.createElement('div');
-  notification.className = 'image-paste-notification';
-  notification.style.cssText = `
-    position: fixed;
-    bottom: 200px;
-    right: 20px;
-    background: var(--success);
-    color: white;
-    padding: 10px 15px;
-    border-radius: 4px;
-    box-shadow: 0 2px 10px rgba(0,0,0,0.3);
-    z-index: 1000;
-    animation: slideIn 0.3s ease-out;
-  `;
-  const action = filename ? 'attached' : 'pasted';
-  const name = filename ? ` (${filename})` : '';
-  notification.textContent = `Image ${action}${name} - ${(size / 1024).toFixed(1)}KB`;
-  
-  document.body.appendChild(notification);
-  
-  // Remove notification after 3 seconds
-  setTimeout(() => {
-    notification.style.animation = 'slideOut 0.3s ease-out';
-    setTimeout(() => notification.remove(), 300);
-  }, 3000);
-}
-
-// Setup drag and drop for images
-function setupDragAndDrop(editor, pastedImages) {
-  const chatArea = document.getElementById('chat-area');
-  if (!chatArea) return;
-  
-  // Create drop zone overlay
-  const dropZone = document.createElement('div');
-  dropZone.id = 'drop-zone';
-  dropZone.className = 'drop-zone';
-  dropZone.innerHTML = `
-    <div class="drop-zone-content">
-      <div class="drop-icon">📎</div>
-      <div class="drop-text">Drop images here to attach</div>
-    </div>
-  `;
-  dropZone.style.display = 'none';
-  chatArea.appendChild(dropZone);
-  
-  // Prevent default drag behaviors
-  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-    chatArea.addEventListener(eventName, preventDefaults, false);
-    document.body.addEventListener(eventName, preventDefaults, false);
-  });
-  
-  function preventDefaults(e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-  
-  // Highlight drop zone when item is dragged over
-  ['dragenter', 'dragover'].forEach(eventName => {
-    chatArea.addEventListener(eventName, highlight, false);
-  });
-  
-  ['dragleave', 'drop'].forEach(eventName => {
-    chatArea.addEventListener(eventName, unhighlight, false);
-  });
-  
-  function highlight(e) {
-    dropZone.style.display = 'flex';
-    chatArea.classList.add('drag-over');
-  }
-  
-  function unhighlight(e) {
-    dropZone.style.display = 'none';
-    chatArea.classList.remove('drag-over');
-  }
-  
-  // Handle dropped files
-  chatArea.addEventListener('drop', handleDrop, false);
-  
-  function handleDrop(e) {
-    const dt = e.dataTransfer;
-    const files = dt.files;
-    
-    handleFiles(files, editor, pastedImages);
-  }
-}
-
-// Handle dropped files
-function handleFiles(files, editor, pastedImages) {
-  ([...files]).forEach(file => {
-    if (file.type.startsWith('image/')) {
-      processImageFile(file, editor, pastedImages);
-    }
-  });
-}
-
-// Process image file
-function processImageFile(file, editor, pastedImages) {
-  const reader = new FileReader();
-  
-  reader.onload = function(e) {
-    const base64Data = e.target.result;
-    // Remove the data URL prefix to get just the base64 string
-    const base64String = base64Data.split(',')[1];
-    
-    // Store the image data
-    const imageData = {
-      type: 'image',
-      mediaType: file.type,
-      data: base64String,
-      filename: file.name,
-      timestamp: Date.now()
-    };
-    pastedImages.push(imageData);
-    
-    // Add a visual indicator to the editor
-    const currentValue = editor.getValue();
-    const imageIndicator = `\n[Image attached: ${file.name} - ${(file.size / 1024).toFixed(1)}KB]`;
-    editor.setValue(currentValue + imageIndicator);
-    
-    // Show a notification
-    showImagePastedNotification(file.type, file.size, file.name);
-  };
-  
-  reader.readAsDataURL(file);
-}
+// Clipboard functions have been moved to modules/clipboard.js
 
 // Add CSS animations for notifications and drag-drop
 if (!document.getElementById('clipboard-styles')) {
@@ -595,204 +298,78 @@ if (!document.getElementById('clipboard-styles')) {
 }
 
 function connectEventSource() {
-  // Don't connect if manually disconnected
-  if (isManuallyDisconnected) {
-    console.log('Not connecting - manually disconnected');
-    return;
+  // Delegate to SSE module if available
+  if (window.SSEModule) {
+    return window.SSEModule.connectEventSource();
   }
-
-  // Close any existing connection first
-  if (eventSource) {
-    console.log('Closing existing EventSource before creating new connection');
-    eventSource.close();
-    eventSource = null;
-  }
-
-  console.log(`Attempting SSE connection (attempt ${reconnectAttempts + 1})`);
-
-  // Update status to reconnecting if we're retrying
-  if (reconnectAttempts > 0 || connectionStatus === 'reconnecting') {
-    updateConnectionStatus('reconnecting');
-  }
-
-  eventSource = new EventSource('/events');
-
-  eventSource.onopen = function() {
-    console.log('SSE connection established');
-    // Reset reconnection state on successful connection
-    reconnectAttempts = 0;
-    reconnectDelay = 1000;
-    updateConnectionStatus('connected');
-    
-    // Refresh sessions in case server was restarted
-    loadSessions();
-  };
-
-  eventSource.onmessage = function(event) {
-    // console.log('SSE msg received (raw): ', event);
-
-    const data = JSON.parse(event.data);
-    handleServerEvent(data);
-  };
-
-  eventSource.onerror = function(error) {
-    console.error('SSE error:', error);
-    
-    // Close the current connection
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-
-    // Increment attempts first
-    reconnectAttempts++;
-
-    // Check if we've exceeded max reconnection attempts
-    if (reconnectAttempts > maxReconnectAttempts) {
-      console.error('Max reconnection attempts reached. Stopping auto-reconnect.');
-      updateConnectionStatus('disconnected');
-      showConnectionError('Connection to server lost. Please refresh the page or click reconnect.');
-      return;
-    }
-
-    // Update status to show we're reconnecting with attempt count
-    updateConnectionStatus('reconnecting');
-
-    // Calculate next delay with exponential backoff
-    const nextDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
-    
-    console.log(`Reconnecting in ${reconnectDelay/1000} seconds... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
-    
-    setTimeout(() => {
-      connectEventSource();
-    }, reconnectDelay);
-    
-    // Update delay for next attempt
-    reconnectDelay = nextDelay;
-  };
+  console.error('SSE module not loaded');
 }
 
 // Manually reconnect SSE
 function reconnectSSE() {
-  console.log('Manual SSE reconnection requested');
-  
-  // Close any existing connection first
-  if (eventSource) {
-    console.log('Closing existing EventSource before reconnecting');
-    eventSource.close();
-    eventSource = null;
+  // Delegate to SSE module if available
+  if (window.SSEModule) {
+    return window.SSEModule.reconnectSSE();
   }
-  
-  isManuallyDisconnected = false;
-  reconnectAttempts = 0;
-  reconnectDelay = 1000;
-  
-  // Update status to show we're starting fresh
-  // Set attempts to 1 temporarily for display purposes
-  const tempAttempts = reconnectAttempts;
-  reconnectAttempts = 1;
-  updateConnectionStatus('reconnecting');
-  reconnectAttempts = tempAttempts;
-  
-  // Small delay to ensure UI updates before connection attempt
-  setTimeout(() => {
-    connectEventSource();
-  }, 100);
+  console.error('SSE module not loaded');
 }
 
 // Disconnect SSE
 function disconnectSSE() {
-  console.log('Disconnecting SSE');
-  isManuallyDisconnected = true;
-  if (eventSource) {
-    eventSource.close();
-    eventSource = null;
+  // Delegate to SSE module if available
+  if (window.SSEModule) {
+    return window.SSEModule.disconnectSSE();
   }
-  updateConnectionStatus('disconnected');
+  console.error('SSE module not loaded');
 }
 
 // Update connection status in UI
 function updateConnectionStatus(status) {
-  connectionStatus = status;
-  const statusElement = document.getElementById('connection-status');
-  if (!statusElement) {
-    console.error('Connection status element not found');
-    return;
+  // Delegate to SSE module if available
+  if (window.SSEModule) {
+    return window.SSEModule.updateConnectionStatus(status);
   }
-
-  console.log(`Updating connection status to: ${status}`);
-
-  // Remove all status classes
-  statusElement.classList.remove('connected', 'disconnected', 'reconnecting');
-  
-  // Add current status class
-  statusElement.classList.add(status);
-  
-  // Update text and visibility
-  switch(status) {
-    case 'connected':
-      statusElement.style.display = 'none'; // Hide when connected
-      statusElement.textContent = ''; // Clear text content
-      console.log('Status set to connected - indicator should be hidden');
-      break;
-    case 'reconnecting':
-      statusElement.textContent = `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`;
-      statusElement.style.display = 'block';
-      break;
-    case 'disconnected':
-      if (reconnectAttempts >= maxReconnectAttempts) {
-        statusElement.innerHTML = 'Connection lost. <a href="#" onclick="reconnectSSE(); return false;">Reconnect</a>';
-      } else {
-        statusElement.textContent = 'Disconnected';
-      }
-      statusElement.style.display = 'block';
-      break;
-  }
+  console.error('SSE module not loaded');
 }
 
 // Show connection error message
 function showConnectionError(message) {
-  const messagesContainer = document.getElementById('messages');
-  if (!messagesContainer) return;
-
-  const errorDiv = document.createElement('div');
-  errorDiv.className = 'connection-error';
-  errorDiv.innerHTML = `
-    <div class="error-content">
-      <strong>Connection Error</strong>
-      <p>${message}</p>
-      <button onclick="reconnectSSE()" class="btn-secondary">Reconnect</button>
-    </div>
-  `;
-  
-  messagesContainer.appendChild(errorDiv);
-  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+  // Delegate to SSE module if available
+  if (window.SSEModule) {
+    return window.SSEModule.showConnectionError(message);
+  }
+  console.error('SSE module not loaded');
 }
 
 // Handle server events
-function handleServerEvent(event) {
-  // already logged at parent // console.log('Received SSE event:', event);
-  console.log('Event sessionId:', event.sessionId, 'Current sessionId:', currentSessionId, 'Match:', event.sessionId === currentSessionId);
+function handleServerEvent(evtData) {
+  // Delegate to SSE module if available
+  if (window.SSEModule) {
+    return window.SSEModule.handleServerEvent(evtData);
+  }
+  
+  // Fallback: log the event
+  console.log('Event sessionId:', evtData.sessionId, 'Current sessionId:', currentSessionId, 'Match:', evtData.sessionId === currentSessionId);
   console.log('Global currentSessionId:', window.currentSessionId);
   
   // Special logging for permission events
-  if (event.type === 'permission_request') {
+  if (evtData.type === 'permission_request') {
     console.warn('PERMISSION EVENT RECEIVED:', {
-      type: event.type,
-      eventSessionId: event.sessionId,
+      type: evtData.type,
+      eventSessionId: evtData.sessionId,
       currentSessionId: currentSessionId,
       windowSessionId: window.currentSessionId,
-      sessionMatch: event.sessionId === currentSessionId,
-      data: event.data
+      sessionMatch: evtData.sessionId === currentSessionId,
+      data: evtData.data
     });
   }
 
   // Auto-switch to Files tab on first response
-  if (event.sessionId === currentSessionId && !hasReceivedFirstResponse) {
+  if (evtData.sessionId === currentSessionId && !hasReceivedFirstResponse) {
     // Check for events that indicate the LLM is starting to respond
-    if (event.type === 'content_start' || 
-        event.type === 'tool_execution_start' ||
-        (event.type === 'message_delta' && event.data && event.data.delta)) {
+    if (evtData.type === 'content_start' ||
+        evtData.type === 'tool_execution_start' ||
+        (evtData.type === 'message_delta' && evtData.data && evtData.data.delta)) {
       
       // Switch to Files tab on first response
       if (window.FileExplorer && window.FileExplorer.switchTab) {
@@ -803,7 +380,7 @@ function handleServerEvent(event) {
     }
   }
 
-  if (event.type === 'message_start' && event.sessionId === currentSessionId) {
+  if (evtData.type === 'message_start' && evtData.sessionId === currentSessionId) {
     console.log('Message streaming started');
     isLLMProcessing = true; // LLM is now processing
     toolsAnnounced = false; // Reset tools announced flag for new message
@@ -812,7 +389,7 @@ function handleServerEvent(event) {
       clearTimeout(thinkingReturnTimer);
       thinkingReturnTimer = null;
     }
-  } else if (event.type === 'content_start' && event.sessionId === currentSessionId) {
+  } else if (evtData.type === 'content_start' && evtData.sessionId === currentSessionId) {
     console.log('Content started (text or tool) - checking if tools announced:', toolsAnnounced);
     // Only handle thinking indicator if NOT expecting tools
     if (!toolsAnnounced) {
@@ -824,7 +401,7 @@ function handleServerEvent(event) {
       }
     }
     // If tools were announced, keep the thinking/tool execution indicator
-  } else if (event.type === 'tool_use_start' && event.sessionId === currentSessionId) {
+  } else if (evtData.type === 'tool_use_start' && evtData.sessionId === currentSessionId) {
     console.log('Tool use started - tools announced');
     toolsAnnounced = true; // Mark that tools have been announced
     // Transform thinking indicator to show tools are coming
@@ -835,15 +412,15 @@ function handleServerEvent(event) {
         content.innerHTML = '<span class="tool-executing">🛠️ Executing tools...</span>';
       }
     }
-  } else if (event.type === 'message_delta' && event.sessionId === currentSessionId) {
-    console.log('Message delta received:', event.data.delta);
+  } else if (evtData.type === 'message_delta' && evtData.sessionId === currentSessionId) {
+    console.log('Message delta received:', evtData.data.delta);
     // Create streaming message container if it doesn't exist
     if (!currentStreamingMessageDiv) {
       createStreamingMessage();
     }
     // Append delta to streaming message
-    appendToStreamingMessage(event.data.delta);
-  } else if (event.type === 'message_stop' && event.sessionId === currentSessionId) {
+    appendToStreamingMessage(evtData.data.delta);
+  } else if (evtData.type === 'message_stop' && evtData.sessionId === currentSessionId) {
     console.log('Message streaming stopped');
     // Finalize streaming message
     finalizeStreamingMessage();
@@ -862,21 +439,21 @@ function handleServerEvent(event) {
     // Remove any remaining thinking indicators
     const thinkingIndicators = document.querySelectorAll('.message.thinking');
     thinkingIndicators.forEach(indicator => indicator.remove());
-  } else if (event.type === 'tool_execution_start' && event.sessionId === currentSessionId) {
-    console.log('Tool execution started:', event.data);
-    handleToolExecutionStart(event.data);
-  } else if (event.type === 'tool_execution_progress' && event.sessionId === currentSessionId) {
-    console.log('Tool execution progress:', event.data);
-    handleToolExecutionProgress(event.data);
-  } else if (event.type === 'tool_execution_complete' && event.sessionId === currentSessionId) {
-    console.log('Tool execution completed:', event.data);
-    handleToolExecutionComplete(event.data);
+  } else if (evtData.type === 'tool_execution_start' && evtData.sessionId === currentSessionId) {
+    console.log('Tool execution started (fallback - should use SSE module):', evtData.data);
+    // Don't handle here - SSE module should handle this
+  } else if (evtData.type === 'tool_execution_progress' && evtData.sessionId === currentSessionId) {
+    console.log('Tool execution progress (fallback - should use SSE module):', evtData.data);
+    // Don't handle here - SSE module should handle this
+  } else if (evtData.type === 'tool_execution_complete' && evtData.sessionId === currentSessionId) {
+    console.log('Tool execution completed (fallback - should use SSE module):', evtData.data);
+    // Don't handle here - SSE module should handle this
 
     // Refresh file tree after successful file-related tool operations
     const fileTools = ['write_file', 'edit_file', 'make_dir', 'remove', 'move'];
-    if (event.data && event.data.toolName && window.FileExplorer) {
+    if (evtData.data && evtData.data.toolName && window.FileExplorer) {
       // Extract tool name from the summary (format: "✓ Tool operation...")
-      const toolName = event.data.toolName;
+      const toolName = evtData.data.toolName;
       if (fileTools.includes(toolName)) {
         // console.log('File operation detected, refreshing file tree for tool:', toolName);
 
@@ -896,59 +473,59 @@ function handleServerEvent(event) {
       }
     }
 
-  } else if (event.type === 'tool_usage' && event.sessionId === currentSessionId) {
-    console.log('Tool usage event received:', event.data);
+  } else if (evtData.type === 'tool_usage' && evtData.sessionId === currentSessionId) {
+    console.log('Tool usage event received:', evtData.data);
     // Add tool usage summary to UI
-    addToolUsageSummaryToUI(event.data);
-  } else if (event.type === 'session_list_updated') {
+    addToolUsageSummaryToUI(evtData.data);
+  } else if (evtData.type === 'session_list_updated') {
     loadSessions();
-  } else if (event.type && event.type.startsWith('plan_') && event.session_id === currentSessionId) {
+  } else if (evtData.type && evtData.type.startsWith('plan_') && evtData.session_id === currentSessionId) {
     // Handle plan-related events
-    handlePlanEvent(event);
-  } else if (event.type && (event.type === 'file_opened' || event.type === 'file_changed' || event.type === 'file_tree_update')) {
+    handlePlanEvent(evtData);
+  } else if (evtData.type && (evtData.type === 'file_opened' || evtData.type === 'file_changed' || evtData.type === 'file_tree_update')) {
     // Handle file explorer events
     if (window.FileExplorer && window.FileExplorer.handleFileEvent) {
-      window.FileExplorer.handleFileEvent(event);
+      window.FileExplorer.handleFileEvent(evtData);
     }
-  } else if (event.type === 'diff_available' && event.sessionId === currentSessionId) {
+  } else if (evtData.type === 'diff_available' && evtData.sessionId === currentSessionId) {
     // Handle diff available event
-    console.log('Diff available:', event.data);
-    if (event.data && event.data.filePath) {
+    console.log('Diff available:', evtData.data);
+    if (evtData.data && evtData.data.filePath) {
       // For diff_available, we'll mark as modified since it implies the file was changed
       // The file_changed event will handle marking as new if it's a creation
       if (window.FileExplorer && window.FileExplorer.markFileModified) {
-        window.FileExplorer.markFileModified(event.data.filePath);
+        window.FileExplorer.markFileModified(evtData.data.filePath);
       }
       
       // Store the diff in the diff viewer
-      if (window.diffViewer && event.data.diffId) {
+      if (window.diffViewer && evtData.data.diffId) {
         // Show notification that diff is available
-        const notification = `📝 Changes detected in ${event.data.filePath}`;
+        const notification = `📝 Changes detected in ${evtData.data.filePath}`;
         addSystemMessageToUI(notification, 'info');
       }
     }
-  } else if (event.type === 'tool_permission_update' && event.sessionId === currentSessionId) {
+  } else if (evtData.type === 'tool_permission_update' && evtData.sessionId === currentSessionId) {
     // Handle tool permission update event
-    console.log('Tool permission updated:', event.data);
+    console.log('Tool permission updated:', evtData.data);
     // Could refresh the tools list or update specific tool UI
     // For now, just log it as the UI is already updated optimistically
-  } else if (event.type === 'permission_request') {
+  } else if (evtData.type === 'permission_request') {
     // Handle permission request - check session ID match
-    console.log('Permission request received:', event.data);
-    console.log('Session check:', event.sessionId, '===', currentSessionId, '?', event.sessionId === currentSessionId);
-    if (event.sessionId === currentSessionId || event.sessionId === window.currentSessionId) {
-      handlePermissionRequest(event.data);
+    console.log('Permission request received:', evtData.data);
+    console.log('Session check:', evtData.sessionId, '===', currentSessionId, '?', evtData.sessionId === currentSessionId);
+    if (evtData.sessionId === currentSessionId || evtData.sessionId === window.currentSessionId) {
+      handlePermissionRequest(evtData.data);
     } else {
       console.warn('Permission request for different session, ignoring');
     }
-  } else if (event.type === 'file_diff' && event.sessionId === currentSessionId) {
+  } else if (evtData.type === 'file_diff' && evtData.sessionId === currentSessionId) {
     // Handle file diff display
-    console.log('File diff received:', event.data);
-    displayFileDiff(event.data);
-  } else if (event.type === 'usage_update' && event.sessionId === currentSessionId) {
+    console.log('File diff received:', evtData.data);
+    displayFileDiff(evtData.data);
+  } else if (evtData.type === 'usage_update' && evtData.sessionId === currentSessionId) {
     // Handle usage update
-    console.log('Usage update received:', event.data);
-    handleUsageUpdateEvent(event.data);
+    console.log('Usage update received:', evtData.data);
+    handleUsageUpdateEvent(evtData.data);
   }
 }
 
@@ -1052,8 +629,10 @@ async function loadMessages() {
 }
 
 // Add tool usage summary to UI
-function addToolUsageSummaryToUI(toolData) {
+// Sample evtData: {"data":{"summary":"âœ“ Created directory run_hi","tool":"make_dir"},"sessionId":"session-1756944521","type":"tool_usage"}
+function addToolUsageSummaryToUI(evtData) {
   const messagesContainer = document.getElementById('messages');
+  const toolData = evtData.data;
   
   // Find the thinking indicator if it exists
   const thinkingIndicator = messagesContainer.querySelector('.message.thinking');
@@ -2206,8 +1785,16 @@ document.addEventListener('DOMContentLoaded', function() {
     editor.focus();
     // console.log('Monaco editor initialized successfully');
     
+    // Expose editor to window for other modules
+    window.editor = editor;
+    
     // Add clipboard image handling
-    setupClipboardHandling(editor);
+    // Use clipboard module function from global scope
+    if (window.ClipboardModule && window.ClipboardModule.setupClipboardHandling) {
+      window.ClipboardModule.setupClipboardHandling(editor);
+    } else {
+      console.error('ClipboardModule not loaded');
+    }
 
     console.log('Monaco is ready');
     // resolve();
@@ -2822,8 +2409,20 @@ function updateWorkingIndicator() {
   }
 }
 
-// Handle tool execution start event
-function handleToolExecutionStart(data) {
+// Handle tool execution start event - delegate to tools module if available
+function handleToolExecutionStart(evtData) {
+  // If tools module is available and has the handler, use it
+  if (window.ToolsModule && window.ToolsModule.handleToolExecutionStart) {
+    // Map the backend data structure to what tools module expects
+    const toolsModuleData = {
+      toolUseId: evtData.toolId,  // Map toolId to toolUseId
+      toolName: evtData.toolName,
+      parameters: evtData.parameters || {}  // Provide empty object if no parameters
+    };
+    return window.ToolsModule.handleToolExecutionStart({ data: toolsModuleData });
+  }
+  
+  // Fallback to simple implementation if module not available
   const messagesContainer = document.getElementById('messages');
   
   // Clear any pending thinking return timer when new tool starts
@@ -2862,10 +2461,10 @@ function handleToolExecutionStart(data) {
   const toolsList = toolsContainer.querySelector('.tool-execution-list');
   const toolItem = document.createElement('div');
   toolItem.className = 'tool-item executing';
-  toolItem.id = `tool-${data.toolId}`;
+  toolItem.id = `tool-${evtData.toolId}`;
   toolItem.innerHTML = `
     <span class="tool-status-icon">⏳</span>
-    <span class="tool-name">${data.toolName}</span>
+    <span class="tool-name">${evtData.toolName}</span>
     <div class="tool-progress" style="display: none;">
       <div class="tool-progress-bar" style="width: 0%"></div>
     </div>
@@ -2875,9 +2474,9 @@ function handleToolExecutionStart(data) {
   toolsList.appendChild(toolItem);
   
   // Track the active tool execution
-  activeToolExecutions.set(data.toolId, {
-    name: data.toolName,
-    startTime: data.startTime,
+  activeToolExecutions.set(evtData.toolId, {
+    name: evtData.toolName,
+    startTime: evtData.startTime,
     element: toolItem
   });
   
@@ -2889,7 +2488,20 @@ function handleToolExecutionStart(data) {
 }
 
 // Handle tool execution progress event
-function handleToolExecutionProgress(data) {
+function handleToolExecutionProgress(evtData) {
+  // Delegate to tools module if available
+  if (window.ToolsModule && window.ToolsModule.handleToolExecutionProgress) {
+
+    // // Map the backend data structure to what the module expects
+    // const toolsModuleData = {
+    //   toolUseId: evtData.data.toolId,
+    //   progress: evtData.data.progress,
+    //   message: evtData.data.message
+    // };
+    return window.ToolsModule.handleToolExecutionProgress(evtData);
+  }
+  
+  // Fallback implementation for backward compatibility
   const toolInfo = activeToolExecutions.get(data.toolId);
   if (!toolInfo) return;
   
@@ -2909,14 +2521,30 @@ function handleToolExecutionProgress(data) {
 }
 
 // Handle tool execution complete event
-function handleToolExecutionComplete(data) {
+// Sample: evtData: {"data":{"duration":3151,"metrics":{"duration":3151},"status":"success",
+// "summary":"âœ“ Created directory run_hi","toolId":"toolu_01GJixVq8hJG7yk3Gt4feqVZ","toolName":"make_dir"},
+// "sessionId":"session-1756944521","type":"tool_execution_complete"}
+function handleToolExecutionComplete(evtData) {
+  // Delegate to tools module if available
+  if (window.ToolsModule && window.ToolsModule.handleToolExecutionComplete) {
+    // Map the backend data structure to what tools module expects
+    const toolsModuleData = {
+      toolUseId: evtData.data.toolId,
+      success: evtData.data.status === 'success',
+      error: evtData.data.status === 'failed' ? (evtData.data.summary || 'Failed') : null,
+      metrics: evtData.data.metrics
+    };
+    return window.ToolsModule.handleToolExecutionComplete({ data: toolsModuleData });
+  }
+  
+  // Fallback implementation for backward compatibility
   // Clear any existing thinking return timer
   if (thinkingReturnTimer) {
     clearTimeout(thinkingReturnTimer);
     thinkingReturnTimer = null;
   }
   
-  const toolInfo = activeToolExecutions.get(data.toolId);
+  const toolInfo = activeToolExecutions.get(evtData.toolId);
   if (!toolInfo) return;
   
   const toolItem = toolInfo.element;
@@ -2926,12 +2554,12 @@ function handleToolExecutionComplete(data) {
   
   // Update status
   toolItem.classList.remove('executing');
-  toolItem.classList.add(data.status);
+  toolItem.classList.add(evtData.status);
   
   // Update icon based on status
-  if (data.status === 'success') {
+  if (evtData.status === 'success') {
     statusIcon.textContent = '✓';
-  } else if (data.status === 'failed') {
+  } else if (evtData.status === 'failed') {
     statusIcon.textContent = '❌';
   }
   
@@ -2939,14 +2567,14 @@ function handleToolExecutionComplete(data) {
   progressContainer.style.display = 'none';
   
   // Update summary/metrics
-  if (data.summary) {
-    metricsSpan.textContent = data.summary.replace(/^[✓❌]\s*/, ''); // Remove status icon from summary
-  } else if (data.metrics && data.metrics.duration) {
-    metricsSpan.textContent = `(${data.metrics.duration}ms)`;
+  if (evtData.summary) {
+    metricsSpan.textContent = evtData.summary.replace(/^[✓❌]\s*/, ''); // Remove status icon from summary
+  } else if (evtData.metrics && evtData.metrics.duration) {
+    metricsSpan.textContent = `(${evtData.metrics.duration}ms)`;
   }
   
   // Remove from active executions
-  activeToolExecutions.delete(data.toolId);
+  activeToolExecutions.delete(evtData.toolId);
   
   // Update working indicator
   updateWorkingIndicator();
@@ -3017,136 +2645,142 @@ function toggleToolDetails(button) {
 const activePermissionRequests = new Map();
 
 // Handle incoming permission request
-function handlePermissionRequest(data) {
-  console.error('HANDLE PERMISSION REQUEST CALLED:', data);
+// Sample: {"data":{"diffPreview":{"sessionId":"","path":"run_hi/main.go","before":"","after":"package main\n\nimport \"fmt\"\n\n// main is the entry point for our greeting application\n// Using a simple approach to demonstrate Go's straightforward syntax\nfunc main() {\n\t// Print greeting to standard output\n\t// Go's fmt.Println automatically adds a newline character\n\tfmt.Println(\"Hi there! ðŸ‘‹\")\n}","hunks":[{"oldStart":0,"oldLines":0,"newStart":1,"newLines":11,"lines":[{"type":"add","newLine":1,"content":"package main"},{"type":"add","newLine":2,"content":""},{"type":"add","newLine":3,"content":"import \"fmt\""},{"type":"add","newLine":4,"content":""},{"type":"add","newLine":5,"content":"// main is the entry point for our greeting application"},{"type":"add","newLine":6,"content":"// Using a simple approach to demonstrate Go's straightforward syntax"},{"type":"add","newLine":7,"content":"func main() {"},{"type":"add","newLine":8,"content":"\t// Print greeting to standard output"},{"type":"add","newLine":9,"content":"\t// Go's fmt.Println automatically adds a newline character"},{"type":"add","newLine":10,"content":"\tfmt.Println(\"Hi there! ðŸ‘‹\")"},{"type":"add","newLine":11,"content":"}"}]}],"stats":{"added":11,"deleted":0,"modified":0},"timestamp":"2025-09-03T19:08:51.31869-05:00"},"parameterDisplay":"File: run_hi/main.go","parameters":{"content":"package main\n\nimport \"fmt\"\n\n// main is the entry point for our greeting application\n// Using a simple approach to demonstrate Go's straightforward syntax\nfunc main() {\n\t// Print greeting to standard output\n\t// Go's fmt.Println automatically adds a newline character\n\tfmt.Println(\"Hi there! ðŸ‘‹\")\n}","path":"run_hi/main.go"},"requestId":"1abd379d-17fe-407d-a4f0-fe500226233f","timestamp":1756944531,"toolName":"write_file"},"sessionId":"session-1756944521","type":"permission_request"}
+function handlePermissionRequest(llmData) {
+  // console.error('HANDLE PERMISSION REQUEST CALLED:', data);
   
   // Store the request
-  activePermissionRequests.set(data.requestId, data);
+  activePermissionRequests.set(llmData.requestId, llmData);
   
   // Show the permission modal
-  showPermissionModal(data);
+  // showPermissionModal(llmData);
 }
 
-// Show permission modal dialog
-function showPermissionModal(data) {
-  const modal = document.getElementById('permission-modal');
-  const toolNameElement = document.getElementById('permission-tool-name');
-  const paramsElement = document.getElementById('permission-params');
-  const rememberCheckbox = document.getElementById('permission-remember');
-  
-  // Set tool name
-  toolNameElement.textContent = data.toolName;
-  
-  // Display parameters
-  paramsElement.innerHTML = '';
-  if (data.parameterDisplay) {
-    const paramDiv = document.createElement('div');
-    paramDiv.className = 'param-display';
-    paramDiv.textContent = data.parameterDisplay;
-    paramsElement.appendChild(paramDiv);
-  } else {
-    // Fallback to showing raw parameters
-    const paramList = document.createElement('ul');
-    const params = data.parameters || {};
-    const paramKeys = Object.keys(params).filter(k => !k.startsWith('_'));
-    
-    if (paramKeys.length === 0) {
-      // No parameters to display
-      const li = document.createElement('li');
-      li.innerHTML = '<em>No parameters provided (this might be an error)</em>';
-      li.style.color = 'var(--warning)';
-      paramList.appendChild(li);
-    } else {
-      for (const key of paramKeys) {
-        const li = document.createElement('li');
-        const value = params[key];
-        // Truncate long values for display
-        let displayValue = JSON.stringify(value);
-        if (displayValue.length > 100) {
-          displayValue = displayValue.substring(0, 100) + '...';
-        }
-        li.innerHTML = `<strong>${key}:</strong> ${displayValue}`;
-        paramList.appendChild(li);
-      }
-    }
-    paramsElement.appendChild(paramList);
-  }
+// Expose to window for SSE module
+window.handlePermissionRequest = handlePermissionRequest;
+
+// // Show permission modal dialog
+// function showPermissionModal(llmData) {
+//   const modal = document.getElementById('permission-modal');
+//   const toolNameElement = document.getElementById('permission-tool-name');
+//   const paramsElement = document.getElementById('permission-params');
+//   const rememberCheckbox = document.getElementById('permission-remember');
+//   console.log("llmData", llmData);
+//   console.warn(llmData);
+//
+//   // Set tool name
+//   toolNameElement.textContent = llmData.toolName;
+//
+//   // Display parameters
+//   paramsElement.innerHTML = '';
+//   if (llmData.parameterDisplay) {
+//     const paramDiv = document.createElement('div');
+//     paramDiv.className = 'param-display';
+//     paramDiv.textContent = llmData.parameterDisplay;
+//     paramsElement.appendChild(paramDiv);
+//   } else {
+//     // Fallback to showing raw parameters
+//     const paramList = document.createElement('ul');
+//     const params = llmData.parameters || {};
+//     const paramKeys = Object.keys(params).filter(k => !k.startsWith('_'));
+//
+//     if (paramKeys.length === 0) {
+//       // No parameters to display
+//       const li = document.createElement('li');
+//       li.innerHTML = '<em>No parameters provided (this might be an error)</em>';
+//       li.style.color = 'var(--warning)';
+//       paramList.appendChild(li);
+//     } else {
+//       for (const key of paramKeys) {
+//         const li = document.createElement('li');
+//         const value = params[key];
+//         // Truncate long values for display
+//         let displayValue = JSON.stringify(value);
+//         if (displayValue.length > 100) {
+//           displayValue = displayValue.substring(0, 100) + '...';
+//         }
+//         li.innerHTML = `<strong>${key}:</strong> ${displayValue}`;
+//         paramList.appendChild(li);
+//       }
+//     }
+//     paramsElement.appendChild(paramList);
+//   }
   
   // Handle diff preview if available
-  const diffSection = document.getElementById('permission-diff-section');
-  const diffToggle = document.getElementById('permission-diff-toggle');
-  const diffContainer = document.getElementById('permission-diff-container');
-  const diffContent = document.getElementById('permission-diff-content');
-  const diffStats = document.getElementById('permission-diff-stats');
-  
-  if (data.diffPreview && (data.toolName === 'write_file' || data.toolName === 'edit_file' || data.toolName === 'smart_edit')) {
-    // Show diff section
-    diffSection.style.display = 'block';
-    
-    // Set diff stats
-    const stats = data.diffPreview.stats;
-    if (stats) {
-      diffStats.textContent = `(+${stats.added || 0}, -${stats.deleted || 0} lines)`;
-    }
-    
-    // Render diff content
-    renderPermissionDiff(diffContent, data.diffPreview);
-    
-    // Set up toggle handler
-    const toggleIcon = diffToggle.querySelector('.toggle-icon');
-    diffToggle.onclick = function() {
-      if (diffContainer.style.display === 'none') {
-        diffContainer.style.display = 'block';
-        diffToggle.classList.add('expanded');
-        toggleIcon.textContent = '▼';
-      } else {
-        diffContainer.style.display = 'none';
-        diffToggle.classList.remove('expanded');
-        toggleIcon.textContent = '▶';
-      }
-    };
-    
-    // Automatically expand diff for file write operations
-    diffContainer.style.display = 'block';
-    diffToggle.classList.add('expanded');
-    toggleIcon.textContent = '▼';
-  } else {
-    // Hide diff section
-    diffSection.style.display = 'none';
-  }
-  
-  // Reset checkbox
-  rememberCheckbox.checked = false;
-  
-  // Set up button handlers
-  const approveBtn = document.getElementById('permission-approve');
-  const denyBtn = document.getElementById('permission-deny');
-  const abortBtn = document.getElementById('permission-abort');
-  
-  // Remove old handlers
-  const newApproveBtn = approveBtn.cloneNode(true);
-  const newDenyBtn = denyBtn.cloneNode(true);
-  const newAbortBtn = abortBtn.cloneNode(true);
-  approveBtn.parentNode.replaceChild(newApproveBtn, approveBtn);
-  denyBtn.parentNode.replaceChild(newDenyBtn, denyBtn);
-  abortBtn.parentNode.replaceChild(newAbortBtn, abortBtn);
-  
-  // Add new handlers
-  newApproveBtn.addEventListener('click', () => {
-    handlePermissionResponse(data.requestId, true);
-  });
-  
-  newDenyBtn.addEventListener('click', () => {
-    handlePermissionResponse(data.requestId, false);
-  });
-  
-  newAbortBtn.addEventListener('click', () => {
-    handlePermissionAbort(data.requestId);
-  });
-  
-  // Show modal
-  modal.style.display = 'block';
-}
+  // const diffSection = document.getElementById('permission-diff-section');
+  // const diffToggle = document.getElementById('permission-diff-toggle');
+  // const diffContainer = document.getElementById('permission-diff-container');
+  // const diffContent = document.getElementById('permission-diff-content');
+  // const diffStats = document.getElementById('permission-diff-stats');
+  //
+  // if (llmData.diffPreview && (llmData.toolName === 'write_file' || llmData.toolName === 'edit_file' || llmData.toolName === 'smart_edit')) {
+  //   // Show diff section
+  //   diffSection.style.display = 'block';
+  //
+  //   // Set diff stats
+  //   const stats = llmData.diffPreview.stats;
+  //   if (stats) {
+  //     diffStats.textContent = `(+${stats.added || 0}, -${stats.deleted || 0} lines)`;
+  //   }
+  //
+  //   // Render diff content
+  //   renderPermissionDiff(diffContent, llmData.diffPreview);
+  //
+  //   // Set up toggle handler
+  //   const toggleIcon = diffToggle.querySelector('.toggle-icon');
+  //   diffToggle.onclick = function() {
+  //     if (diffContainer.style.display === 'none') {
+  //       diffContainer.style.display = 'block';
+  //       diffToggle.classList.add('expanded');
+  //       toggleIcon.textContent = '▼';
+  //     } else {
+  //       diffContainer.style.display = 'none';
+  //       diffToggle.classList.remove('expanded');
+  //       toggleIcon.textContent = '▶';
+  //     }
+  //   };
+  //
+  //   // Automatically expand diff for file write operations
+  //   diffContainer.style.display = 'block';
+  //   diffToggle.classList.add('expanded');
+  //   toggleIcon.textContent = '▼';
+  // } else {
+  //   // Hide diff section
+  //   diffSection.style.display = 'none';
+  // }
+  //
+  // // Reset checkbox
+  // rememberCheckbox.checked = false;
+  //
+  // // Set up button handlers
+  // const approveBtn = document.getElementById('permission-approve');
+  // const denyBtn = document.getElementById('permission-deny');
+  // const abortBtn = document.getElementById('permission-abort');
+  //
+  // // Remove old handlers
+  // const newApproveBtn = approveBtn.cloneNode(true);
+  // const newDenyBtn = denyBtn.cloneNode(true);
+  // const newAbortBtn = abortBtn.cloneNode(true);
+  // approveBtn.parentNode.replaceChild(newApproveBtn, approveBtn);
+  // denyBtn.parentNode.replaceChild(newDenyBtn, denyBtn);
+  // abortBtn.parentNode.replaceChild(newAbortBtn, abortBtn);
+  //
+  // // Add new handlers
+  // newApproveBtn.addEventListener('click', () => {
+  //   handlePermissionResponse(llmData.requestId, true);
+  // });
+  //
+  // newDenyBtn.addEventListener('click', () => {
+  //   handlePermissionResponse(llmData.requestId, false);
+  // });
+  //
+  // newAbortBtn.addEventListener('click', () => {
+  //   handlePermissionAbort(llmData.requestId);
+  // });
+  //
+  // // Show modal
+  // modal.style.display = 'block';
+// }
 
 // Render diff content in permission modal
 function renderPermissionDiff(container, diffResult) {
