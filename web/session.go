@@ -626,7 +626,7 @@ func sendMessageHandler(c rweb.Context) error {
 							"tool", toolName, "error", parseError)
 
 						// Broadcast tool execution failure
-						BroadcastToolExecutionStart(sessionID, toolID, toolName)
+						BroadcastToolExecutionStart(sessionID, toolID, toolName, nil)
 						metrics := map[string]interface{}{
 							"error": parseError,
 						}
@@ -658,7 +658,7 @@ func sendMessageHandler(c rweb.Context) error {
 						logger.Error("Tool input is not a map", "tool", toolName, "inputType", fmt.Sprintf("%T", inputRaw))
 
 						// Broadcast tool execution failure
-						BroadcastToolExecutionStart(sessionID, toolID, toolName)
+						BroadcastToolExecutionStart(sessionID, toolID, toolName, nil)
 						metrics := map[string]interface{}{
 							"error": "Invalid input format",
 						}
@@ -690,7 +690,7 @@ func sendMessageHandler(c rweb.Context) error {
 					startTime := time.Now()
 
 					// Broadcast tool execution start
-					BroadcastToolExecutionStart(sessionID, toolUse.ID, toolUse.Name)
+					BroadcastToolExecutionStart(sessionID, toolUse.ID, toolUse.Name, toolUse.Input)
 
 					// Execute the tool with permission and context awareness
 					result, err := permissionExecutor.Execute(toolUse)

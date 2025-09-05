@@ -3,6 +3,7 @@ package web
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -247,15 +248,24 @@ func BroadcastContentStart(sessionID string) {
 }
 
 // BroadcastToolExecutionStart broadcasts when a tool begins execution
-func BroadcastToolExecutionStart(sessionID string, toolID string, toolName string) {
+func BroadcastToolExecutionStart(sessionID string, toolID string, toolName string, parameters map[string]interface{}) {
+	// Filter out internal parameters (those starting with underscore)
+	cleanParams := make(map[string]interface{})
+	for key, value := range parameters {
+		if !strings.HasPrefix(key, "_") {
+			cleanParams[key] = value
+		}
+	}
+
 	event := SSEEvent{
 		Type:      "tool_execution_start",
 		SessionId: sessionID,
 		Data: map[string]interface{}{
-			"toolId":    toolID,
-			"toolName":  toolName,
-			"status":    "executing",
-			"startTime": time.Now().Unix(),
+			"toolId":     toolID,
+			"toolName":   toolName,
+			"parameters": cleanParams,
+			"status":     "executing",
+			"startTime":  time.Now().Unix(),
 		},
 	}
 	sseHub.Broadcast(event)

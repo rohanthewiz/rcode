@@ -16,15 +16,18 @@
   function handlePermissionRequest(evtData) {
     console.warn('PERMISSION REQUEST:', evtData);
     
-    // Store the request
-    activePermissionRequests.set(evtData.requestId, evtData);
+    // Extract the actual data from the event
+    const llmData = evtData.data;
+    
+    // Store the request with the correct requestId
+    activePermissionRequests.set(llmData.requestId, llmData);
     
     // Get current session ID
     const currentSessionId = window.AppState ? 
       window.AppState.getState('currentSessionId') : window.currentSessionId;
     
-    // Show permission modal
-    showPermissionModal(evtData.data);
+    // Show permission modal with the actual data
+    showPermissionModal(llmData);
     
     // Emit permission request event
     if (window.AppEvents) {
@@ -225,16 +228,24 @@
     denyBtn.parentNode.replaceChild(newDenyBtn, denyBtn);
     abortBtn.parentNode.replaceChild(newAbortBtn, abortBtn);
     
-    // Add new handlers
-    newApproveBtn.addEventListener('click', () => {
+    // Get fresh references to the newly inserted buttons
+    const finalApproveBtn = document.getElementById('permission-approve');
+    const finalDenyBtn = document.getElementById('permission-deny');
+    const finalAbortBtn = document.getElementById('permission-abort');
+    
+    // Add new handlers to the actual DOM elements
+    finalApproveBtn.addEventListener('click', () => {
+      console.log('Approve button clicked for request:', requestId);
       handlePermissionResponse(requestId, true);
     });
     
-    newDenyBtn.addEventListener('click', () => {
+    finalDenyBtn.addEventListener('click', () => {
+      console.log('Deny button clicked for request:', requestId);
       handlePermissionResponse(requestId, false);
     });
     
-    newAbortBtn.addEventListener('click', () => {
+    finalAbortBtn.addEventListener('click', () => {
+      console.log('Abort button clicked for request:', requestId);
       handlePermissionAbort(requestId);
     });
   }

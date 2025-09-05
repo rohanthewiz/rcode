@@ -514,7 +514,11 @@ function handleServerEvent(evtData) {
     console.log('Permission request received:', evtData.data);
     console.log('Session check:', evtData.sessionId, '===', currentSessionId, '?', evtData.sessionId === currentSessionId);
     if (evtData.sessionId === currentSessionId || evtData.sessionId === window.currentSessionId) {
-      handlePermissionRequest(evtData.data);
+      if (window.PermissionsModule) {
+        window.PermissionsModule.handlePermissionRequest(evtData);
+      } else {
+        console.error('PermissionsModule not found');
+      }
     } else {
       console.warn('Permission request for different session, ignoring');
     }
@@ -2419,7 +2423,7 @@ function handleToolExecutionStart(evtData) {
       toolName: evtData.toolName,
       parameters: evtData.parameters || {}  // Provide empty object if no parameters
     };
-    return window.ToolsModule.handleToolExecutionStart({ data: toolsModuleData });
+    return window.ToolsModule.handleToolExecutionStart(toolsModuleData);
   }
   
   // Fallback to simple implementation if module not available
@@ -2534,7 +2538,7 @@ function handleToolExecutionComplete(evtData) {
       error: evtData.data.status === 'failed' ? (evtData.data.summary || 'Failed') : null,
       metrics: evtData.data.metrics
     };
-    return window.ToolsModule.handleToolExecutionComplete({ data: toolsModuleData });
+    return window.ToolsModule.handleToolExecutionComplete(toolsModuleData);
   }
   
   // Fallback implementation for backward compatibility
@@ -2641,254 +2645,8 @@ function toggleToolDetails(button) {
   }
 }
 
-// Permission Request Handling
-const activePermissionRequests = new Map();
 
-// Handle incoming permission request
-// Sample: {"data":{"diffPreview":{"sessionId":"","path":"run_hi/main.go","before":"","after":"package main\n\nimport \"fmt\"\n\n// main is the entry point for our greeting application\n// Using a simple approach to demonstrate Go's straightforward syntax\nfunc main() {\n\t// Print greeting to standard output\n\t// Go's fmt.Println automatically adds a newline character\n\tfmt.Println(\"Hi there! ðŸ‘‹\")\n}","hunks":[{"oldStart":0,"oldLines":0,"newStart":1,"newLines":11,"lines":[{"type":"add","newLine":1,"content":"package main"},{"type":"add","newLine":2,"content":""},{"type":"add","newLine":3,"content":"import \"fmt\""},{"type":"add","newLine":4,"content":""},{"type":"add","newLine":5,"content":"// main is the entry point for our greeting application"},{"type":"add","newLine":6,"content":"// Using a simple approach to demonstrate Go's straightforward syntax"},{"type":"add","newLine":7,"content":"func main() {"},{"type":"add","newLine":8,"content":"\t// Print greeting to standard output"},{"type":"add","newLine":9,"content":"\t// Go's fmt.Println automatically adds a newline character"},{"type":"add","newLine":10,"content":"\tfmt.Println(\"Hi there! ðŸ‘‹\")"},{"type":"add","newLine":11,"content":"}"}]}],"stats":{"added":11,"deleted":0,"modified":0},"timestamp":"2025-09-03T19:08:51.31869-05:00"},"parameterDisplay":"File: run_hi/main.go","parameters":{"content":"package main\n\nimport \"fmt\"\n\n// main is the entry point for our greeting application\n// Using a simple approach to demonstrate Go's straightforward syntax\nfunc main() {\n\t// Print greeting to standard output\n\t// Go's fmt.Println automatically adds a newline character\n\tfmt.Println(\"Hi there! ðŸ‘‹\")\n}","path":"run_hi/main.go"},"requestId":"1abd379d-17fe-407d-a4f0-fe500226233f","timestamp":1756944531,"toolName":"write_file"},"sessionId":"session-1756944521","type":"permission_request"}
-function handlePermissionRequest(llmData) {
-  // console.error('HANDLE PERMISSION REQUEST CALLED:', data);
-  
-  // Store the request
-  activePermissionRequests.set(llmData.requestId, llmData);
-  
-  // Show the permission modal
-  // showPermissionModal(llmData);
-}
 
-// Expose to window for SSE module
-window.handlePermissionRequest = handlePermissionRequest;
-
-// // Show permission modal dialog
-// function showPermissionModal(llmData) {
-//   const modal = document.getElementById('permission-modal');
-//   const toolNameElement = document.getElementById('permission-tool-name');
-//   const paramsElement = document.getElementById('permission-params');
-//   const rememberCheckbox = document.getElementById('permission-remember');
-//   console.log("llmData", llmData);
-//   console.warn(llmData);
-//
-//   // Set tool name
-//   toolNameElement.textContent = llmData.toolName;
-//
-//   // Display parameters
-//   paramsElement.innerHTML = '';
-//   if (llmData.parameterDisplay) {
-//     const paramDiv = document.createElement('div');
-//     paramDiv.className = 'param-display';
-//     paramDiv.textContent = llmData.parameterDisplay;
-//     paramsElement.appendChild(paramDiv);
-//   } else {
-//     // Fallback to showing raw parameters
-//     const paramList = document.createElement('ul');
-//     const params = llmData.parameters || {};
-//     const paramKeys = Object.keys(params).filter(k => !k.startsWith('_'));
-//
-//     if (paramKeys.length === 0) {
-//       // No parameters to display
-//       const li = document.createElement('li');
-//       li.innerHTML = '<em>No parameters provided (this might be an error)</em>';
-//       li.style.color = 'var(--warning)';
-//       paramList.appendChild(li);
-//     } else {
-//       for (const key of paramKeys) {
-//         const li = document.createElement('li');
-//         const value = params[key];
-//         // Truncate long values for display
-//         let displayValue = JSON.stringify(value);
-//         if (displayValue.length > 100) {
-//           displayValue = displayValue.substring(0, 100) + '...';
-//         }
-//         li.innerHTML = `<strong>${key}:</strong> ${displayValue}`;
-//         paramList.appendChild(li);
-//       }
-//     }
-//     paramsElement.appendChild(paramList);
-//   }
-  
-  // Handle diff preview if available
-  // const diffSection = document.getElementById('permission-diff-section');
-  // const diffToggle = document.getElementById('permission-diff-toggle');
-  // const diffContainer = document.getElementById('permission-diff-container');
-  // const diffContent = document.getElementById('permission-diff-content');
-  // const diffStats = document.getElementById('permission-diff-stats');
-  //
-  // if (llmData.diffPreview && (llmData.toolName === 'write_file' || llmData.toolName === 'edit_file' || llmData.toolName === 'smart_edit')) {
-  //   // Show diff section
-  //   diffSection.style.display = 'block';
-  //
-  //   // Set diff stats
-  //   const stats = llmData.diffPreview.stats;
-  //   if (stats) {
-  //     diffStats.textContent = `(+${stats.added || 0}, -${stats.deleted || 0} lines)`;
-  //   }
-  //
-  //   // Render diff content
-  //   renderPermissionDiff(diffContent, llmData.diffPreview);
-  //
-  //   // Set up toggle handler
-  //   const toggleIcon = diffToggle.querySelector('.toggle-icon');
-  //   diffToggle.onclick = function() {
-  //     if (diffContainer.style.display === 'none') {
-  //       diffContainer.style.display = 'block';
-  //       diffToggle.classList.add('expanded');
-  //       toggleIcon.textContent = '▼';
-  //     } else {
-  //       diffContainer.style.display = 'none';
-  //       diffToggle.classList.remove('expanded');
-  //       toggleIcon.textContent = '▶';
-  //     }
-  //   };
-  //
-  //   // Automatically expand diff for file write operations
-  //   diffContainer.style.display = 'block';
-  //   diffToggle.classList.add('expanded');
-  //   toggleIcon.textContent = '▼';
-  // } else {
-  //   // Hide diff section
-  //   diffSection.style.display = 'none';
-  // }
-  //
-  // // Reset checkbox
-  // rememberCheckbox.checked = false;
-  //
-  // // Set up button handlers
-  // const approveBtn = document.getElementById('permission-approve');
-  // const denyBtn = document.getElementById('permission-deny');
-  // const abortBtn = document.getElementById('permission-abort');
-  //
-  // // Remove old handlers
-  // const newApproveBtn = approveBtn.cloneNode(true);
-  // const newDenyBtn = denyBtn.cloneNode(true);
-  // const newAbortBtn = abortBtn.cloneNode(true);
-  // approveBtn.parentNode.replaceChild(newApproveBtn, approveBtn);
-  // denyBtn.parentNode.replaceChild(newDenyBtn, denyBtn);
-  // abortBtn.parentNode.replaceChild(newAbortBtn, abortBtn);
-  //
-  // // Add new handlers
-  // newApproveBtn.addEventListener('click', () => {
-  //   handlePermissionResponse(llmData.requestId, true);
-  // });
-  //
-  // newDenyBtn.addEventListener('click', () => {
-  //   handlePermissionResponse(llmData.requestId, false);
-  // });
-  //
-  // newAbortBtn.addEventListener('click', () => {
-  //   handlePermissionAbort(llmData.requestId);
-  // });
-  //
-  // // Show modal
-  // modal.style.display = 'block';
-// }
-
-// Render diff content in permission modal
-function renderPermissionDiff(container, diffResult) {
-  container.innerHTML = '';
-  
-  if (!diffResult.hunks || diffResult.hunks.length === 0) {
-    container.innerHTML = '<div class="diff-line context">No changes detected</div>';
-    return;
-  }
-  
-  // Render unified diff format
-  diffResult.hunks.forEach(hunk => {
-    // Add hunk header
-    const header = document.createElement('div');
-    header.className = 'diff-header';
-    header.textContent = `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
-    container.appendChild(header);
-    
-    // Add diff lines
-    hunk.lines.forEach(line => {
-      const lineDiv = document.createElement('div');
-      lineDiv.className = `diff-line ${line.type}`;
-      
-      // Add prefix based on type
-      let prefix = ' ';
-      if (line.type === 'add') prefix = '+';
-      else if (line.type === 'delete') prefix = '-';
-      
-      lineDiv.textContent = prefix + line.content;
-      container.appendChild(lineDiv);
-    });
-  });
-}
-
-// Handle permission response
-async function handlePermissionResponse(requestId, approved) {
-  const request = activePermissionRequests.get(requestId);
-  if (!request) return;
-  
-  const rememberCheckbox = document.getElementById('permission-remember');
-  const remember = rememberCheckbox.checked;
-  
-  // Hide modal
-  document.getElementById('permission-modal').style.display = 'none';
-  
-  // Remove from active requests
-  activePermissionRequests.delete(requestId);
-  
-  // Send response to backend
-  try {
-    const response = await fetch('/api/permission-response', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        requestId: requestId,
-        sessionId: currentSessionId,
-        approved: approved,
-        rememberChoice: remember
-      })
-    });
-    
-    if (!response.ok) {
-      console.error('Failed to send permission response:', response.status);
-    }
-  } catch (error) {
-    console.error('Error sending permission response:', error);
-  }
-}
-
-// Handle permission abort - completely stop the current operation
-async function handlePermissionAbort(requestId) {
-  const request = activePermissionRequests.get(requestId);
-  if (!request) return;
-  
-  // Hide modal
-  document.getElementById('permission-modal').style.display = 'none';
-  
-  // Remove from active requests
-  activePermissionRequests.delete(requestId);
-  
-  // Send abort signal to backend
-  try {
-    const response = await fetch('/api/permission-abort', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        request_id: requestId,
-        session_id: currentSessionId || window.currentSessionId
-      })
-    });
-    
-    if (!response.ok) {
-      console.error('Failed to send permission abort:', response.status);
-    }
-    
-    // Send abort message to the LLM
-    await sendMessage('Important: ABORT!');
-    
-    // Show notification that the operation was aborted
-    addSystemMessageToUI('🛑 Operation completely aborted by user', 'error');
-  } catch (error) {
-    console.error('Error sending permission abort:', error);
-  }
-}
 
 // Display file diff in a closable frame
 function displayFileDiff(data) {

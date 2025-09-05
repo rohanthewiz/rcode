@@ -12,11 +12,11 @@
 
   /**
    * Handle tool execution start event data
-   * @param {Object} data - Tool execution start event data
+   * @param {Object} evtData - Tool execution start event data
    */
-  function handleToolExecutionStart(data) {
-    const { toolUseId, toolName, parameters } = data;
-    console.log('Tool execution started:', toolName, toolUseId);
+  function handleToolExecutionStart(evtData) {
+    const { toolId, toolName, parameters } = evtData.data;
+    console.log('Tool execution started:', toolName, toolId);
     
     // Remove thinking indicator immediately when tools start
     const thinkingIndicator = document.querySelector('.message.thinking');
@@ -31,7 +31,7 @@
     
     const executionDiv = document.createElement('div');
     executionDiv.className = 'tool-execution';
-    executionDiv.id = `tool-execution-${toolUseId}`;
+    executionDiv.id = `tool-execution-${toolId}`;
     executionDiv.dataset.toolName = toolName;
     
     const headerDiv = document.createElement('div');
@@ -47,7 +47,7 @@
     
     const statusText = document.createElement('span');
     statusText.className = 'tool-status-text';
-    statusText.textContent = 'Executing...';
+    statusText.textContent = ' Executing...';
     
     headerDiv.appendChild(statusIndicator);
     headerDiv.appendChild(toolNameSpan);
@@ -69,7 +69,7 @@
     messagesContainer.scrollTop = messagesContainer.scrollHeight;
     
     // Store execution info
-    activeToolExecutions.set(toolUseId, {
+    activeToolExecutions.set(toolId, {
       element: executionDiv,
       toolName: toolName,
       startTime: Date.now(),
@@ -79,11 +79,11 @@
 
   /**
    * Handle tool execution progress event
-   * @param {Object} event - Tool execution progress event
+   * @param {Object} evtData - Tool execution progress event
    */
-  function handleToolExecutionProgress(event) {
-    const { toolUseId, progress, message } = event.data;
-    const execution = activeToolExecutions.get(toolUseId);
+  function handleToolExecutionProgress(evtData) {
+    const { toolId, progress, message } = evtData.data;
+    const execution = activeToolExecutions.get(toolId);
     if (!execution) return;
     
     const progressDiv = execution.element.querySelector('.tool-progress');
@@ -125,18 +125,18 @@
    * Handle tool execution complete data
    * @param {Object} data - Tool execution complete event data
    */
-  function handleToolExecutionComplete(data) {
-    const { toolUseId, success, error, metrics } = data;
-    const execution = activeToolExecutions.get(toolUseId);
+  function handleToolExecutionComplete(evtData) {
+    const { toolId, status, duration } = evtData.data;
+    const execution = activeToolExecutions.get(toolId);
     if (!execution) return;
     
-    const duration = Date.now() - execution.startTime;
+    // const duration = Date.now() - execution.startTime;
     const headerDiv = execution.element.querySelector('.tool-header');
     const statusIndicator = headerDiv.querySelector('.tool-status');
     const statusText = headerDiv.querySelector('.tool-status-text');
     
     // Update status based on success
-    if (success) {
+    if (success === 'success') {
       statusIndicator.className = 'tool-status success';
       statusIndicator.innerHTML = '✓';
       statusText.textContent = `Success (${formatDuration(duration)})`;
@@ -152,16 +152,16 @@
       progressDiv.style.display = 'none';
     }
     
-    // Add metrics if available
-    if (metrics && Object.keys(metrics).length > 0) {
-      const metricsDiv = document.createElement('div');
-      metricsDiv.className = 'tool-metrics';
-      metricsDiv.innerHTML = formatToolMetrics(metrics);
-      execution.element.appendChild(metricsDiv);
-    }
-    
+    // // Add metrics if available -- Maybe we will mess with this later
+    // if (metrics && Object.keys(metrics).length > 0) {
+    //   const metricsDiv = document.createElement('div');
+    //   metricsDiv.className = 'tool-metrics';
+    //   metricsDiv.innerHTML = formatToolMetrics(metrics);
+    //   execution.element.appendChild(metricsDiv);
+    // }
+
     // Remove from active executions
-    activeToolExecutions.delete(toolUseId);
+    activeToolExecutions.delete(toolId);
     
     // Scroll to bottom
     const messagesContainer = document.getElementById('messages');
@@ -169,6 +169,7 @@
       messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
   }
+
 
   /**
    * Format tool parameters for display
@@ -178,7 +179,7 @@
    */
   function formatToolParameters(toolName, parameters) {
     if (!parameters || Object.keys(parameters).length === 0) {
-      return '<em>No parameters</em>';
+        return `<em>No parameters for ${toolName}</em>`;
     }
     
     // Special formatting for specific tools
