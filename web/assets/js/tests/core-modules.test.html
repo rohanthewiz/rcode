@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Core Modules Test Suite</title>
+    <style>
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1e1e2e;
+            color: #cdd6f4;
+        }
+        h1 {
+            color: #94e2d5;
+            border-bottom: 2px solid #313244;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #f9e2af;
+            margin-top: 30px;
+        }
+        .test-section {
+            background: #313244;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .pass {
+            background: #1c3d1c;
+            border: 1px solid #94e2d5;
+            color: #94e2d5;
+        }
+        .fail {
+            background: #3d1c1c;
+            border: 1px solid #f38ba8;
+            color: #f38ba8;
+        }
+        .test-summary {
+            margin-top: 30px;
+            padding: 20px;
+            background: #313244;
+            border-radius: 8px;
+        }
+        button {
+            background: #94e2d5;
+            color: #1e1e2e;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        button:hover {
+            background: #7dd6c3;
+        }
+        pre {
+            background: #11111b;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+        #connection-status {
+            display: none;
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            background: #45475a;
+        }
+        #connection-status.connected {
+            background: #1c3d1c;
+            border: 1px solid #94e2d5;
+        }
+        #connection-status.disconnected {
+            background: #3d1c1c;
+            border: 1px solid #f38ba8;
+        }
+        #connection-status.reconnecting {
+            background: #3d3d1c;
+            border: 1px solid #f9e2af;
+        }
+    </style>
+</head>
+<body>
+    <h1>Core Modules Test Suite</h1>
+    
+    <div class="test-section">
+        <h2>Test Environment</h2>
+        <div id="connection-status"></div>
+        <div id="messages"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Controls</h2>
+        <button onclick="runAllTests()">Run All Tests</button>
+        <button onclick="runStateTests()">Test State Module</button>
+        <button onclick="runEventsTests()">Test Events Module</button>
+        <button onclick="runSSETests()">Test SSE Module</button>
+        <button onclick="clearResults()">Clear Results</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Results</h2>
+        <div id="test-results"></div>
+    </div>
+
+    <div class="test-summary" id="test-summary" style="display: none;">
+        <h2>Summary</h2>
+        <div id="summary-content"></div>
+    </div>
+
+    <!-- Import the core modules -->
+    <script src="../modules/state.js"></script>
+    <script src="../modules/events.js"></script>
+    <script src="../modules/sse.js"></script>
+
+    <script>
+        let testResults = [];
+
+        // Test runner
+        function runAllTests() {
+            testResults = [];
+            clearResults();
+            
+            runStateTests();
+            runEventsTests();
+            runSSETests();
+            
+            setTimeout(() => {
+                displaySummary();
+            }, 100);
+        }
+
+        // State module tests
+        function runStateTests() {
+            const moduleTitle = 'State Module';
+            
+            // Test 1: Initial state
+            try {
+                const state = window.AppState.getState();
+                if (state.currentSessionId === null && 
+                    state.connectionStatus === 'disconnected' &&
+                    state.reconnectAttempts === 0) {
+                    addTestResult(`${moduleTitle} - Initial State`, true, 'State initialized correctly');
+                } else {
+                    addTestResult(`${moduleTitle} - Initial State`, false, 'Initial state incorrect');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Initial State`, false, e.message);
+            }
+
+            // Test 2: Set and get state
+            try {
+                window.AppState.setState('currentSessionId', 'test-123');
+                const sessionId = window.AppState.getState('currentSessionId');
+                if (sessionId === 'test-123') {
+                    addTestResult(`${moduleTitle} - Set/Get State`, true, 'State set and retrieved correctly');
+                } else {
+                    addTestResult(`${moduleTitle} - Set/Get State`, false, 'State not set correctly');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Set/Get State`, false, e.message);
+            }
+
+            // Test 3: Batch state update
+            try {
+                window.AppState.setStateMultiple({
+                    isProcessing: true,
+                    reconnectAttempts: 3
+                });
+                const state = window.AppState.getState();
+                if (state.isProcessing === true && state.reconnectAttempts === 3) {
+                    addTestResult(`${moduleTitle} - Batch Update`, true, 'Batch update successful');
+                } else {
+                    addTestResult(`${moduleTitle} - Batch Update`, false, 'Batch update failed');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Batch Update`, false, e.message);
+            }
+
+            // Test 4: Connection status
+            try {
+                window.AppState.setConnectionStatus('connected');
+                const status = window.AppState.getState('connectionStatus');
+                if (status === 'connected') {
+                    addTestResult(`${moduleTitle} - Connection Status`, true, 'Connection status updated');
+                } else {
+                    addTestResult(`${moduleTitle} - Connection Status`, false, 'Connection status not updated');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Connection Status`, false, e.message);
+            }
+
+            // Test 5: Increment reconnect attempts
+            try {
+                window.AppState.resetReconnectState();
+                const attempts1 = window.AppState.incrementReconnectAttempts();
+                const attempts2 = window.AppState.incrementReconnectAttempts();
+                const delay = window.AppState.getState('reconnectDelay');
+                
+                if (attempts1 === 1 && attempts2 === 2 && delay === 4000) {
+                    addTestResult(`${moduleTitle} - Reconnect Logic`, true, 'Reconnect logic works correctly');
+                } else {
+                    addTestResult(`${moduleTitle} - Reconnect Logic`, false, 
+                        `Expected: attempts1=1, attempts2=2, delay=4000. Got: ${attempts1}, ${attempts2}, ${delay}`);
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Reconnect Logic`, false, e.message);
+            }
+
+            // Reset state for other tests
+            window.AppState.resetState();
+        }
+
+        // Events module tests
+        function runEventsTests() {
+            const moduleTitle = 'Events Module';
+            
+            // Test 1: Event emission and listening
+            try {
+                let received = false;
+                let receivedData = null;
+                
+                const unsubscribe = window.AppEvents.on('test-event', (data) => {
+                    received = true;
+                    receivedData = data;
+                });
+                
+                window.AppEvents.emit('test-event', { test: 'data' });
+                
+                if (received && receivedData.test === 'data') {
+                    addTestResult(`${moduleTitle} - Event Emission`, true, 'Event emitted and received');
+                } else {
+                    addTestResult(`${moduleTitle} - Event Emission`, false, 'Event not received');
+                }
+                
+                unsubscribe();
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Event Emission`, false, e.message);
+            }
+
+            // Test 2: One-time listener
+            try {
+                let callCount = 0;
+                
+                window.AppEvents.once('once-event', () => {
+                    callCount++;
+                });
+                
+                window.AppEvents.emit('once-event');
+                window.AppEvents.emit('once-event');
+                
+                if (callCount === 1) {
+                    addTestResult(`${moduleTitle} - Once Listener`, true, 'Once listener called only once');
+                } else {
+                    addTestResult(`${moduleTitle} - Once Listener`, false, `Called ${callCount} times`);
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Once Listener`, false, e.message);
+            }
+
+            // Test 3: Multiple event buses
+            try {
+                let appReceived = false;
+                let stateReceived = false;
+                
+                window.AppEvents.on('multi-test', () => { appReceived = true; });
+                window.StateEvents.on('multi-test', () => { stateReceived = true; });
+                
+                window.AppEvents.emit('multi-test');
+                
+                if (appReceived && !stateReceived) {
+                    addTestResult(`${moduleTitle} - Multiple Buses`, true, 'Event buses are isolated');
+                } else {
+                    addTestResult(`${moduleTitle} - Multiple Buses`, false, 'Event buses not isolated');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Multiple Buses`, false, e.message);
+            }
+
+            // Test 4: Wait for event
+            try {
+                setTimeout(() => {
+                    window.AppEvents.emit('delayed-event', 'delayed-data');
+                }, 50);
+                
+                window.AppEvents.waitFor('delayed-event', 1000).then((data) => {
+                    if (data === 'delayed-data') {
+                        addTestResult(`${moduleTitle} - Wait For Event`, true, 'WaitFor resolved correctly');
+                    } else {
+                        addTestResult(`${moduleTitle} - Wait For Event`, false, 'Wrong data received');
+                    }
+                }).catch(e => {
+                    addTestResult(`${moduleTitle} - Wait For Event`, false, e.message);
+                });
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Wait For Event`, false, e.message);
+            }
+
+            // Test 5: Standard events defined
+            try {
+                if (window.StandardEvents &&
+                    window.StandardEvents.SESSION_CREATE &&
+                    window.StandardEvents.TOOL_START &&
+                    window.StandardEvents.CONNECTION_OPEN) {
+                    addTestResult(`${moduleTitle} - Standard Events`, true, 'Standard events defined');
+                } else {
+                    addTestResult(`${moduleTitle} - Standard Events`, false, 'Standard events missing');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Standard Events`, false, e.message);
+            }
+
+            // Clear events for other tests
+            window.AppEvents.clear();
+            window.StateEvents.clear();
+        }
+
+        // SSE module tests
+        function runSSETests() {
+            const moduleTitle = 'SSE Module';
+            
+            // Test 1: Module exports
+            try {
+                const exports = [
+                    'connectEventSource',
+                    'reconnectSSE',
+                    'disconnectSSE',
+                    'updateConnectionStatus',
+                    'showConnectionError',
+                    'handleServerEvent'
+                ];
+                
+                let allExported = true;
+                for (const func of exports) {
+                    if (typeof window.SSEModule[func] !== 'function') {
+                        allExported = false;
+                        break;
+                    }
+                }
+                
+                if (allExported) {
+                    addTestResult(`${moduleTitle} - Exports`, true, 'All functions exported');
+                } else {
+                    addTestResult(`${moduleTitle} - Exports`, false, 'Missing exports');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Exports`, false, e.message);
+            }
+
+            // Test 2: Connection status update
+            try {
+                window.SSEModule.updateConnectionStatus('connected');
+                const status = window.AppState.getState('connectionStatus');
+                const statusElement = document.getElementById('connection-status');
+                
+                if (status === 'connected' && statusElement.classList.contains('connected')) {
+                    addTestResult(`${moduleTitle} - Status Update`, true, 'Status updated correctly');
+                } else {
+                    addTestResult(`${moduleTitle} - Status Update`, false, 'Status not updated correctly');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Status Update`, false, e.message);
+            }
+
+            // Test 3: Handle server event
+            try {
+                let eventReceived = false;
+                
+                window.SSEEvents.on('test_event', (event) => {
+                    eventReceived = event.type === 'test_event';
+                });
+                
+                window.SSEModule.handleServerEvent({
+                    type: 'test_event',
+                    sessionId: 'test-session',
+                    data: { test: true }
+                });
+                
+                if (eventReceived) {
+                    addTestResult(`${moduleTitle} - Event Handling`, true, 'Server event handled');
+                } else {
+                    addTestResult(`${moduleTitle} - Event Handling`, false, 'Server event not handled');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Event Handling`, false, e.message);
+            }
+
+            // Test 4: Message start handling
+            try {
+                window.AppState.setState('currentSessionId', 'test-session');
+                window.SSEModule.handleServerEvent({
+                    type: 'message_start',
+                    sessionId: 'test-session'
+                });
+                
+                const isProcessing = window.AppState.getState('isLLMProcessing');
+                if (isProcessing === true) {
+                    addTestResult(`${moduleTitle} - Message Start`, true, 'Message start handled');
+                } else {
+                    addTestResult(`${moduleTitle} - Message Start`, false, 'Message start not handled');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Message Start`, false, e.message);
+            }
+
+            // Test 5: Disconnect functionality
+            try {
+                window.SSEModule.disconnectSSE();
+                const isDisconnected = window.AppState.getState('isManuallyDisconnected');
+                const eventSource = window.AppState.getState('eventSource');
+                
+                if (isDisconnected === true && eventSource === null) {
+                    addTestResult(`${moduleTitle} - Disconnect`, true, 'Disconnection successful');
+                } else {
+                    addTestResult(`${moduleTitle} - Disconnect`, false, 'Disconnection failed');
+                }
+            } catch (e) {
+                addTestResult(`${moduleTitle} - Disconnect`, false, e.message);
+            }
+        }
+
+        // Helper functions
+        function addTestResult(testName, passed, message) {
+            const result = { testName, passed, message };
+            testResults.push(result);
+
+            const resultsDiv = document.getElementById('test-results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${passed ? 'pass' : 'fail'}`;
+            resultDiv.innerHTML = `
+                <strong>${testName}:</strong> ${passed ? '✓ PASS' : '✗ FAIL'}
+                ${message ? `<br><small>${message}</small>` : ''}
+            `;
+            resultsDiv.appendChild(resultDiv);
+        }
+
+        function displaySummary() {
+            const summaryDiv = document.getElementById('test-summary');
+            const summaryContent = document.getElementById('summary-content');
+            
+            const total = testResults.length;
+            const passed = testResults.filter(r => r.passed).length;
+            const failed = total - passed;
+            const percentage = total > 0 ? ((passed / total) * 100).toFixed(1) : 0;
+
+            summaryDiv.style.display = 'block';
+            summaryContent.innerHTML = `
+                <p><strong>Total Tests:</strong> ${total}</p>
+                <p><strong>Passed:</strong> <span style="color: #94e2d5">${passed}</span></p>
+                <p><strong>Failed:</strong> <span style="color: #f38ba8">${failed}</span></p>
+                <p><strong>Success Rate:</strong> ${percentage}%</p>
+            `;
+        }
+
+        function clearResults() {
+            document.getElementById('test-results').innerHTML = '';
+            document.getElementById('test-summary').style.display = 'none';
+            testResults = [];
+        }
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('Core modules test suite loaded');
+        });
+    </script>
+</body>
+</html>

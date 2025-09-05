@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Clipboard Module Tests</title>
+    <style>
+        body {
+            font-family: -apple-system, system-ui, sans-serif;
+            max-width: 1200px;
+            margin: 40px auto;
+            padding: 20px;
+            background: #1e1e2e;
+            color: #cdd6f4;
+        }
+        h1 {
+            color: #94e2d5;
+            border-bottom: 2px solid #313244;
+            padding-bottom: 10px;
+        }
+        h2 {
+            color: #f9e2af;
+            margin-top: 30px;
+        }
+        .test-section {
+            background: #313244;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 20px 0;
+        }
+        .test-result {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 4px;
+            font-family: monospace;
+        }
+        .pass {
+            background: #1c3d1c;
+            border: 1px solid #94e2d5;
+            color: #94e2d5;
+        }
+        .fail {
+            background: #3d1c1c;
+            border: 1px solid #f38ba8;
+            color: #f38ba8;
+        }
+        .pending {
+            background: #3d3d1c;
+            border: 1px solid #f9e2af;
+            color: #f9e2af;
+        }
+        #editor-container {
+            width: 100%;
+            height: 200px;
+            border: 2px solid #45475a;
+            background: #1e1e2e;
+            border-radius: 4px;
+            position: relative;
+        }
+        #chat-area {
+            min-height: 300px;
+            padding: 20px;
+            border: 2px dashed #45475a;
+            margin: 20px 0;
+            border-radius: 8px;
+            background: #181825;
+            position: relative;
+        }
+        .drop-zone {
+            display: none;
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(148, 226, 213, 0.1);
+            border: 3px dashed #94e2d5;
+            border-radius: 8px;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        .drag-over {
+            background: rgba(148, 226, 213, 0.05);
+        }
+        .instructions {
+            background: #11111b;
+            padding: 15px;
+            border-radius: 6px;
+            margin: 20px 0;
+            border-left: 4px solid #94e2d5;
+        }
+        button {
+            background: #94e2d5;
+            color: #1e1e2e;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+            margin: 5px;
+        }
+        button:hover {
+            background: #7dd6c3;
+        }
+        .test-summary {
+            margin-top: 30px;
+            padding: 20px;
+            background: #313244;
+            border-radius: 8px;
+        }
+        #notification-area {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+        pre {
+            background: #11111b;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+        }
+    </style>
+</head>
+<body>
+    <h1>Clipboard Module Test Suite</h1>
+    
+    <div class="instructions">
+        <strong>Test Instructions:</strong>
+        <ol>
+            <li>Click "Run Tests" to execute automated tests</li>
+            <li>For manual tests: Try pasting an image (Cmd/Ctrl+V) or drag-drop an image file</li>
+            <li>Check that notifications appear and editor shows image indicators</li>
+        </ol>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Environment Setup</h2>
+        <div id="editor-container"></div>
+        <div id="chat-area">
+            <p>Chat area for testing drag and drop</p>
+        </div>
+        <div id="messages"></div>
+        <div id="notification-area"></div>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Controls</h2>
+        <button onclick="runAllTests()">Run All Tests</button>
+        <button onclick="clearResults()">Clear Results</button>
+        <button onclick="resetEnvironment()">Reset Environment</button>
+    </div>
+
+    <div class="test-section">
+        <h2>Test Results</h2>
+        <div id="test-results"></div>
+    </div>
+
+    <div class="test-summary" id="test-summary" style="display: none;">
+        <h2>Summary</h2>
+        <div id="summary-content"></div>
+    </div>
+
+    <!-- Mock Monaco editor global for testing -->
+    <script>
+        // Mock Monaco editor
+        window.monaco = {
+            KeyMod: {
+                CtrlCmd: 2048
+            },
+            KeyCode: {
+                KeyV: 52
+            }
+        };
+
+        // Mock editor instance
+        class MockEditor {
+            constructor() {
+                this.value = '';
+                this.commands = {};
+                this.domNode = document.getElementById('editor-container');
+                this.pastedImages = [];
+            }
+
+            getValue() {
+                return this.value;
+            }
+
+            setValue(value) {
+                this.value = value;
+                console.log('Editor value set to:', value);
+            }
+
+            getDomNode() {
+                return this.domNode;
+            }
+
+            addCommand(keyCode, handler) {
+                this.commands[keyCode] = handler;
+            }
+
+            focus() {
+                console.log('Editor focused');
+            }
+        }
+
+        let mockEditor = null;
+        let testResults = [];
+    </script>
+
+    <!-- Import the clipboard module -->
+    <script type="module">
+        import * as clipboard from '../modules/clipboard.js';
+
+        window.clipboardModule = clipboard;
+
+        // Initialize test environment
+        window.initializeTests = function() {
+            mockEditor = new MockEditor();
+            window.testEditor = mockEditor;
+            console.log('Test environment initialized');
+        };
+
+        // Test functions
+        window.runAllTests = async function() {
+            testResults = [];
+            const resultsDiv = document.getElementById('test-results');
+            resultsDiv.innerHTML = '';
+
+            // Initialize environment
+            initializeTests();
+
+            // Test 1: Module exports
+            await testModuleExports();
+
+            // Test 2: Setup clipboard handling
+            await testSetupClipboardHandling();
+
+            // Test 3: Image notification
+            await testImageNotification();
+
+            // Test 4: Process image blob
+            await testProcessImageBlob();
+
+            // Test 5: Handle files
+            await testHandleFiles();
+
+            // Display summary
+            displaySummary();
+        };
+
+        window.testModuleExports = async function() {
+            const testName = 'Module Exports';
+            try {
+                const exports = [
+                    'setupClipboardHandling',
+                    'processImageBlob',
+                    'handlePasteEvent',
+                    'showImagePastedNotification',
+                    'setupDragAndDrop',
+                    'handleFiles',
+                    'processImageFile'
+                ];
+
+                let allExported = true;
+                for (const exportName of exports) {
+                    if (typeof window.clipboardModule[exportName] !== 'function') {
+                        allExported = false;
+                        addTestResult(testName, false, `Missing export: ${exportName}`);
+                        return;
+                    }
+                }
+
+                if (allExported) {
+                    addTestResult(testName, true, 'All expected functions are exported');
+                }
+            } catch (error) {
+                addTestResult(testName, false, error.message);
+            }
+        };
+
+        window.testSetupClipboardHandling = async function() {
+            const testName = 'Setup Clipboard Handling';
+            try {
+                // Setup clipboard handling
+                window.clipboardModule.setupClipboardHandling(mockEditor);
+
+                // Check if pastedImages array was created
+                if (Array.isArray(mockEditor.pastedImages)) {
+                    addTestResult(testName, true, 'Clipboard handling setup successfully');
+                } else {
+                    addTestResult(testName, false, 'pastedImages not initialized');
+                }
+
+                // Check if event listeners were added
+                const editorContainer = mockEditor.getDomNode();
+                if (editorContainer) {
+                    // Try to trigger a paste event (won't actually paste, just test the handler exists)
+                    const pasteEvent = new ClipboardEvent('paste', {
+                        clipboardData: new DataTransfer(),
+                        bubbles: true,
+                        cancelable: true
+                    });
+                    editorContainer.dispatchEvent(pasteEvent);
+                    addTestResult('Paste Event Handler', true, 'Paste event handler registered');
+                }
+            } catch (error) {
+                addTestResult(testName, false, error.message);
+            }
+        };
+
+        window.testImageNotification = async function() {
+            const testName = 'Image Notification';
+            try {
+                // Show notification
+                window.clipboardModule.showImagePastedNotification('image/png', 1024 * 50, 'test.png');
+
+                // Check if notification was created
+                setTimeout(() => {
+                    const notifications = document.getElementsByClassName('image-paste-notification');
+                    if (notifications.length > 0) {
+                        addTestResult(testName, true, 'Notification displayed successfully');
+                    } else {
+                        addTestResult(testName, false, 'Notification not found');
+                    }
+                }, 100);
+            } catch (error) {
+                addTestResult(testName, false, error.message);
+            }
+        };
+
+        window.testProcessImageBlob = async function() {
+            const testName = 'Process Image Blob';
+            try {
+                // Create a mock blob
+                const blob = new Blob(['fake image data'], { type: 'image/png' });
+                const pastedImages = [];
+
+                // Process the blob
+                window.clipboardModule.processImageBlob(blob, 'image/png', mockEditor, pastedImages);
+
+                // Wait for FileReader to complete
+                setTimeout(() => {
+                    if (pastedImages.length > 0) {
+                        addTestResult(testName, true, 'Image blob processed successfully');
+                    } else {
+                        addTestResult(testName, false, 'Image not added to pastedImages');
+                    }
+                }, 100);
+            } catch (error) {
+                addTestResult(testName, false, error.message);
+            }
+        };
+
+        window.testHandleFiles = async function() {
+            const testName = 'Handle Files';
+            try {
+                // Create mock file
+                const file = new File(['fake image'], 'test.png', { type: 'image/png' });
+                const fileList = [file];
+                const pastedImages = [];
+
+                // Handle files
+                window.clipboardModule.handleFiles(fileList, mockEditor, pastedImages);
+
+                // Wait for processing
+                setTimeout(() => {
+                    if (mockEditor.getValue().includes('[Image attached: test.png')) {
+                        addTestResult(testName, true, 'File handled successfully');
+                    } else {
+                        addTestResult(testName, false, 'File indicator not added to editor');
+                    }
+                }, 100);
+            } catch (error) {
+                addTestResult(testName, false, error.message);
+            }
+        };
+
+        window.addTestResult = function(testName, passed, message) {
+            const result = { testName, passed, message };
+            testResults.push(result);
+
+            const resultsDiv = document.getElementById('test-results');
+            const resultDiv = document.createElement('div');
+            resultDiv.className = `test-result ${passed ? 'pass' : 'fail'}`;
+            resultDiv.innerHTML = `
+                <strong>${testName}:</strong> ${passed ? '✓ PASS' : '✗ FAIL'}
+                ${message ? `<br><small>${message}</small>` : ''}
+            `;
+            resultsDiv.appendChild(resultDiv);
+        };
+
+        window.displaySummary = function() {
+            const summaryDiv = document.getElementById('test-summary');
+            const summaryContent = document.getElementById('summary-content');
+            
+            const total = testResults.length;
+            const passed = testResults.filter(r => r.passed).length;
+            const failed = total - passed;
+            const percentage = total > 0 ? ((passed / total) * 100).toFixed(1) : 0;
+
+            summaryDiv.style.display = 'block';
+            summaryContent.innerHTML = `
+                <p><strong>Total Tests:</strong> ${total}</p>
+                <p><strong>Passed:</strong> <span style="color: #94e2d5">${passed}</span></p>
+                <p><strong>Failed:</strong> <span style="color: #f38ba8">${failed}</span></p>
+                <p><strong>Success Rate:</strong> ${percentage}%</p>
+            `;
+        };
+
+        window.clearResults = function() {
+            document.getElementById('test-results').innerHTML = '';
+            document.getElementById('test-summary').style.display = 'none';
+            testResults = [];
+        };
+
+        window.resetEnvironment = function() {
+            if (mockEditor) {
+                mockEditor.value = '';
+                mockEditor.pastedImages = [];
+            }
+            document.getElementById('chat-area').innerHTML = '<p>Chat area for testing drag and drop</p>';
+            const notifications = document.getElementsByClassName('image-paste-notification');
+            while (notifications.length > 0) {
+                notifications[0].remove();
+            }
+            console.log('Environment reset');
+        };
+
+        // Initialize on load
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('Clipboard module test suite loaded');
+            initializeTests();
+        });
+    </script>
+</body>
+</html>

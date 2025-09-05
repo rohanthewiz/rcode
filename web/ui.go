@@ -24,6 +24,39 @@ var diffViewerJS string
 //go:embed assets/js/fileOperations.js
 var fileOperationsJS string
 
+//go:embed assets/js/modules/clipboard.js
+var clipboardJS string
+
+//go:embed assets/js/modules/state.js
+var stateJS string
+
+//go:embed assets/js/modules/events.js
+var eventsJS string
+
+//go:embed assets/js/modules/sse.js
+var sseJS string
+
+//go:embed assets/js/modules/messages.js
+var messagesJS string
+
+//go:embed assets/js/modules/session.js
+var sessionJS string
+
+//go:embed assets/js/modules/tools.js
+var toolsJS string
+
+//go:embed assets/js/modules/permissions.js
+var permissionsJS string
+
+//go:embed assets/js/modules/usage.js
+var usageJS string
+
+//go:embed assets/js/modules/markdown.js
+var markdownJS string
+
+//go:embed assets/js/modules/utils.js
+var utilsJS string
+
 // //go:embed assets/js/monacoLoader.js
 // var monacoLoaderJS string
 
@@ -422,7 +455,101 @@ func generateJavaScript(isAuthenticated bool) string {
 	}
 
 	// Include file explorer, file operations, and diff viewer for authenticated users
-	return fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" + diffViewerJS + "\n\n" + uiJS + `
+	// Wrap all modules in IIFE pattern for browser compatibility
+	stateModule := `
+// State module wrapped for non-module usage
+(function() {
+` + stateJS + `
+})();
+`
+
+	eventsModule := `
+// Events module wrapped for non-module usage  
+(function() {
+` + eventsJS + `
+})();
+`
+
+	sseModule := `
+// SSE module wrapped for non-module usage
+(function() {
+` + sseJS + `
+})();
+`
+
+	messagesModule := `
+// Messages module wrapped for non-module usage
+(function() {
+` + messagesJS + `
+})();
+`
+
+	sessionModule := `
+// Session module wrapped for non-module usage  
+(function() {
+` + sessionJS + `
+})();
+`
+
+	toolsModule := `
+// Tools module wrapped for non-module usage
+(function() {
+` + toolsJS + `
+})();
+`
+
+	permissionsModule := `
+// Permissions module wrapped for non-module usage
+(function() {
+` + permissionsJS + `
+})();
+`
+
+	usageModule := `
+// Usage module wrapped for non-module usage
+(function() {
+` + usageJS + `
+})();
+`
+
+	markdownModule := `
+// Markdown module wrapped for non-module usage
+(function() {
+` + markdownJS + `
+})();
+`
+
+	utilsModule := `
+// Utils module wrapped for non-module usage
+(function() {
+` + utilsJS + `
+})();
+`
+
+	clipboardModule := `
+// Clipboard module wrapped for non-module usage
+(function() {
+	const ClipboardModule = {};` + "\n" +
+		clipboardJS + "\n" + `
+	// Export functions to global ClipboardModule object
+	window.ClipboardModule = {
+		setupClipboardHandling,
+		processImageBlob,
+		handlePasteEvent,
+		showImagePastedNotification,
+		setupDragAndDrop,
+		handleFiles,
+		processImageFile
+	};
+})();
+`
+	// Load core modules first, then feature modules, then main UI
+	// Order: utils -> markdown -> state -> events -> sse -> messages -> session -> tools -> permissions -> usage -> other modules -> ui
+	return utilsModule + "\n\n" + markdownModule + "\n\n" + stateModule + "\n\n" +
+		eventsModule + "\n\n" + sseModule + "\n\n" + messagesModule + "\n\n" +
+		sessionModule + "\n\n" + toolsModule + "\n\n" + permissionsModule + "\n\n" +
+		usageModule + "\n\n" + fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" +
+		diffViewerJS + "\n\n" + clipboardModule + "\n\n" + uiJS + `
 		// Initialize file explorer and diff viewer after UI is ready
 		document.addEventListener('DOMContentLoaded', function() {
 			// Initialize file explorer after a short delay to ensure Monaco is loaded

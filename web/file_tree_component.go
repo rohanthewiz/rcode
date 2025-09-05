@@ -103,7 +103,7 @@ func (f FileExplorerTabs) Render(b *element.Builder) (x any) {
 	b.Div("class", "sidebar-content").R(
 		// Sessions tab
 		b.Div("class", getTabContentClass("sessions", f.ActiveTab), "id", "sessions-tab").R(
-			b.Div("id", "session-list").R(
+			b.Div("id", "sessions-list").R(
 				element.ForEach(f.Sessions, func(session SessionInfo) {
 					b.Div("class", "session-item", "data-session-id", session.ID).R(
 						b.Div("class", "session-name").T(session.Name),
