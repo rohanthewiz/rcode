@@ -136,7 +136,7 @@
     const statusText = headerDiv.querySelector('.tool-status-text');
     
     // Update status based on success
-    if (success === 'success') {
+    if (status === 'success') {
       statusIndicator.className = 'tool-status success';
       statusIndicator.innerHTML = '✓';
       statusText.textContent = `Success (${formatDuration(duration)})`;

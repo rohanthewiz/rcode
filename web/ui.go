@@ -1,6 +1,7 @@
 package web
 
 import (
+	"embed"
 	_ "embed"
 	"fmt"
 	"strings"
@@ -14,7 +15,7 @@ import (
 // Embed all static assets
 //
 //go:embed assets/js/* assets/js/modules/* assets/css/*
-// var assetsFS embed.FS
+var _ embed.FS // TODO
 
 // Individual embeds for backward compatibility
 //
