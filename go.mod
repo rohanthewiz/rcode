@@ -32,6 +32,8 @@ require (
 	github.com/marcboeker/go-duckdb/mapping v0.0.11 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
 	github.com/sirupsen/logrus v1.9.3 // indirect
+	github.com/tdewolff/minify/v2 v2.24.3 // indirect
+	github.com/tdewolff/parse/v2 v2.8.3 // indirect
 	github.com/zeebo/xxh3 v1.0.2 // indirect
 	golang.org/x/exp v0.0.0-20250718183923-645b1fa84792 // indirect
 	golang.org/x/mod v0.26.0 // indirect

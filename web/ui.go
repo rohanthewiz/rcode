@@ -4,12 +4,16 @@ import (
 	"embed"
 	_ "embed"
 	"fmt"
+	"os"
 	"strings"
 
 	"rcode/auth"
 
 	"github.com/rohanthewiz/element"
 	"github.com/rohanthewiz/rweb"
+	"github.com/tdewolff/minify/v2"
+	"github.com/tdewolff/minify/v2/css"
+	"github.com/tdewolff/minify/v2/js"
 )
 
 // Embed all static assets
@@ -454,19 +458,66 @@ func generateMainUI(isAuthenticated bool) string {
 	return b.String()
 }
 
+// minifyJavaScript minifies JavaScript code without obfuscation
+func minifyJavaScript(jsCode string) string {
+	// Check if minification is disabled
+	if os.Getenv("RCODE_MINIFY") == "false" {
+		return jsCode
+	}
+
+	m := minify.New()
+	// Configure JavaScript minifier with safe settings (no obfuscation)
+	m.Add("text/javascript", &js.Minifier{
+		KeepVarNames: true, // Don't obfuscate variable names
+		Precision:    0,    // Keep all decimal precision
+	})
+
+	minified, err := m.String("text/javascript", jsCode)
+	if err != nil {
+		// If minification fails, return original code
+		fmt.Printf("JavaScript minification failed: %v\n", err)
+		return jsCode
+	}
+	return minified
+}
+
+// minifyCSS minifies CSS code
+func minifyCSS(cssCode string) string {
+	// Check if minification is disabled
+	if os.Getenv("RCODE_MINIFY") == "false" {
+		return cssCode
+	}
+
+	m := minify.New()
+	// Configure CSS minifier
+	m.Add("text/css", &css.Minifier{
+		Precision: 0, // Keep all decimal precision
+	})
+
+	minified, err := m.String("text/css", cssCode)
+	if err != nil {
+		// If minification fails, return original code
+		fmt.Printf("CSS minification failed: %v\n", err)
+		return cssCode
+	}
+	return minified
+}
+
 func generateCSS() string {
-	return uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS + "\n\n" + fileBrowserCSS + "\n\n" + compactionCSS
+	combinedCSS := uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS + "\n\n" + fileBrowserCSS + "\n\n" + compactionCSS
+	return minifyCSS(combinedCSS)
 }
 
 func generateJavaScript(isAuthenticated bool) string {
 	if !isAuthenticated {
-		// Return login JS for non-authenticated users
-		return loginJS + `
+		// Return minified login JS for non-authenticated users
+		nonAuthJS := loginJS + `
 			// Non-authenticated view
 			document.addEventListener('DOMContentLoaded', function() {
 				console.log('RCode initialized - Please login to continue');
 			});
 		`
+		return minifyJavaScript(nonAuthJS)
 	}
 
 	// Include file explorer, file operations, and diff viewer for authenticated users
@@ -560,7 +611,7 @@ func generateJavaScript(isAuthenticated bool) string {
 `
 	// Load core modules first, then feature modules, then main UI
 	// Order: utils -> markdown -> state -> events -> sse -> messages -> session -> tools -> permissions -> usage -> other modules -> ui
-	return utilsModule + "\n\n" + markdownModule + "\n\n" + stateModule + "\n\n" +
+	combinedJS := utilsModule + "\n\n" + markdownModule + "\n\n" + stateModule + "\n\n" +
 		eventsModule + "\n\n" + sseModule + "\n\n" + messagesModule + "\n\n" +
 		sessionModule + "\n\n" + toolsModule + "\n\n" + permissionsModule + "\n\n" +
 		usageModule + "\n\n" + fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" +
@@ -583,6 +634,9 @@ func generateJavaScript(isAuthenticated bool) string {
 			}, 500);
 		});
 	`
+
+	// Minify the combined JavaScript
+	return minifyJavaScript(combinedJS)
 }
 
 // Check if modular JavaScript files exist
