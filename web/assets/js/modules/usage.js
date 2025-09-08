@@ -10,18 +10,25 @@
    * Initialize usage panel
    */
   function initializeUsagePanel() {
-    const usageToggle = document.getElementById('usage-toggle');
+    const usageToggleBtn = document.getElementById('usage-toggle-btn');
     const usagePanel = document.getElementById('usage-panel');
     
-    if (usageToggle && usagePanel) {
-      usageToggle.addEventListener('click', function() {
-        const isCollapsed = usagePanel.classList.contains('collapsed');
-        const toggleIcon = usageToggle.querySelector('.toggle-icon');
+    if (usageToggleBtn && usagePanel) {
+      // Add click handler to toggle button
+      usageToggleBtn.addEventListener('click', function(e) {
+        e.stopPropagation();
+        const isVisible = usagePanel.style.display !== 'none';
         
-        if (isCollapsed) {
-          usagePanel.classList.remove('collapsed');
-          toggleIcon.textContent = '▼';
-          // Load usage data when expanded
+        if (isVisible) {
+          // Hide panel
+          usagePanel.style.display = 'none';
+          usageToggleBtn.classList.remove('active');
+        } else {
+          // Show panel
+          usagePanel.style.display = 'block';
+          usageToggleBtn.classList.add('active');
+          
+          // Load usage data when shown
           const currentSessionId = window.AppState ? 
             window.AppState.getState('currentSessionId') : window.currentSessionId;
           
@@ -29,9 +36,14 @@
             loadSessionUsage(currentSessionId);
           }
           loadGlobalUsage();
-        } else {
-          usagePanel.classList.add('collapsed');
-          toggleIcon.textContent = '▶';
+        }
+      });
+      
+      // Close panel when clicking outside
+      document.addEventListener('click', function(e) {
+        if (!usagePanel.contains(e.target) && e.target !== usageToggleBtn) {
+          usagePanel.style.display = 'none';
+          usageToggleBtn.classList.remove('active');
         }
       });
     }

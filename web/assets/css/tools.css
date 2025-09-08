@@ -27,6 +27,12 @@
   letter-spacing: 0.5px;
 }
 
+.tool-header > .tool-status-text {
+  font-size: 0.9em;
+  font-weight: 600;
+  padding-left: 0.6em;
+}
+
 .tools-list {
   display: flex;
   flex-direction: column;

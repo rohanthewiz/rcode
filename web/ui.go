@@ -70,11 +70,17 @@ var markdownJS string
 //go:embed assets/js/modules/utils.js
 var utilsJS string
 
+//go:embed assets/js/modules/compaction.js
+var compactionJS string
+
 // //go:embed assets/js/monacoLoader.js
 // var monacoLoaderJS string
 
 //go:embed assets/css/ui.css
 var uiCSS string
+
+//go:embed assets/css/compaction.css
+var compactionCSS string
 
 //go:embed assets/css/file-browser.css
 var fileBrowserCSS string
@@ -142,6 +148,7 @@ func generateMainUI(isAuthenticated bool) string {
 									b.Span("id", "connection-status", "class", "connection-status").R()
 									b.Button("id", "plan-history-btn", "class", "btn-secondary").T("Plan History")
 									b.Button("class", "btn-secondary", "onclick", "window.open('/prompts', '_blank')").T("Manage Prompts")
+									b.Button("id", "usage-toggle-btn", "class", "btn-secondary").T("Usage")
 									b.Button("id", "logout-btn", "class", "btn-secondary").T("Logout")
 								} else {
 									b.Button("class", "btn-primary", "onclick", "handleLogin()").T("Login with Claude Pro/Max")
@@ -151,19 +158,10 @@ func generateMainUI(isAuthenticated bool) string {
 						),
 					),
 				),
-				// Usage Panel (collapsible)
+				// Usage Panel (hidden by default, shown as dropdown)
 				func() any {
 					if isAuthenticated {
-						b.Div("id", "usage-panel", "class", "usage-panel collapsed").R(
-							b.Div("class", "usage-header").R(
-								b.Button("id", "usage-toggle", "class", "usage-toggle").R(
-									b.Span("class", "toggle-icon").T("▶"),
-									b.Span().T(" Usage & Limits"),
-								),
-								b.Div("class", "usage-summary").R(
-									b.Span("id", "usage-quick-info").T("Loading..."),
-								),
-							),
+						b.Div("id", "usage-panel", "class", "usage-panel", "style", "display: none;").R(
 							b.Div("class", "usage-content").R(
 								// Session Usage
 								b.Div("class", "usage-section").R(
@@ -457,7 +455,7 @@ func generateMainUI(isAuthenticated bool) string {
 }
 
 func generateCSS() string {
-	return uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS + "\n\n" + fileBrowserCSS
+	return uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS + "\n\n" + fileBrowserCSS + "\n\n" + compactionCSS
 }
 
 func generateJavaScript(isAuthenticated bool) string {
@@ -610,6 +608,7 @@ func generateModularJavaScript() string {
 		"assets/js/modules/messages.js",
 		"assets/js/modules/tools.js",
 		"assets/js/modules/session.js",
+		"assets/js/modules/compaction.js",
 		"assets/js/modules/sse.js",
 		"assets/js/modules/events.js",
 		"assets/js/modules/main.js",

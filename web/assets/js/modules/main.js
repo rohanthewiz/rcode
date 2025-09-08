@@ -5,7 +5,7 @@ import { state, setState } from './state.js';
 import { connectEventSource, disconnectSSE } from './sse.js';
 import { configureMarked } from './markdown.js';
 import { setupClipboardHandling, setupDragAndDrop } from './clipboard.js';
-import { selectSession, createNewSession, loadSessions } from './session.js';
+import { switchToSession, createNewSession, loadSessions } from './session.js';
 import { addMessage, addSystemMessageToUI, addThinkingIndicator } from './messages.js';
 import { initializeUsagePanel } from './usage.js';
 import { compactSession, updateCompactionStats, checkAutoCompaction } from './compaction.js';

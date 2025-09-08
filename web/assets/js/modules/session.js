@@ -125,6 +125,11 @@
         });
       }
       
+      // Update compaction stats to show/hide compact button
+      if (window.updateCompactionStats) {
+        window.updateCompactionStats();
+      }
+      
     } catch (error) {
       console.error('Failed to switch session:', error);
     }

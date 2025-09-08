@@ -3,6 +3,8 @@
 
 import { state, getState } from './state.js';
 import { addSystemMessageToUI } from './messages.js';
+import { escapeHtml } from './utils.js';
+import { loadSessionMessages } from './session.js';
 
 // Compact the current session
 export async function compactSession(options = {}) {
@@ -83,26 +85,8 @@ async function reloadMessages() {
   if (!sessionId) return;
 
   try {
-    const response = await fetch(`/api/session/${sessionId}/messages`);
-    const messages = await response.json();
-
-    // Clear chat container
-    const chatContainer = document.getElementById('chat-container');
-    if (chatContainer) {
-      chatContainer.innerHTML = '';
-    }
-
-    // Re-add messages (compacted messages will show as system messages)
-    messages.forEach(msg => {
-      if (msg.role === 'system' && msg.content.includes('=== Compacted Conversation')) {
-        // Special styling for compacted messages
-        addCompactedMessageToUI(msg.content);
-      } else {
-        // Regular message
-        const { addMessageToUI } = await import('./messages.js');
-        addMessageToUI(msg);
-      }
-    });
+    // Use the existing loadSessionMessages function from session.js
+    await loadSessionMessages(sessionId);
   } catch (error) {
     console.error('Failed to reload messages:', error);
   }
@@ -196,12 +180,6 @@ export async function restoreCompactedMessages(compactionId) {
   }
 }
 
-// Helper function to escape HTML
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
 
 // Auto-compaction check
 export async function checkAutoCompaction() {
@@ -225,3 +203,6 @@ export async function checkAutoCompaction() {
     console.error('Auto-compaction check failed:', error);
   }
 }
+
+// Export to window for use by other modules
+window.updateCompactionStats = updateCompactionStats;

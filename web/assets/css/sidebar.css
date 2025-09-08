@@ -9,6 +9,8 @@
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
+  height: 100%;
+  overflow: hidden;
 }
 
 /* Sidebar Tabs */
@@ -55,6 +57,7 @@
   flex: 1;
   overflow: hidden;
   position: relative;
+  min-height: 0; /* Allow flex child to shrink */
 }
 
 .tab-content {
@@ -127,6 +130,8 @@
 .sidebar-footer {
   padding: 1rem;
   border-top: 1px solid var(--border);
+  flex-shrink: 0; /* Prevent footer from shrinking */
+  background: var(--bg-secondary); /* Ensure background */
 }
 
 #files-tab.active ~ .sidebar-footer {

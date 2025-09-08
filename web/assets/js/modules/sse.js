@@ -401,6 +401,11 @@ function handleMessageStop(evtData) {
     toolsAnnounced: false
   });
   
+  // Update compaction stats after message is complete
+  if (window.updateCompactionStats) {
+    window.updateCompactionStats();
+  }
+  
   // Clear any pending thinking return timer
   const timer = window.AppState.getState('thinkingReturnTimer');
   if (timer) {

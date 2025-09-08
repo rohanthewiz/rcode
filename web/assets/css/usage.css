@@ -4,57 +4,26 @@
 
 .usage-panel {
   position: fixed;
-  top: 60px; /* Below header */
-  left: 0;
-  right: 0;
+  top: 60px; /* Position below the header */
+  right: 10px; /* Align to right side */
+  width: 90%;
+  max-width: 800px;
   background: var(--bg-secondary);
-  border-bottom: 1px solid var(--border);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
   z-index: 100;
-  transition: all 0.3s ease;
+  animation: slideDown 0.3s ease;
 }
 
-.usage-panel.collapsed .usage-content {
-  display: none;
+/* Usage toggle button in header */
+#usage-toggle-btn {
+  position: relative;
 }
 
-.usage-header {
-  display: flex;
-  align-items: center;
-  padding: 0.5rem 1rem;
-  background: var(--bg-primary);
-  border-bottom: 1px solid var(--border);
-}
-
-.usage-toggle {
-  background: none;
-  border: none;
-  color: var(--text-primary);
-  cursor: pointer;
-  font-size: 0.9rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  transition: background 0.2s;
-}
-
-.usage-toggle:hover {
-  background: var(--bg-secondary);
-}
-
-.usage-toggle .toggle-icon {
-  transition: transform 0.2s;
-  display: inline-block;
-}
-
-.usage-summary {
-  margin-left: auto;
-  font-size: 0.85rem;
-  color: var(--text-secondary);
-  padding: 0.25rem 0.5rem;
-  background: var(--bg-primary);
-  border-radius: 4px;
+#usage-toggle-btn.active {
+  background: var(--bg-tertiary);
+  border-color: var(--accent);
 }
 
 .usage-content {
@@ -177,7 +146,19 @@
   font-size: 0.9rem;
 }
 
-/* Adjust main content when usage panel is open */
-.usage-panel:not(.collapsed) ~ main {
-  margin-top: calc(60px + 200px); /* Header height + panel height */
+/* Main content positioning - only account for fixed header */
+main {
+  margin-top: 60px; /* Just the header height */
+}
+
+/* Add animation for panel appearance */
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
