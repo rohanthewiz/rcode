@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Test Permissions Dialog</title>
+    <script>
+        // Test that the PermissionsModule is accessible and working
+        function testPermissionsModule() {
+            console.log('Testing PermissionsModule...');
+            
+            // Check if PermissionsModule exists
+            if (!window.PermissionsModule) {
+                console.error('❌ PermissionsModule not found!');
+                document.getElementById('result').innerHTML = '<span style="color:red">❌ PermissionsModule not found!</span>';
+                return;
+            }
+            
+            console.log('✅ PermissionsModule found:', window.PermissionsModule);
+            
+            // Check for required functions
+            const requiredFunctions = [
+                'handlePermissionRequest',
+                'showPermissionModal', 
+                'handlePermissionResponse',
+                'handlePermissionAbort',
+                'displayFileDiff'
+            ];
+            
+            let allFunctionsPresent = true;
+            for (const funcName of requiredFunctions) {
+                if (typeof window.PermissionsModule[funcName] === 'function') {
+                    console.log(`✅ ${funcName} exists`);
+                } else {
+                    console.error(`❌ ${funcName} is missing or not a function`);
+                    allFunctionsPresent = false;
+                }
+            }
+            
+            if (allFunctionsPresent) {
+                document.getElementById('result').innerHTML = '<span style="color:green">✅ All PermissionsModule functions are present and ready!</span>';
+                
+                // Simulate a permission request to test the modal
+                console.log('Simulating permission request...');
+                const mockRequest = {
+                    requestId: 'test-123',
+                    sessionId: 'test-session',
+                    data: {
+                        toolName: 'write_file',
+                        parameterDisplay: 'Test file: /tmp/test.txt',
+                        parameters: {
+                            path: '/tmp/test.txt',
+                            content: 'Test content'
+                        },
+                        requestId: 'test-123'
+                    }
+                };
+                
+                // Note: This won't show the modal unless the HTML elements exist
+                try {
+                    window.PermissionsModule.handlePermissionRequest(mockRequest);
+                    console.log('✅ handlePermissionRequest executed without errors');
+                } catch (error) {
+                    console.error('❌ Error calling handlePermissionRequest:', error);
+                }
+            } else {
+                document.getElementById('result').innerHTML = '<span style="color:red">❌ Some PermissionsModule functions are missing!</span>';
+            }
+        }
+        
+        window.addEventListener('DOMContentLoaded', () => {
+            console.log('Page loaded, running tests...');
+            testPermissionsModule();
+        });
+    </script>
+</head>
+<body>
+    <h1>Permissions Module Test</h1>
+    <p>Check the browser console for detailed test results.</p>
+    <div id="result">Testing...</div>
+    
+    <h2>Manual Test Instructions:</h2>
+    <ol>
+        <li>Open http://localhost:8000 in your browser</li>
+        <li>Login if needed</li>
+        <li>Create or open a session</li>
+        <li>Try a file operation (e.g., "create a test.txt file")</li>
+        <li>The approval dialog should appear with working Approve/Deny/Abort buttons</li>
+    </ol>
+    
+    <p>You can also test directly in the browser console at localhost:8000:</p>
+    <pre>
+    // Check if PermissionsModule exists
+    console.log(window.PermissionsModule);
+    
+    // Check for old conflicting function  
+    console.log(window.handlePermissionRequest);
+    </pre>
+</body>
+</html>

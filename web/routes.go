@@ -148,10 +148,27 @@ func SetupRoutes(s *rweb.Server) {
 	s.Get("/api/session/:id/files/recent", getRecentFilesHandler)
 	s.Get("/api/session/:id/files/open", getSessionOpenFilesHandler)
 
+	// File management endpoints
+	s.Get("/api/files", ListFilesHandler)
+	s.Post("/api/files/copy", CopyFilesHandler)
+	s.Post("/api/files/cut", CutFilesHandler)
+	s.Post("/api/files/paste", PasteFilesHandler)
+	s.Delete("/api/files", DeleteFilesHandler)
+	s.Get("/api/files/clipboard", GetClipboardHandler)
+	s.Post("/api/files/clipboard/clear", ClearClipboardHandler)
+	s.Post("/api/files/zip", ZipFilesHandler)
+
 	// Diff visualization endpoints
 	s.Get("/api/diff/:sessionId/:path", getDiffHandler)
 	s.Post("/api/diff/snapshot", createSnapshotHandler)
 	s.Post("/api/diff/generate", generateDiffHandler)
+
+	// Conversation compaction endpoints
+	s.Post("/api/session/:id/compact", compactSessionHandler)
+	s.Get("/api/session/:id/compaction/stats", getCompactionStatsHandler)
+	s.Get("/api/session/:id/compaction/messages", getCompactedMessagesHandler)
+	s.Post("/api/session/:id/compaction/:compactionId/restore", restoreCompactedMessagesHandler)
+	s.Put("/api/session/:id/auto-compact", updateAutoCompactHandler)
 	s.Get("/api/session/:id/diffs", listSessionDiffsHandler)
 	s.Get("/api/diff/:id", getDiffByIdHandler)
 	s.Post("/api/diff/:id/viewed", markDiffViewedHandler)

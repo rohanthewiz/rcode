@@ -7,8 +7,9 @@ rcode_server
 .idea
 .vscode
 .zed
-
 .claude
+
+cats
 
 *.log
 

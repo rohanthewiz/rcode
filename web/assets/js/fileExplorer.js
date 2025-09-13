@@ -1,4 +1,20 @@
 // File Explorer Module
+//
+// File Tree Refresh Mechanism:
+// The file explorer automatically refreshes when file system changes occur through SSE events.
+// 
+// How it works:
+// 1. When a file operation occurs (create/modify/delete), the server broadcasts a 'file_tree_update' SSE event
+// 2. The event contains: { type: 'file_tree_update', sessionId: '...', data: { path: '...' } }
+// 3. The UI checks if the sessionId matches the current session (or is empty for broadcast to all)
+// 4. If matched, handleFileEvent() is called with the event data
+// 5. refreshPath() is called with the path from the event:
+//    - If path is empty (''), loadFileTree() refreshes the entire tree
+//    - If path is not empty, it fetches and updates just that subtree
+// 6. The tree is re-rendered to reflect the changes
+//
+// This ensures the file explorer stays in sync with file system changes made by tools or other operations.
+
 const FileExplorer = (function() {
     let fileTree = [];
     let selectedPath = null;
@@ -85,14 +101,20 @@ const FileExplorer = (function() {
 
     // Load file tree from server
     async function loadFileTree(path = '', depth = 2) {
+        console.log('loadFileTree called with path:', path, 'depth:', depth);
         try {
-            const response = await fetch(`/api/files/tree?path=${encodeURIComponent(path)}&depth=${depth}`);
+            const url = `/api/files/tree?path=${encodeURIComponent(path)}&depth=${depth}`;
+            console.log('Fetching from URL:', url);
+            const response = await fetch(url);
+            console.log('Response status:', response.status);
             if (!response.ok) throw new Error('Failed to load file tree');
             
             const data = await response.json();
+            console.log('Received tree data:', data);
             
             if (path === '') {
                 fileTree = data.children || [];
+                console.log('Updated fileTree with', fileTree.length, 'items');
                 // Update current directory based on the root path
                 currentDirectory = data.path || await getCurrentWorkingDirectory();
                 // Store the display path if provided
@@ -103,6 +125,7 @@ const FileExplorer = (function() {
             }
             
             renderFileTree();
+            console.log('Tree rendered');
             return data;
         } catch (error) {
             console.error('Error loading file tree:', error);
@@ -585,9 +608,9 @@ const FileExplorer = (function() {
 
     // Handle file events from SSE
     function handleFileEvent(event) {
-        // console.log('File event received:', event);
-        // console.log('Event type:', event.type);
-        // console.log('Event data:', event.data);
+        console.log('File event received:', event);
+        console.log('Event type:', event.type);
+        console.log('Event data:', event.data);
         
         switch (event.type) {
             case 'file_opened':
@@ -601,7 +624,7 @@ const FileExplorer = (function() {
                 break;
                 
             case 'file_tree_update':
-                console.log('Tree update needed for:', event.data.path);
+                console.log('Tree update needed for path:', event.data.path);
                 // Refresh the tree or specific path
                 refreshPath(event.data.path);
                 break;
@@ -642,22 +665,40 @@ const FileExplorer = (function() {
 
     // Refresh a specific path in the tree
     async function refreshPath(path) {
+        console.log('refreshPath called with path:', path);
+        
         // If it's the root or we're viewing the root, refresh everything
         if (!path || path === '') {
+            console.log('Refreshing entire file tree...');
             await loadFileTree();
+            console.log('File tree refresh complete');
             return;
         }
         
         // Otherwise, find and refresh the specific node
+        console.log('Refreshing specific path:', path);
         const node = findNodeByPath(fileTree, path);
         if (node && node.isDir) {
-            const data = await loadFileTree(path, 2);
-            if (data && data.children) {
-                node.children = data.children;
-                renderFileTree();
+            // For non-root paths, we need to fetch the subtree and update it
+            try {
+                const response = await fetch(`/api/files/tree?path=${encodeURIComponent(path)}&depth=2`);
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log('Fetched subtree data for path:', path, data);
+                    if (data && data.children) {
+                        node.children = data.children;
+                        renderFileTree();
+                        console.log('Subtree updated and rendered');
+                    }
+                }
+            } catch (error) {
+                console.error('Error refreshing path:', path, error);
+                // Fall back to refreshing entire tree
+                await loadFileTree();
             }
         } else {
             // If we can't find the node, refresh the whole tree
+            console.log('Node not found, refreshing entire tree');
             await loadFileTree();
         }
     }

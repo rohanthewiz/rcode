@@ -345,8 +345,8 @@ func sendMessageHandler(c rweb.Context) error {
 		}
 	}
 
-	// Get all messages for context
-	messages, err := database.GetMessages(sessionID)
+	// Get all messages for context (including compacted summaries)
+	messages, err := database.GetMessagesWithCompaction(sessionID)
 	if err != nil {
 		return c.WriteError(serr.Wrap(err, "failed to get messages"), 500)
 	}
@@ -626,7 +626,7 @@ func sendMessageHandler(c rweb.Context) error {
 							"tool", toolName, "error", parseError)
 
 						// Broadcast tool execution failure
-						BroadcastToolExecutionStart(sessionID, toolID, toolName)
+						BroadcastToolExecutionStart(sessionID, toolID, toolName, nil)
 						metrics := map[string]interface{}{
 							"error": parseError,
 						}
@@ -658,7 +658,7 @@ func sendMessageHandler(c rweb.Context) error {
 						logger.Error("Tool input is not a map", "tool", toolName, "inputType", fmt.Sprintf("%T", inputRaw))
 
 						// Broadcast tool execution failure
-						BroadcastToolExecutionStart(sessionID, toolID, toolName)
+						BroadcastToolExecutionStart(sessionID, toolID, toolName, nil)
 						metrics := map[string]interface{}{
 							"error": "Invalid input format",
 						}
@@ -690,7 +690,7 @@ func sendMessageHandler(c rweb.Context) error {
 					startTime := time.Now()
 
 					// Broadcast tool execution start
-					BroadcastToolExecutionStart(sessionID, toolUse.ID, toolUse.Name)
+					BroadcastToolExecutionStart(sessionID, toolUse.ID, toolUse.Name, toolUse.Input)
 
 					// Execute the tool with permission and context awareness
 					result, err := permissionExecutor.Execute(toolUse)
@@ -802,7 +802,7 @@ func sendMessageHandler(c rweb.Context) error {
 				}
 
 				// Get updated messages and continue with new request
-				messages, err = database.GetMessages(sessionID)
+				messages, err = database.GetMessagesWithCompaction(sessionID)
 				if err != nil {
 					return c.WriteError(serr.Wrap(err, "failed to get updated messages"), 500)
 				}
@@ -1025,8 +1025,8 @@ func getSessionMessagesHandler(c rweb.Context) error {
 		return c.WriteError(serr.Wrap(err, "failed to get database"), 500)
 	}
 
-	// Get messages from database
-	messages, err := database.GetMessages(sessionID)
+	// Get messages from database (including compacted summaries)
+	messages, err := database.GetMessagesWithCompaction(sessionID)
 	if err != nil {
 		logger.LogErr(err, "failed to get messages")
 		// Return empty array instead of error to avoid breaking the UI

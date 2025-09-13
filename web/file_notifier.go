@@ -7,7 +7,9 @@ type FileEventNotifier struct{}
 
 // NotifyFileChanged broadcasts when a file is changed
 func (f *FileEventNotifier) NotifyFileChanged(path string, changeType string) {
-	BroadcastFileChanged(path, changeType)
+	// TODO: This should ideally have the sessionID from the context
+	// For now, broadcast to all sessions
+	BroadcastFileChanged("", path, changeType)
 }
 
 // NotifyFileTreeUpdate broadcasts when the file tree needs refresh

@@ -7,13 +7,20 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  overflow: hidden;
 }
 
 /* Header */
 header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
   background: var(--bg-secondary);
   border-bottom: 1px solid var(--border);
   padding: 1rem;
+  z-index: 101; /* Higher than usage panel */
+  height: 60px; /* Fixed height */
 }
 
 .header-content {
@@ -67,6 +74,8 @@ main {
   display: flex;
   flex: 1;
   overflow: hidden;
+  min-height: 0; /* Allow flex child to shrink below content size */
+  height: 100vh; /* Full viewport height since header is fixed */
 }
 
 /* Connection Status Indicator */

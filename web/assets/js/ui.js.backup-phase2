@@ -298,47 +298,361 @@ if (!document.getElementById('clipboard-styles')) {
 }
 
 function connectEventSource() {
-  // Delegate to SSE module if available
-  if (window.SSEModule) {
-    return window.SSEModule.connectEventSource();
+  // Don't connect if manually disconnected
+  if (isManuallyDisconnected) {
+    console.log('Not connecting - manually disconnected');
+    return;
   }
-  console.error('SSE module not loaded');
+
+  // Close any existing connection first
+  if (eventSource) {
+    console.log('Closing existing EventSource before creating new connection');
+    eventSource.close();
+    eventSource = null;
+  }
+
+  console.log(`Attempting SSE connection (attempt ${reconnectAttempts + 1})`);
+
+  // Update status to reconnecting if we're retrying
+  if (reconnectAttempts > 0 || connectionStatus === 'reconnecting') {
+    updateConnectionStatus('reconnecting');
+  }
+
+  eventSource = new EventSource('/events');
+
+  eventSource.onopen = function() {
+    console.log('SSE connection established');
+    // Reset reconnection state on successful connection
+    reconnectAttempts = 0;
+    reconnectDelay = 1000;
+    updateConnectionStatus('connected');
+    
+    // Refresh sessions in case server was restarted
+    loadSessions();
+  };
+
+  eventSource.onmessage = function(event) {
+    // console.log('SSE msg received (raw): ', event);
+
+    const data = JSON.parse(event.data);
+    handleServerEvent(data);
+  };
+
+  eventSource.onerror = function(error) {
+    console.error('SSE error:', error);
+    
+    // Close the current connection
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+
+    // Increment attempts first
+    reconnectAttempts++;
+
+    // Check if we've exceeded max reconnection attempts
+    if (reconnectAttempts > maxReconnectAttempts) {
+      console.error('Max reconnection attempts reached. Stopping auto-reconnect.');
+      updateConnectionStatus('disconnected');
+      showConnectionError('Connection to server lost. Please refresh the page or click reconnect.');
+      return;
+    }
+
+    // Update status to show we're reconnecting with attempt count
+    updateConnectionStatus('reconnecting');
+
+    // Calculate next delay with exponential backoff
+    const nextDelay = Math.min(reconnectDelay * 2, maxReconnectDelay);
+    
+    console.log(`Reconnecting in ${reconnectDelay/1000} seconds... (attempt ${reconnectAttempts}/${maxReconnectAttempts})`);
+    
+    setTimeout(() => {
+      connectEventSource();
+    }, reconnectDelay);
+    
+    // Update delay for next attempt
+    reconnectDelay = nextDelay;
+  };
 }
 
 // Manually reconnect SSE
 function reconnectSSE() {
-  // Delegate to SSE module if available
-  if (window.SSEModule) {
-    return window.SSEModule.reconnectSSE();
+  console.log('Manual SSE reconnection requested');
+  
+  // Close any existing connection first
+  if (eventSource) {
+    console.log('Closing existing EventSource before reconnecting');
+    eventSource.close();
+    eventSource = null;
   }
-  console.error('SSE module not loaded');
+  
+  isManuallyDisconnected = false;
+  reconnectAttempts = 0;
+  reconnectDelay = 1000;
+  
+  // Update status to show we're starting fresh
+  // Set attempts to 1 temporarily for display purposes
+  const tempAttempts = reconnectAttempts;
+  reconnectAttempts = 1;
+  updateConnectionStatus('reconnecting');
+  reconnectAttempts = tempAttempts;
+  
+  // Small delay to ensure UI updates before connection attempt
+  setTimeout(() => {
+    connectEventSource();
+  }, 100);
 }
 
 // Disconnect SSE
 function disconnectSSE() {
-  // Delegate to SSE module if available
-  if (window.SSEModule) {
-    return window.SSEModule.disconnectSSE();
+  console.log('Disconnecting SSE');
+  isManuallyDisconnected = true;
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
   }
-  console.error('SSE module not loaded');
+  updateConnectionStatus('disconnected');
 }
 
 // Update connection status in UI
 function updateConnectionStatus(status) {
-  // Delegate to SSE module if available
-  if (window.SSEModule) {
-    return window.SSEModule.updateConnectionStatus(status);
+  connectionStatus = status;
+  const statusElement = document.getElementById('connection-status');
+  if (!statusElement) {
+    console.error('Connection status element not found');
+    return;
   }
-  console.error('SSE module not loaded');
+
+  console.log(`Updating connection status to: ${status}`);
+
+  // Remove all status classes
+  statusElement.classList.remove('connected', 'disconnected', 'reconnecting');
+  
+  // Add current status class
+  statusElement.classList.add(status);
+  
+  // Update text and visibility
+  switch(status) {
+    case 'connected':
+      statusElement.style.display = 'none'; // Hide when connected
+      statusElement.textContent = ''; // Clear text content
+      console.log('Status set to connected - indicator should be hidden');
+      break;
+    case 'reconnecting':
+      statusElement.textContent = `Reconnecting... (${reconnectAttempts}/${maxReconnectAttempts})`;
+      statusElement.style.display = 'block';
+      break;
+    case 'disconnected':
+      if (reconnectAttempts >= maxReconnectAttempts) {
+        statusElement.innerHTML = 'Connection lost. <a href="#" onclick="reconnectSSE(); return false;">Reconnect</a>';
+      } else {
+        statusElement.textContent = 'Disconnected';
+      }
+      statusElement.style.display = 'block';
+      break;
+  }
 }
 
 // Show connection error message
 function showConnectionError(message) {
-  // Delegate to SSE module if available
-  if (window.SSEModule) {
-    return window.SSEModule.showConnectionError(message);
+  const messagesContainer = document.getElementById('messages');
+  if (!messagesContainer) return;
+
+  const errorDiv = document.createElement('div');
+  errorDiv.className = 'connection-error';
+  errorDiv.innerHTML = `
+    <div class="error-content">
+      <strong>Connection Error</strong>
+      <p>${message}</p>
+      <button onclick="reconnectSSE()" class="btn-secondary">Reconnect</button>
+    </div>
+  `;
+  
+  messagesContainer.appendChild(errorDiv);
+  messagesContainer.scrollTop = messagesContainer.scrollHeight;
+}
+
+// Handle server events
+function handleServerEvent(event) {
+  // already logged at parent // console.log('Received SSE event:', event);
+  console.log('Event sessionId:', event.sessionId, 'Current sessionId:', currentSessionId, 'Match:', event.sessionId === currentSessionId);
+  console.log('Global currentSessionId:', window.currentSessionId);
+  
+  // Special logging for permission events
+  if (event.type === 'permission_request') {
+    console.warn('PERMISSION EVENT RECEIVED:', {
+      type: event.type,
+      eventSessionId: event.sessionId,
+      currentSessionId: currentSessionId,
+      windowSessionId: window.currentSessionId,
+      sessionMatch: event.sessionId === currentSessionId,
+      data: event.data
+    });
   }
-  console.error('SSE module not loaded');
+
+  // Auto-switch to Files tab on first response
+  if (event.sessionId === currentSessionId && !hasReceivedFirstResponse) {
+    // Check for events that indicate the LLM is starting to respond
+    if (event.type === 'content_start' || 
+        event.type === 'tool_execution_start' ||
+        (event.type === 'message_delta' && event.data && event.data.delta)) {
+      
+      // Switch to Files tab on first response
+      if (window.FileExplorer && window.FileExplorer.switchTab) {
+        console.log('Auto-switching to Files tab on first response');
+        window.FileExplorer.switchTab('files');
+        hasReceivedFirstResponse = true;
+      }
+    }
+  }
+
+  if (event.type === 'message_start' && event.sessionId === currentSessionId) {
+    console.log('Message streaming started');
+    isLLMProcessing = true; // LLM is now processing
+    toolsAnnounced = false; // Reset tools announced flag for new message
+    // Clear any pending thinking return timer
+    if (thinkingReturnTimer) {
+      clearTimeout(thinkingReturnTimer);
+      thinkingReturnTimer = null;
+    }
+  } else if (event.type === 'content_start' && event.sessionId === currentSessionId) {
+    console.log('Content started (text or tool) - checking if tools announced:', toolsAnnounced);
+    // Only handle thinking indicator if NOT expecting tools
+    if (!toolsAnnounced) {
+      // This is pure text content, remove thinking indicator
+      const thinkingIndicator = document.querySelector('.message.thinking');
+      if (thinkingIndicator) {
+        console.log('Removing thinking indicator for pure text content');
+        thinkingIndicator.remove();
+      }
+    }
+    // If tools were announced, keep the thinking/tool execution indicator
+  } else if (event.type === 'tool_use_start' && event.sessionId === currentSessionId) {
+    console.log('Tool use started - tools announced');
+    toolsAnnounced = true; // Mark that tools have been announced
+    // Transform thinking indicator to show tools are coming
+    const thinkingIndicator = document.querySelector('.message.thinking');
+    if (thinkingIndicator) {
+      const content = thinkingIndicator.querySelector('.message-content');
+      if (content) {
+        content.innerHTML = '<span class="tool-executing">🛠️ Executing tools...</span>';
+      }
+    }
+  } else if (event.type === 'message_delta' && event.sessionId === currentSessionId) {
+    console.log('Message delta received:', event.data.delta);
+    // Create streaming message container if it doesn't exist
+    if (!currentStreamingMessageDiv) {
+      createStreamingMessage();
+    }
+    // Append delta to streaming message
+    appendToStreamingMessage(event.data.delta);
+  } else if (event.type === 'message_stop' && event.sessionId === currentSessionId) {
+    console.log('Message streaming stopped');
+    // Finalize streaming message
+    finalizeStreamingMessage();
+    // Hide stop button when message completes
+    toggleStopButton(false);
+    isProcessing = false;
+    isLLMProcessing = false; // LLM has finished processing
+    toolsAnnounced = false; // Reset tools announced flag
+    
+    // Clear any pending thinking return timer
+    if (thinkingReturnTimer) {
+      clearTimeout(thinkingReturnTimer);
+      thinkingReturnTimer = null;
+    }
+    
+    // Remove any remaining thinking indicators
+    const thinkingIndicators = document.querySelectorAll('.message.thinking');
+    thinkingIndicators.forEach(indicator => indicator.remove());
+  } else if (event.type === 'tool_execution_start' && event.sessionId === currentSessionId) {
+    console.log('Tool execution started:', event.data);
+    handleToolExecutionStart(event.data);
+  } else if (event.type === 'tool_execution_progress' && event.sessionId === currentSessionId) {
+    console.log('Tool execution progress:', event.data);
+    handleToolExecutionProgress(event.data);
+  } else if (event.type === 'tool_execution_complete' && event.sessionId === currentSessionId) {
+    console.log('Tool execution completed:', event.data);
+    handleToolExecutionComplete(event.data);
+
+    // Refresh file tree after successful file-related tool operations
+    const fileTools = ['write_file', 'edit_file', 'make_dir', 'remove', 'move'];
+    if (event.data && event.data.toolName && window.FileExplorer) {
+      // Extract tool name from the summary (format: "✓ Tool operation...")
+      const toolName = event.data.toolName;
+      if (fileTools.includes(toolName)) {
+        // console.log('File operation detected, refreshing file tree for tool:', toolName);
+
+        // Cancel any pending refresh to debounce multiple operations
+        if (window.fileTreeRefreshTimeout) {
+          clearTimeout(window.fileTreeRefreshTimeout);
+          console.log('Cancelled pending file tree refresh, will reschedule');
+        }
+
+        // Schedule refresh with longer delay to ensure file system operations are complete
+        // Using 1.5 second delay for better reliability with larger operations
+        window.fileTreeRefreshTimeout = setTimeout(() => {
+          console.log('Refreshing file tree now...');
+          window.FileExplorer.loadFileTree();
+          window.fileTreeRefreshTimeout = null;
+        }, fileRefreshDelay);
+      }
+    }
+
+  } else if (event.type === 'tool_usage' && event.sessionId === currentSessionId) {
+    console.log('Tool usage event received:', event.data);
+    // Add tool usage summary to UI
+    addToolUsageSummaryToUI(event.data);
+  } else if (event.type === 'session_list_updated') {
+    loadSessions();
+  } else if (event.type && event.type.startsWith('plan_') && event.session_id === currentSessionId) {
+    // Handle plan-related events
+    handlePlanEvent(event);
+  } else if (event.type && (event.type === 'file_opened' || event.type === 'file_changed' || event.type === 'file_tree_update')) {
+    // Handle file explorer events
+    if (window.FileExplorer && window.FileExplorer.handleFileEvent) {
+      window.FileExplorer.handleFileEvent(event);
+    }
+  } else if (event.type === 'diff_available' && event.sessionId === currentSessionId) {
+    // Handle diff available event
+    console.log('Diff available:', event.data);
+    if (event.data && event.data.filePath) {
+      // For diff_available, we'll mark as modified since it implies the file was changed
+      // The file_changed event will handle marking as new if it's a creation
+      if (window.FileExplorer && window.FileExplorer.markFileModified) {
+        window.FileExplorer.markFileModified(event.data.filePath);
+      }
+      
+      // Store the diff in the diff viewer
+      if (window.diffViewer && event.data.diffId) {
+        // Show notification that diff is available
+        const notification = `📝 Changes detected in ${event.data.filePath}`;
+        addSystemMessageToUI(notification, 'info');
+      }
+    }
+  } else if (event.type === 'tool_permission_update' && event.sessionId === currentSessionId) {
+    // Handle tool permission update event
+    console.log('Tool permission updated:', event.data);
+    // Could refresh the tools list or update specific tool UI
+    // For now, just log it as the UI is already updated optimistically
+  } else if (event.type === 'permission_request') {
+    // Handle permission request - check session ID match
+    console.log('Permission request received:', event.data);
+    console.log('Session check:', event.sessionId, '===', currentSessionId, '?', event.sessionId === currentSessionId);
+    if (event.sessionId === currentSessionId || event.sessionId === window.currentSessionId) {
+      handlePermissionRequest(event.data);
+    } else {
+      console.warn('Permission request for different session, ignoring');
+    }
+  } else if (event.type === 'file_diff' && event.sessionId === currentSessionId) {
+    // Handle file diff display
+    console.log('File diff received:', event.data);
+    displayFileDiff(event.data);
+  } else if (event.type === 'usage_update' && event.sessionId === currentSessionId) {
+    // Handle usage update
+    console.log('Usage update received:', event.data);
+    handleUsageUpdateEvent(event.data);
+  }
 }
 
 // Load sessions
@@ -441,10 +755,8 @@ async function loadMessages() {
 }
 
 // Add tool usage summary to UI
-// Sample evtData: {"data":{"summary":"âœ“ Created directory run_hi","tool":"make_dir"},"sessionId":"session-1756944521","type":"tool_usage"}
-function addToolUsageSummaryToUI(evtData) {
+function addToolUsageSummaryToUI(toolData) {
   const messagesContainer = document.getElementById('messages');
-  const toolData = evtData.data;
   
   // Find the thinking indicator if it exists
   const thinkingIndicator = messagesContainer.querySelector('.message.thinking');
@@ -1593,18 +1905,9 @@ document.addEventListener('DOMContentLoaded', function() {
       sendMessage();
     });
 
-    // Initialize file mention system
-    if (window.FileMentionSystem) {
-      window.fileMentionSystem = new FileMentionSystem(editor);
-      console.log('File mention system initialized');
-    }
-    
     // Focus the editor
     editor.focus();
     // console.log('Monaco editor initialized successfully');
-    
-    // Expose editor to window for other modules
-    window.editor = editor;
     
     // Add clipboard image handling
     // Use clipboard module function from global scope
@@ -2227,20 +2530,8 @@ function updateWorkingIndicator() {
   }
 }
 
-// Handle tool execution start event - delegate to tools module if available
-function handleToolExecutionStart(evtData) {
-  // If tools module is available and has the handler, use it
-  if (window.ToolsModule && window.ToolsModule.handleToolExecutionStart) {
-    // Map the backend data structure to what tools module expects
-    const toolsModuleData = {
-      toolUseId: evtData.toolId,  // Map toolId to toolUseId
-      toolName: evtData.toolName,
-      parameters: evtData.parameters || {}  // Provide empty object if no parameters
-    };
-    return window.ToolsModule.handleToolExecutionStart(toolsModuleData);
-  }
-  
-  // Fallback to simple implementation if module not available
+// Handle tool execution start event
+function handleToolExecutionStart(data) {
   const messagesContainer = document.getElementById('messages');
   
   // Clear any pending thinking return timer when new tool starts
@@ -2279,10 +2570,10 @@ function handleToolExecutionStart(evtData) {
   const toolsList = toolsContainer.querySelector('.tool-execution-list');
   const toolItem = document.createElement('div');
   toolItem.className = 'tool-item executing';
-  toolItem.id = `tool-${evtData.toolId}`;
+  toolItem.id = `tool-${data.toolId}`;
   toolItem.innerHTML = `
     <span class="tool-status-icon">⏳</span>
-    <span class="tool-name">${evtData.toolName}</span>
+    <span class="tool-name">${data.toolName}</span>
     <div class="tool-progress" style="display: none;">
       <div class="tool-progress-bar" style="width: 0%"></div>
     </div>
@@ -2292,9 +2583,9 @@ function handleToolExecutionStart(evtData) {
   toolsList.appendChild(toolItem);
   
   // Track the active tool execution
-  activeToolExecutions.set(evtData.toolId, {
-    name: evtData.toolName,
-    startTime: evtData.startTime,
+  activeToolExecutions.set(data.toolId, {
+    name: data.toolName,
+    startTime: data.startTime,
     element: toolItem
   });
   
@@ -2306,20 +2597,7 @@ function handleToolExecutionStart(evtData) {
 }
 
 // Handle tool execution progress event
-function handleToolExecutionProgress(evtData) {
-  // Delegate to tools module if available
-  if (window.ToolsModule && window.ToolsModule.handleToolExecutionProgress) {
-
-    // // Map the backend data structure to what the module expects
-    // const toolsModuleData = {
-    //   toolUseId: evtData.data.toolId,
-    //   progress: evtData.data.progress,
-    //   message: evtData.data.message
-    // };
-    return window.ToolsModule.handleToolExecutionProgress(evtData);
-  }
-  
-  // Fallback implementation for backward compatibility
+function handleToolExecutionProgress(data) {
   const toolInfo = activeToolExecutions.get(data.toolId);
   if (!toolInfo) return;
   
@@ -2339,30 +2617,14 @@ function handleToolExecutionProgress(evtData) {
 }
 
 // Handle tool execution complete event
-// Sample: evtData: {"data":{"duration":3151,"metrics":{"duration":3151},"status":"success",
-// "summary":"âœ“ Created directory run_hi","toolId":"toolu_01GJixVq8hJG7yk3Gt4feqVZ","toolName":"make_dir"},
-// "sessionId":"session-1756944521","type":"tool_execution_complete"}
-function handleToolExecutionComplete(evtData) {
-  // Delegate to tools module if available
-  if (window.ToolsModule && window.ToolsModule.handleToolExecutionComplete) {
-    // Map the backend data structure to what tools module expects
-    const toolsModuleData = {
-      toolUseId: evtData.data.toolId,
-      success: evtData.data.status === 'success',
-      error: evtData.data.status === 'failed' ? (evtData.data.summary || 'Failed') : null,
-      metrics: evtData.data.metrics
-    };
-    return window.ToolsModule.handleToolExecutionComplete(toolsModuleData);
-  }
-  
-  // Fallback implementation for backward compatibility
+function handleToolExecutionComplete(data) {
   // Clear any existing thinking return timer
   if (thinkingReturnTimer) {
     clearTimeout(thinkingReturnTimer);
     thinkingReturnTimer = null;
   }
   
-  const toolInfo = activeToolExecutions.get(evtData.toolId);
+  const toolInfo = activeToolExecutions.get(data.toolId);
   if (!toolInfo) return;
   
   const toolItem = toolInfo.element;
@@ -2372,12 +2634,12 @@ function handleToolExecutionComplete(evtData) {
   
   // Update status
   toolItem.classList.remove('executing');
-  toolItem.classList.add(evtData.status);
+  toolItem.classList.add(data.status);
   
   // Update icon based on status
-  if (evtData.status === 'success') {
+  if (data.status === 'success') {
     statusIcon.textContent = '✓';
-  } else if (evtData.status === 'failed') {
+  } else if (data.status === 'failed') {
     statusIcon.textContent = '❌';
   }
   
@@ -2385,14 +2647,14 @@ function handleToolExecutionComplete(evtData) {
   progressContainer.style.display = 'none';
   
   // Update summary/metrics
-  if (evtData.summary) {
-    metricsSpan.textContent = evtData.summary.replace(/^[✓❌]\s*/, ''); // Remove status icon from summary
-  } else if (evtData.metrics && evtData.metrics.duration) {
-    metricsSpan.textContent = `(${evtData.metrics.duration}ms)`;
+  if (data.summary) {
+    metricsSpan.textContent = data.summary.replace(/^[✓❌]\s*/, ''); // Remove status icon from summary
+  } else if (data.metrics && data.metrics.duration) {
+    metricsSpan.textContent = `(${data.metrics.duration}ms)`;
   }
   
   // Remove from active executions
-  activeToolExecutions.delete(evtData.toolId);
+  activeToolExecutions.delete(data.toolId);
   
   // Update working indicator
   updateWorkingIndicator();
@@ -2459,6 +2721,248 @@ function toggleToolDetails(button) {
   }
 }
 
+// Permission Request Handling
+const activePermissionRequests = new Map();
+
+// Handle incoming permission request
+function handlePermissionRequest(data) {
+  console.error('HANDLE PERMISSION REQUEST CALLED:', data);
+  
+  // Store the request
+  activePermissionRequests.set(data.requestId, data);
+  
+  // Show the permission modal
+  showPermissionModal(data);
+}
+
+// Show permission modal dialog
+function showPermissionModal(data) {
+  const modal = document.getElementById('permission-modal');
+  const toolNameElement = document.getElementById('permission-tool-name');
+  const paramsElement = document.getElementById('permission-params');
+  const rememberCheckbox = document.getElementById('permission-remember');
+  
+  // Set tool name
+  toolNameElement.textContent = data.toolName;
+  
+  // Display parameters
+  paramsElement.innerHTML = '';
+  if (data.parameterDisplay) {
+    const paramDiv = document.createElement('div');
+    paramDiv.className = 'param-display';
+    paramDiv.textContent = data.parameterDisplay;
+    paramsElement.appendChild(paramDiv);
+  } else {
+    // Fallback to showing raw parameters
+    const paramList = document.createElement('ul');
+    const params = data.parameters || {};
+    const paramKeys = Object.keys(params).filter(k => !k.startsWith('_'));
+    
+    if (paramKeys.length === 0) {
+      // No parameters to display
+      const li = document.createElement('li');
+      li.innerHTML = '<em>No parameters provided (this might be an error)</em>';
+      li.style.color = 'var(--warning)';
+      paramList.appendChild(li);
+    } else {
+      for (const key of paramKeys) {
+        const li = document.createElement('li');
+        const value = params[key];
+        // Truncate long values for display
+        let displayValue = JSON.stringify(value);
+        if (displayValue.length > 100) {
+          displayValue = displayValue.substring(0, 100) + '...';
+        }
+        li.innerHTML = `<strong>${key}:</strong> ${displayValue}`;
+        paramList.appendChild(li);
+      }
+    }
+    paramsElement.appendChild(paramList);
+  }
+  
+  // Handle diff preview if available
+  const diffSection = document.getElementById('permission-diff-section');
+  const diffToggle = document.getElementById('permission-diff-toggle');
+  const diffContainer = document.getElementById('permission-diff-container');
+  const diffContent = document.getElementById('permission-diff-content');
+  const diffStats = document.getElementById('permission-diff-stats');
+  
+  if (data.diffPreview && (data.toolName === 'write_file' || data.toolName === 'edit_file' || data.toolName === 'smart_edit')) {
+    // Show diff section
+    diffSection.style.display = 'block';
+    
+    // Set diff stats
+    const stats = data.diffPreview.stats;
+    if (stats) {
+      diffStats.textContent = `(+${stats.added || 0}, -${stats.deleted || 0} lines)`;
+    }
+    
+    // Render diff content
+    renderPermissionDiff(diffContent, data.diffPreview);
+    
+    // Set up toggle handler
+    const toggleIcon = diffToggle.querySelector('.toggle-icon');
+    diffToggle.onclick = function() {
+      if (diffContainer.style.display === 'none') {
+        diffContainer.style.display = 'block';
+        diffToggle.classList.add('expanded');
+        toggleIcon.textContent = '▼';
+      } else {
+        diffContainer.style.display = 'none';
+        diffToggle.classList.remove('expanded');
+        toggleIcon.textContent = '▶';
+      }
+    };
+    
+    // Automatically expand diff for file write operations
+    diffContainer.style.display = 'block';
+    diffToggle.classList.add('expanded');
+    toggleIcon.textContent = '▼';
+  } else {
+    // Hide diff section
+    diffSection.style.display = 'none';
+  }
+  
+  // Reset checkbox
+  rememberCheckbox.checked = false;
+  
+  // Set up button handlers
+  const approveBtn = document.getElementById('permission-approve');
+  const denyBtn = document.getElementById('permission-deny');
+  const abortBtn = document.getElementById('permission-abort');
+  
+  // Remove old handlers
+  const newApproveBtn = approveBtn.cloneNode(true);
+  const newDenyBtn = denyBtn.cloneNode(true);
+  const newAbortBtn = abortBtn.cloneNode(true);
+  approveBtn.parentNode.replaceChild(newApproveBtn, approveBtn);
+  denyBtn.parentNode.replaceChild(newDenyBtn, denyBtn);
+  abortBtn.parentNode.replaceChild(newAbortBtn, abortBtn);
+  
+  // Add new handlers
+  newApproveBtn.addEventListener('click', () => {
+    handlePermissionResponse(data.requestId, true);
+  });
+  
+  newDenyBtn.addEventListener('click', () => {
+    handlePermissionResponse(data.requestId, false);
+  });
+  
+  newAbortBtn.addEventListener('click', () => {
+    handlePermissionAbort(data.requestId);
+  });
+  
+  // Show modal
+  modal.style.display = 'block';
+}
+
+// Render diff content in permission modal
+function renderPermissionDiff(container, diffResult) {
+  container.innerHTML = '';
+  
+  if (!diffResult.hunks || diffResult.hunks.length === 0) {
+    container.innerHTML = '<div class="diff-line context">No changes detected</div>';
+    return;
+  }
+  
+  // Render unified diff format
+  diffResult.hunks.forEach(hunk => {
+    // Add hunk header
+    const header = document.createElement('div');
+    header.className = 'diff-header';
+    header.textContent = `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
+    container.appendChild(header);
+    
+    // Add diff lines
+    hunk.lines.forEach(line => {
+      const lineDiv = document.createElement('div');
+      lineDiv.className = `diff-line ${line.type}`;
+      
+      // Add prefix based on type
+      let prefix = ' ';
+      if (line.type === 'add') prefix = '+';
+      else if (line.type === 'delete') prefix = '-';
+      
+      lineDiv.textContent = prefix + line.content;
+      container.appendChild(lineDiv);
+    });
+  });
+}
+
+// Handle permission response
+async function handlePermissionResponse(requestId, approved) {
+  const request = activePermissionRequests.get(requestId);
+  if (!request) return;
+  
+  const rememberCheckbox = document.getElementById('permission-remember');
+  const remember = rememberCheckbox.checked;
+  
+  // Hide modal
+  document.getElementById('permission-modal').style.display = 'none';
+  
+  // Remove from active requests
+  activePermissionRequests.delete(requestId);
+  
+  // Send response to backend
+  try {
+    const response = await fetch('/api/permission-response', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        requestId: requestId,
+        sessionId: currentSessionId,
+        approved: approved,
+        rememberChoice: remember
+      })
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to send permission response:', response.status);
+    }
+  } catch (error) {
+    console.error('Error sending permission response:', error);
+  }
+}
+
+// Handle permission abort - completely stop the current operation
+async function handlePermissionAbort(requestId) {
+  const request = activePermissionRequests.get(requestId);
+  if (!request) return;
+  
+  // Hide modal
+  document.getElementById('permission-modal').style.display = 'none';
+  
+  // Remove from active requests
+  activePermissionRequests.delete(requestId);
+  
+  // Send abort signal to backend
+  try {
+    const response = await fetch('/api/permission-abort', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        request_id: requestId,
+        session_id: currentSessionId || window.currentSessionId
+      })
+    });
+    
+    if (!response.ok) {
+      console.error('Failed to send permission abort:', response.status);
+    }
+    
+    // Send abort message to the LLM
+    await sendMessage('Important: ABORT!');
+    
+    // Show notification that the operation was aborted
+    addSystemMessageToUI('🛑 Operation completely aborted by user', 'error');
+  } catch (error) {
+    console.error('Error sending permission abort:', error);
+  }
+}
 
 // Display file diff in a closable frame
 function displayFileDiff(data) {

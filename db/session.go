@@ -251,7 +251,7 @@ func (db *DB) ListSessions() ([]*Session, error) {
 	}
 	defer rows.Close()
 
-	var sessions []*Session
+	sessions := make([]*Session, 0)
 	for rows.Next() {
 		var session Session
 		var promptsStr sql.NullString
@@ -368,7 +368,7 @@ func (db *DB) SearchSessions(searchTerm string) ([]*Session, error) {
 	}
 	defer rows.Close()
 
-	var sessions []*Session
+	sessions := make([]*Session, 0)
 	for rows.Next() {
 		var session Session
 		var promptsStr sql.NullString

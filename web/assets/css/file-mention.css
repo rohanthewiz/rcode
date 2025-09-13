@@ -1,0 +1,151 @@
+/* ========================================
+   File Mention Dropdown Styles
+   @ command autocomplete for file selection
+   ======================================== */
+
+.file-mention-dropdown {
+  position: absolute;
+  z-index: 10000;
+  background: var(--bg-secondary, #2d2d30);
+  border: 1px solid var(--border, #3e3e42);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  max-height: 300px;
+  min-width: 300px;
+  max-width: 500px;
+  overflow-y: auto;
+  font-family: var(--font-mono, 'Monaco, Consolas, monospace');
+  font-size: 13px;
+}
+
+.file-mention-item {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.file-mention-item:last-child {
+  border-bottom: none;
+}
+
+.file-mention-item:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.file-mention-item.selected {
+  background-color: var(--accent, #007acc);
+  color: white;
+}
+
+.file-mention-item .file-icon {
+  font-size: 16px;
+  margin-right: 10px;
+  flex-shrink: 0;
+}
+
+.file-mention-item .file-info {
+  flex: 1;
+  overflow: hidden;
+}
+
+.file-mention-item .file-name {
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary, #cccccc);
+}
+
+.file-mention-item.selected .file-name {
+  color: white;
+}
+
+.file-mention-item .file-name strong {
+  color: var(--accent-light, #40a9ff);
+  font-weight: 600;
+}
+
+.file-mention-item.selected .file-name strong {
+  color: #ffd700;
+}
+
+.file-mention-item .file-path {
+  font-size: 11px;
+  color: var(--text-secondary, #858585);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
+.file-mention-item.selected .file-path {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.file-mention-empty {
+  padding: 12px;
+  text-align: center;
+  color: var(--text-secondary, #858585);
+  font-style: italic;
+}
+
+/* Scrollbar styling for the dropdown */
+.file-mention-dropdown::-webkit-scrollbar {
+  width: 8px;
+}
+
+.file-mention-dropdown::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+}
+
+.file-mention-dropdown::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+}
+
+.file-mention-dropdown::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* Animation for dropdown appearance */
+@keyframes dropdownSlideIn {
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.file-mention-dropdown {
+  animation: dropdownSlideIn 0.2s ease-out;
+}
+
+/* Loading state */
+.file-mention-dropdown.loading {
+  min-height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.file-mention-dropdown.loading::after {
+  content: '';
+  width: 20px;
+  height: 20px;
+  border: 2px solid var(--text-secondary);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

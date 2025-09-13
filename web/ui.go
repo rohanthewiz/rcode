@@ -1,14 +1,28 @@
 package web
 
 import (
+	"embed"
 	_ "embed"
+	"fmt"
+	"os"
+	"strings"
 
 	"rcode/auth"
 
 	"github.com/rohanthewiz/element"
 	"github.com/rohanthewiz/rweb"
+	"github.com/tdewolff/minify/v2"
+	"github.com/tdewolff/minify/v2/css"
+	"github.com/tdewolff/minify/v2/js"
 )
 
+// Embed all static assets
+//
+//go:embed assets/js/* assets/js/modules/* assets/css/*
+var _ embed.FS // TODO
+
+// Individual embeds for backward compatibility
+//
 //go:embed assets/js/ui.js
 var uiJS string
 
@@ -24,11 +38,56 @@ var diffViewerJS string
 //go:embed assets/js/fileOperations.js
 var fileOperationsJS string
 
+//go:embed assets/js/file-browser.js
+var fileBrowserJS string
+
+//go:embed assets/js/modules/clipboard.js
+var clipboardJS string
+
+//go:embed assets/js/modules/state.js
+var stateJS string
+
+//go:embed assets/js/modules/events.js
+var eventsJS string
+
+//go:embed assets/js/modules/sse.js
+var sseJS string
+
+//go:embed assets/js/modules/messages.js
+var messagesJS string
+
+//go:embed assets/js/modules/session.js
+var sessionJS string
+
+//go:embed assets/js/modules/tools.js
+var toolsJS string
+
+//go:embed assets/js/modules/permissions.js
+var permissionsJS string
+
+//go:embed assets/js/modules/usage.js
+var usageJS string
+
+//go:embed assets/js/modules/markdown.js
+var markdownJS string
+
+//go:embed assets/js/modules/utils.js
+var utilsJS string
+
+//go:embed assets/js/modules/compaction.js
+var compactionJS string
+
 // //go:embed assets/js/monacoLoader.js
 // var monacoLoaderJS string
 
 //go:embed assets/css/ui.css
 var uiCSS string
+
+//go:embed assets/css/compaction.css
+var compactionCSS string
+
+//go:embed assets/css/file-browser.css
+var fileBrowserCSS string
 
 //go:embed assets/css/diffViewer.css
 var diffViewerCSS string
@@ -93,6 +152,7 @@ func generateMainUI(isAuthenticated bool) string {
 									b.Span("id", "connection-status", "class", "connection-status").R()
 									b.Button("id", "plan-history-btn", "class", "btn-secondary").T("Plan History")
 									b.Button("class", "btn-secondary", "onclick", "window.open('/prompts', '_blank')").T("Manage Prompts")
+									b.Button("id", "usage-toggle-btn", "class", "btn-secondary").T("Usage")
 									b.Button("id", "logout-btn", "class", "btn-secondary").T("Logout")
 								} else {
 									b.Button("class", "btn-primary", "onclick", "handleLogin()").T("Login with Claude Pro/Max")
@@ -102,19 +162,10 @@ func generateMainUI(isAuthenticated bool) string {
 						),
 					),
 				),
-				// Usage Panel (collapsible)
+				// Usage Panel (hidden by default, shown as dropdown)
 				func() any {
 					if isAuthenticated {
-						b.Div("id", "usage-panel", "class", "usage-panel collapsed").R(
-							b.Div("class", "usage-header").R(
-								b.Button("id", "usage-toggle", "class", "usage-toggle").R(
-									b.Span("class", "toggle-icon").T("▶"),
-									b.Span().T(" Usage & Limits"),
-								),
-								b.Div("class", "usage-summary").R(
-									b.Span("id", "usage-quick-info").T("Loading..."),
-								),
-							),
+						b.Div("id", "usage-panel", "class", "usage-panel", "style", "display: none;").R(
 							b.Div("class", "usage-content").R(
 								// Session Usage
 								b.Div("class", "usage-section").R(
@@ -194,9 +245,10 @@ func generateMainUI(isAuthenticated bool) string {
 							element.RenderComponents(b, tabs)
 							return nil
 						}(),
-						// New session button (will be shown/hidden based on active tab)
+						// New session button and compaction controls (will be shown/hidden based on active tab)
 						b.Div("class", "sidebar-footer").R(
-							b.Button("id", "new-session-btn", "class", "btn-primary", "style", "width: 100%;").T("New Session"),
+							b.Button("id", "new-session-btn", "class", "btn-primary", "style", "width: 100%; margin-bottom: 0.5rem;").T("New Session"),
+							b.Button("id", "compact-session-btn", "class", "btn-secondary", "style", "width: 100%; display: none;").T("Compact Conversation"),
 						),
 					),
 					// Chat area
@@ -406,29 +458,174 @@ func generateMainUI(isAuthenticated bool) string {
 	return b.String()
 }
 
+// minifyJavaScript minifies JavaScript code without obfuscation
+func minifyJavaScript(jsCode string) string {
+	// Check if minification is disabled
+	if os.Getenv("RCODE_MINIFY") == "false" {
+		return jsCode
+	}
+
+	m := minify.New()
+	// Configure JavaScript minifier with safe settings (no obfuscation)
+	m.Add("text/javascript", &js.Minifier{
+		KeepVarNames: true, // Don't obfuscate variable names
+		Precision:    0,    // Keep all decimal precision
+	})
+
+	minified, err := m.String("text/javascript", jsCode)
+	if err != nil {
+		// If minification fails, return original code
+		fmt.Printf("JavaScript minification failed: %v\n", err)
+		return jsCode
+	}
+	return minified
+}
+
+// minifyCSS minifies CSS code
+func minifyCSS(cssCode string) string {
+	// Check if minification is disabled
+	if os.Getenv("RCODE_MINIFY") == "false" {
+		return cssCode
+	}
+
+	m := minify.New()
+	// Configure CSS minifier
+	m.Add("text/css", &css.Minifier{
+		Precision: 0, // Keep all decimal precision
+	})
+
+	minified, err := m.String("text/css", cssCode)
+	if err != nil {
+		// If minification fails, return original code
+		fmt.Printf("CSS minification failed: %v\n", err)
+		return cssCode
+	}
+	return minified
+}
+
 func generateCSS() string {
-	return uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS
+	combinedCSS := uiCSS + "\n\n" + diffViewerCSS + "\n\n" + fileOperationsCSS + "\n\n" + fileBrowserCSS + "\n\n" + compactionCSS
+	return minifyCSS(combinedCSS)
 }
 
 func generateJavaScript(isAuthenticated bool) string {
 	if !isAuthenticated {
-		// Return login JS for non-authenticated users
-		return loginJS + `
+		// Return minified login JS for non-authenticated users
+		nonAuthJS := loginJS + `
 			// Non-authenticated view
 			document.addEventListener('DOMContentLoaded', function() {
 				console.log('RCode initialized - Please login to continue');
 			});
 		`
+		return minifyJavaScript(nonAuthJS)
 	}
 
 	// Include file explorer, file operations, and diff viewer for authenticated users
-	return fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" + diffViewerJS + "\n\n" + uiJS + `
+	// Wrap all modules in IIFE pattern for browser compatibility
+	stateModule := `
+// State module wrapped for non-module usage
+(function() {
+` + stateJS + `
+})();
+`
+
+	eventsModule := `
+// Events module wrapped for non-module usage  
+(function() {
+` + eventsJS + `
+})();
+`
+
+	sseModule := `
+// SSE module wrapped for non-module usage
+(function() {
+` + sseJS + `
+})();
+`
+
+	messagesModule := `
+// Messages module wrapped for non-module usage
+(function() {
+` + messagesJS + `
+})();
+`
+
+	sessionModule := `
+// Session module wrapped for non-module usage  
+(function() {
+` + sessionJS + `
+})();
+`
+
+	toolsModule := `
+// Tools module wrapped for non-module usage
+(function() {
+` + toolsJS + `
+})();
+`
+
+	permissionsModule := `
+// Permissions module wrapped for non-module usage
+(function() {
+` + permissionsJS + `
+})();
+`
+
+	usageModule := `
+// Usage module wrapped for non-module usage
+(function() {
+` + usageJS + `
+})();
+`
+
+	markdownModule := `
+// Markdown module wrapped for non-module usage
+(function() {
+` + markdownJS + `
+})();
+`
+
+	utilsModule := `
+// Utils module wrapped for non-module usage
+(function() {
+` + utilsJS + `
+})();
+`
+
+	clipboardModule := `
+// Clipboard module wrapped for non-module usage
+(function() {
+	const ClipboardModule = {};` + "\n" +
+		clipboardJS + "\n" + `
+	// Export functions to global ClipboardModule object
+	window.ClipboardModule = {
+		setupClipboardHandling,
+		processImageBlob,
+		handlePasteEvent,
+		showImagePastedNotification,
+		setupDragAndDrop,
+		handleFiles,
+		processImageFile
+	};
+})();
+`
+	// Load core modules first, then feature modules, then main UI
+	// Order: utils -> markdown -> state -> events -> sse -> messages -> session -> tools -> permissions -> usage -> other modules -> ui
+	combinedJS := utilsModule + "\n\n" + markdownModule + "\n\n" + stateModule + "\n\n" +
+		eventsModule + "\n\n" + sseModule + "\n\n" + messagesModule + "\n\n" +
+		sessionModule + "\n\n" + toolsModule + "\n\n" + permissionsModule + "\n\n" +
+		usageModule + "\n\n" + fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" +
+		diffViewerJS + "\n\n" + clipboardModule + "\n\n" + uiJS + `
 		// Initialize file explorer and diff viewer after UI is ready
 		document.addEventListener('DOMContentLoaded', function() {
 			// Initialize file explorer after a short delay to ensure Monaco is loaded
 			setTimeout(() => {
 				if (window.FileExplorer) {
 					window.FileExplorer.init();
+				}
+				// Initialize file browser with context menu
+				if (window.FileBrowser) {
+					window.fileBrowser = new window.FileBrowser();
 				}
 				// Initialize diff viewer
 				if (window.DiffViewer) {
@@ -437,4 +634,96 @@ func generateJavaScript(isAuthenticated bool) string {
 			}, 500);
 		});
 	`
+
+	// Minify the combined JavaScript
+	return minifyJavaScript(combinedJS)
+}
+
+// Check if modular JavaScript files exist
+func hasModules() bool {
+	_, err := assetsFS.ReadFile("assets/js/modules/main.js")
+	return err == nil
+}
+
+// Generate modular JavaScript that uses ES6 modules
+func generateModularJavaScript() string {
+	// For ES6 modules, we need to serve them as separate files and use import
+	// This requires serving the modules directory and using type="module" in script tags
+	// For now, we'll concatenate them in dependency order as a transitional approach
+
+	moduleFiles := []string{
+		"assets/js/modules/state.js",
+		"assets/js/modules/markdown.js",
+		"assets/js/modules/utils.js",
+		"assets/js/modules/clipboard.js",
+		"assets/js/modules/fileMention.js",
+		"assets/js/modules/usage.js",
+		"assets/js/modules/permissions.js",
+		"assets/js/modules/messages.js",
+		"assets/js/modules/tools.js",
+		"assets/js/modules/session.js",
+		"assets/js/modules/compaction.js",
+		"assets/js/modules/sse.js",
+		"assets/js/modules/events.js",
+		"assets/js/modules/main.js",
+	}
+
+	var jsContent strings.Builder
+
+	// Add supporting files first
+	jsContent.WriteString(fileOperationsJS + "\n\n")
+	jsContent.WriteString(fileExplorerJS + "\n\n")
+	jsContent.WriteString(diffViewerJS + "\n\n")
+
+	// Wrap modules in an IIFE to avoid global pollution
+	jsContent.WriteString("(function() {\n")
+	jsContent.WriteString("'use strict';\n\n")
+
+	// Read and concatenate module files, converting ES6 imports/exports
+	for _, file := range moduleFiles {
+		content, err := assetsFS.ReadFile(file)
+		if err != nil {
+			fmt.Printf("Warning: Could not read module %s: %v\n", file, err)
+			continue
+		}
+
+		// Convert ES6 module syntax to compatible format
+		moduleContent := convertES6Module(string(content), file)
+		jsContent.WriteString(fmt.Sprintf("// Module: %s\n", file))
+		jsContent.WriteString(moduleContent)
+		jsContent.WriteString("\n\n")
+	}
+
+	jsContent.WriteString("})();\n")
+
+	return jsContent.String()
+}
+
+// Convert ES6 module syntax to browser-compatible format
+func convertES6Module(content, filename string) string {
+	// This is a simplified conversion that wraps modules in a way they can work
+	// In production, you'd want to use a proper bundler like esbuild or webpack
+
+	// Remove import statements (they'll be loaded in order)
+	lines := strings.Split(content, "\n")
+	var result []string
+
+	for _, line := range lines {
+		// Skip import statements
+		if strings.HasPrefix(strings.TrimSpace(line), "import ") {
+			continue
+		}
+
+		// Convert export statements to window assignments for global access
+		if strings.HasPrefix(strings.TrimSpace(line), "export ") {
+			line = strings.Replace(line, "export const ", "window.", 1)
+			line = strings.Replace(line, "export function ", "window.", 1)
+			line = strings.Replace(line, "export {", "// Export: {", 1)
+			line = strings.Replace(line, "export default ", "window.default_", 1)
+		}
+
+		result = append(result, line)
+	}
+
+	return strings.Join(result, "\n")
 }
