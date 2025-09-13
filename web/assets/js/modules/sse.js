@@ -253,6 +253,7 @@ function handleServerEvent(evtData) {
 
   // Auto-switch to Files tab on first response
   const hasReceivedFirstResponse = window.AppState.getState('hasReceivedFirstResponse');
+
   if (evtData.sessionId === currentSessionId && !hasReceivedFirstResponse) {
     // Check for events that indicate the LLM is starting to respond
     if (evtData.type === 'content_start' ||
@@ -261,7 +262,7 @@ function handleServerEvent(evtData) {
       
       // Switch to Files tab on first response
       if (window.FileExplorer && window.FileExplorer.switchTab) {
-        console.log('Auto-switching to Files tab on first response');
+        // console.log('Auto-switching to Files tab on first response');
         window.FileExplorer.switchTab('files');
         window.AppState.setState('hasReceivedFirstResponse', true);
       }
@@ -269,8 +270,22 @@ function handleServerEvent(evtData) {
   }
 
   // Handle specific event types
+    if (evtData.type === 'file_opened' || evtData.type === 'file_changed' || evtData.type === 'file_tree_update') {
+        // Handle file explorer events - check session ID or allow empty (broadcast to all)
+        if (evtData.sessionId === currentSessionId || evtData.sessionId === '') {
+            if (window.FileExplorer) {
+                console.log("We have a file explorer on the window");
+                if (window.FileExplorer.handleFileEvent) {
+                    console.log("FileExplorer has a handleFileEvent function")
+                    window.FileExplorer.handleFileEvent(evtData);
+                }
+            }
+        }
+
+    }
+
   if (evtData.sessionId === currentSessionId) {
-    switch (evtData.type) {
+      switch (evtData.type) {
       case 'message_start':
         handleMessageStart(evtData);
         break;
@@ -301,6 +316,14 @@ function handleServerEvent(evtData) {
       case 'permission_request':
         handlePermissionRequest(evtData);
         break;
+
+      case 'diff_available': // some file changed
+        handleDiffAvailable(evtData);
+        break;
+      case 'file_diff': // inline file diff
+          handleDisplayFileDiff(evtData);
+          break;
+
       case 'plan_update':
         handlePlanUpdate(evtData);
         break;
@@ -320,9 +343,32 @@ function handleServerEvent(evtData) {
   }
 }
 
+function handleDisplayFileDiff(evtData) {
+    console.log('File diff received:', evtData.data);
+    displayFileDiff(evtData.data);
+}
+
+function handleDiffAvailable(evtData) {
+    console.log('Diff available:', evtData.data);
+    if (evtData.data && evtData.data.filePath) {
+        // For diff_available, we'll mark as modified since it implies the file was changed
+        // The file_changed event will handle marking as new if it's a creation
+        if (window.FileExplorer && window.FileExplorer.markFileModified) {
+            window.FileExplorer.markFileModified(evtData.data.filePath);
+        }
+
+        // Store the diff in the diff viewer
+        if (window.diffViewer && evtData.data.diffId) {
+            // Show notification that diff is available
+            const notification = `📝 Changes detected in ${evtData.data.filePath}`;
+            addSystemMessageToUI(notification, 'info');
+        }
+    }
+}
+
 // Event handlers
 function handleMessageStart(evtData) {
-  console.log('Message streaming started');
+  // console.log('Message streaming started');
   if (window.AppState && window.AppState.setStateMultiple) {
     window.AppState.setStateMultiple({
       isLLMProcessing: true,
