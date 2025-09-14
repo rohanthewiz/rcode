@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Tool Widget Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            padding: 20px;
+            background: #1a1a1a;
+            color: #ccc;
+        }
+        .test-controls {
+            margin: 20px 0;
+            padding: 20px;
+            border: 1px solid #333;
+            border-radius: 8px;
+            background: #222;
+        }
+        button {
+            margin: 5px;
+            padding: 10px 20px;
+            background: #4a9eff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #3a8eef;
+        }
+        .log {
+            margin-top: 20px;
+            padding: 10px;
+            background: #111;
+            border: 1px solid #333;
+            border-radius: 4px;
+            font-family: monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        .log-entry {
+            margin: 2px 0;
+            padding: 2px;
+        }
+        .log-entry.success { color: #4f4; }
+        .log-entry.error { color: #f44; }
+        .log-entry.info { color: #4af; }
+    </style>
+</head>
+<body>
+    <h1>Tool Widget Test Suite</h1>
+    
+    <div class="test-controls">
+        <h2>Simulate Tool Events</h2>
+        
+        <h3>Single Tool Test</h3>
+        <button onclick="simulateSingleTool()">Run Single Tool</button>
+        
+        <h3>Multiple Tools Test</h3>
+        <button onclick="simulateMultipleTools()">Run Multiple Tools</button>
+        
+        <h3>Tool Failure Test</h3>
+        <button onclick="simulateToolFailure()">Run Failed Tool</button>
+        
+        <h3>Concurrent Tools Test</h3>
+        <button onclick="simulateConcurrentTools()">Run 5 Concurrent Tools</button>
+        
+        <h3>Stress Test</h3>
+        <button onclick="stressTest()">Run 10 Tools Rapidly</button>
+        
+        <h3>Clear</h3>
+        <button onclick="clearAll()">Clear All Tools</button>
+    </div>
+    
+    <div class="log" id="log">
+        <div class="log-entry info">Test console ready. Open the RCode app in another tab and run tests here.</div>
+    </div>
+    
+    <script>
+        function log(message, type = 'info') {
+            const logEl = document.getElementById('log');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logEl.appendChild(entry);
+            logEl.scrollTop = logEl.scrollHeight;
+        }
+        
+        function generateToolId() {
+            return 'tool_' + Math.random().toString(36).substr(2, 9);
+        }
+        
+        function simulateSingleTool() {
+            const toolId = generateToolId();
+            const toolName = 'read_file';
+            
+            log(`Starting single tool test: ${toolName} (${toolId})`);
+            
+            // Simulate tool_execution_start
+            window.opener.postMessage({
+                type: 'tool_execution_start',
+                data: {
+                    toolId: toolId,
+                    toolName: toolName,
+                    parameters: { file_path: '/test/file.txt' }
+                }
+            }, '*');
+            
+            // Simulate completion after 2 seconds
+            setTimeout(() => {
+                window.opener.postMessage({
+                    type: 'tool_execution_complete',
+                    data: {
+                        toolId: toolId,
+                        status: 'success',
+                        summary: '✓ Read file.txt (1234 bytes)',
+                        duration: 2000,
+                        metrics: { bytesProcessed: 1234 }
+                    }
+                }, '*');
+                log(`Tool completed: ${toolName} (${toolId})`, 'success');
+            }, 2000);
+        }
+        
+        function simulateMultipleTools() {
+            const tools = [
+                { name: 'list_dir', delay: 1000 },
+                { name: 'read_file', delay: 1500 },
+                { name: 'write_file', delay: 2000 },
+                { name: 'git_status', delay: 500 }
+            ];
+            
+            log(`Starting multiple tools test (${tools.length} tools)`);
+            
+            tools.forEach((tool, index) => {
+                setTimeout(() => {
+                    const toolId = generateToolId();
+                    
+                    // Start tool
+                    window.opener.postMessage({
+                        type: 'tool_execution_start',
+                        data: {
+                            toolId: toolId,
+                            toolName: tool.name
+                        }
+                    }, '*');
+                    
+                    log(`Started: ${tool.name} (${toolId})`);
+                    
+                    // Complete tool
+                    setTimeout(() => {
+                        window.opener.postMessage({
+                            type: 'tool_execution_complete',
+                            data: {
+                                toolId: toolId,
+                                status: 'success',
+                                summary: `✓ Completed ${tool.name}`,
+                                duration: tool.delay
+                            }
+                        }, '*');
+                        log(`Completed: ${tool.name}`, 'success');
+                    }, tool.delay);
+                }, index * 500);
+            });
+        }
+        
+        function simulateToolFailure() {
+            const toolId = generateToolId();
+            const toolName = 'bash';
+            
+            log(`Starting failure test: ${toolName} (${toolId})`);
+            
+            // Start tool
+            window.opener.postMessage({
+                type: 'tool_execution_start',
+                data: {
+                    toolId: toolId,
+                    toolName: toolName,
+                    parameters: { command: 'invalid_command' }
+                }
+            }, '*');
+            
+            // Fail after 1 second
+            setTimeout(() => {
+                window.opener.postMessage({
+                    type: 'tool_execution_complete',
+                    data: {
+                        toolId: toolId,
+                        status: 'failed',
+                        summary: '✗ Command not found: invalid_command',
+                        duration: 1000
+                    }
+                }, '*');
+                log(`Tool failed: ${toolName}`, 'error');
+            }, 1000);
+        }
+        
+        function simulateConcurrentTools() {
+            log('Starting concurrent tools test');
+            
+            for (let i = 0; i < 5; i++) {
+                const toolId = generateToolId();
+                const toolName = ['read_file', 'write_file', 'search', 'git_diff', 'make_dir'][i];
+                
+                // Start all tools immediately
+                window.opener.postMessage({
+                    type: 'tool_execution_start',
+                    data: {
+                        toolId: toolId,
+                        toolName: toolName
+                    }
+                }, '*');
+                
+                log(`Started: ${toolName}`);
+                
+                // Complete at different times
+                setTimeout(() => {
+                    window.opener.postMessage({
+                        type: 'tool_execution_complete',
+                        data: {
+                            toolId: toolId,
+                            status: Math.random() > 0.2 ? 'success' : 'failed',
+                            summary: `Processed ${toolName}`,
+                            duration: 1000 + Math.random() * 2000,
+                            metrics: {
+                                bytesProcessed: Math.floor(Math.random() * 10000)
+                            }
+                        }
+                    }, '*');
+                }, 1000 + Math.random() * 3000);
+            }
+        }
+        
+        function stressTest() {
+            log('Starting stress test (10 rapid tools)');
+            
+            for (let i = 0; i < 10; i++) {
+                setTimeout(() => {
+                    const toolId = generateToolId();
+                    const toolNames = ['read_file', 'write_file', 'bash', 'search', 'git_status'];
+                    const toolName = toolNames[Math.floor(Math.random() * toolNames.length)];
+                    
+                    // Start tool
+                    window.opener.postMessage({
+                        type: 'tool_execution_start',
+                        data: {
+                            toolId: toolId,
+                            toolName: toolName
+                        }
+                    }, '*');
+                    
+                    // Quick completion
+                    setTimeout(() => {
+                        window.opener.postMessage({
+                            type: 'tool_execution_complete',
+                            data: {
+                                toolId: toolId,
+                                status: 'success',
+                                summary: `Quick ${toolName}`,
+                                duration: 100 + Math.random() * 500
+                            }
+                        }, '*');
+                    }, 100 + Math.random() * 500);
+                }, i * 100);
+            }
+        }
+        
+        function clearAll() {
+            if (window.opener && window.opener.ToolWidget) {
+                window.opener.ToolWidget.clearAllTools();
+                log('Cleared all tools', 'success');
+            } else {
+                log('Cannot access ToolWidget', 'error');
+            }
+        }
+        
+        // Instructions
+        log('Instructions:', 'info');
+        log('1. Open RCode app at http://localhost:8000', 'info');
+        log('2. Use the buttons above to simulate tool events', 'info');
+        log('3. Watch the tool widget update in real-time', 'info');
+    </script>
+</body>
+</html>
