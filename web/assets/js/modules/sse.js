@@ -416,6 +416,11 @@ function handleToolUseStart(evtData) {
       content.innerHTML = '<span class="tool-executing">🛠️ Executing tools...</span>';
     }
   }
+  
+  // Forward to Tool Widget if available
+  if (window.ToolWidget && window.ToolWidget.handleToolStart) {
+    window.ToolWidget.handleToolStart(evtData);
+  }
 }
 
 function handleMessageDelta(evtData) {
@@ -465,6 +470,10 @@ function handleToolExecutionStart(evtData) {
   if (window.handleToolExecutionStart) {
     window.handleToolExecutionStart(evtData);
   }
+  // Also forward to Tool Widget
+  if (window.ToolWidget && window.ToolWidget.handleToolExecutionStart) {
+    window.ToolWidget.handleToolExecutionStart(evtData);
+  }
 }
 
 function handleToolExecutionProgress(evtData) {
@@ -476,6 +485,10 @@ function handleToolExecutionProgress(evtData) {
 function handleToolExecutionComplete(evtData) {
   if (window.handleToolExecutionComplete) {
     window.handleToolExecutionComplete(evtData);
+  }
+  // Also forward to Tool Widget
+  if (window.ToolWidget && window.ToolWidget.handleToolComplete) {
+    window.ToolWidget.handleToolComplete(evtData);
   }
 }
 

@@ -340,9 +340,16 @@
   padding: 1rem;
 }
 
+.input-area-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1rem;
+}
+
 /* Model Selector */
 .model-selector-container {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   margin-bottom: 0.5rem;
@@ -358,11 +365,11 @@
   color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: 4px;
-  padding: 0.5rem;
-  font-size: 0.9rem;
+  padding: 0.3rem;
+  font-size: 0.8rem;
   cursor: pointer;
   outline: none;
-  min-width: 250px;
+  min-width: 200px;
 }
 
 .model-selector:hover {

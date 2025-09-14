@@ -15,66 +15,6 @@
    * @param {Object} evtData - Tool execution start event data
    */
   function handleToolExecutionStart(evtData) {
-    const { toolId, toolName, parameters } = evtData.data;
-    console.log('Tool execution started:', toolName, toolId);
-    
-    // Remove thinking indicator immediately when tools start
-    const thinkingIndicator = document.querySelector('.message.thinking');
-    if (thinkingIndicator) {
-      console.log('Removing thinking indicator as tool execution started');
-      thinkingIndicator.remove();
-    }
-    
-    // Create tool execution display
-    const messagesContainer = document.getElementById('messages');
-    if (!messagesContainer) return;
-    
-    const executionDiv = document.createElement('div');
-    executionDiv.className = 'tool-execution';
-    executionDiv.id = `tool-execution-${toolId}`;
-    executionDiv.dataset.toolName = toolName;
-    
-    const headerDiv = document.createElement('div');
-    headerDiv.className = 'tool-header';
-    
-    const statusIndicator = document.createElement('span');
-    statusIndicator.className = 'tool-status executing';
-    statusIndicator.innerHTML = '⚡';
-    
-    const toolNameSpan = document.createElement('span');
-    toolNameSpan.className = 'tool-name';
-    toolNameSpan.textContent = toolName;
-    
-    const statusText = document.createElement('span');
-    statusText.className = 'tool-status-text';
-    statusText.textContent = ' Executing...';
-    
-    headerDiv.appendChild(statusIndicator);
-    headerDiv.appendChild(toolNameSpan);
-    headerDiv.appendChild(statusText);
-    
-    const paramsDiv = document.createElement('div');
-    paramsDiv.className = 'tool-params';
-    paramsDiv.innerHTML = formatToolParameters(toolName, parameters);
-    
-    const progressDiv = document.createElement('div');
-    progressDiv.className = 'tool-progress';
-    progressDiv.style.display = 'none';
-    
-    executionDiv.appendChild(headerDiv);
-    executionDiv.appendChild(paramsDiv);
-    executionDiv.appendChild(progressDiv);
-    
-    messagesContainer.appendChild(executionDiv);
-    messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    
-    // Store execution info
-    activeToolExecutions.set(toolId, {
-      element: executionDiv,
-      toolName: toolName,
-      startTime: Date.now(),
-      parameters: parameters
-    });
   }
 
   /**
@@ -82,43 +22,6 @@
    * @param {Object} evtData - Tool execution progress event
    */
   function handleToolExecutionProgress(evtData) {
-    const { toolId, progress, message } = evtData.data;
-    const execution = activeToolExecutions.get(toolId);
-    if (!execution) return;
-    
-    const progressDiv = execution.element.querySelector('.tool-progress');
-    if (progressDiv) {
-      progressDiv.style.display = 'block';
-      
-      // Update or create progress bar
-      let progressBar = progressDiv.querySelector('.progress-bar');
-      if (!progressBar) {
-        const progressContainer = document.createElement('div');
-        progressContainer.className = 'progress-container';
-        
-        progressBar = document.createElement('div');
-        progressBar.className = 'progress-bar';
-        
-        progressContainer.appendChild(progressBar);
-        progressDiv.appendChild(progressContainer);
-      }
-      
-      // Update progress
-      if (progress !== undefined) {
-        progressBar.style.width = `${Math.min(100, Math.max(0, progress))}%`;
-      }
-      
-      // Add progress message
-      if (message) {
-        let messageDiv = progressDiv.querySelector('.progress-message');
-        if (!messageDiv) {
-          messageDiv = document.createElement('div');
-          messageDiv.className = 'progress-message';
-          progressDiv.appendChild(messageDiv);
-        }
-        messageDiv.textContent = message;
-      }
-    }
   }
 
   /**
@@ -126,48 +29,6 @@
    * @param {Object} data - Tool execution complete event data
    */
   function handleToolExecutionComplete(evtData) {
-    const { toolId, status, duration } = evtData.data;
-    const execution = activeToolExecutions.get(toolId);
-    if (!execution) return;
-    
-    // const duration = Date.now() - execution.startTime;
-    const headerDiv = execution.element.querySelector('.tool-header');
-    const statusIndicator = headerDiv.querySelector('.tool-status');
-    const statusText = headerDiv.querySelector('.tool-status-text');
-    
-    // Update status based on success
-    if (status === 'success') {
-      statusIndicator.className = 'tool-status success';
-      statusIndicator.innerHTML = '✓';
-      statusText.textContent = `Success (${formatDuration(duration)})`;
-    } else {
-      statusIndicator.className = 'tool-status failed';
-      statusIndicator.innerHTML = '✗';
-      statusText.textContent = error ? `Failed: ${error}` : 'Failed';
-    }
-    
-    // Hide progress
-    const progressDiv = execution.element.querySelector('.tool-progress');
-    if (progressDiv) {
-      progressDiv.style.display = 'none';
-    }
-    
-    // // Add metrics if available -- Maybe we will mess with this later
-    // if (metrics && Object.keys(metrics).length > 0) {
-    //   const metricsDiv = document.createElement('div');
-    //   metricsDiv.className = 'tool-metrics';
-    //   metricsDiv.innerHTML = formatToolMetrics(metrics);
-    //   execution.element.appendChild(metricsDiv);
-    // }
-
-    // Remove from active executions
-    activeToolExecutions.delete(toolId);
-    
-    // Scroll to bottom
-    const messagesContainer = document.getElementById('messages');
-    if (messagesContainer) {
-      messagesContainer.scrollTop = messagesContainer.scrollHeight;
-    }
   }
 
 

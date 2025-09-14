@@ -77,6 +77,9 @@ var utilsJS string
 //go:embed assets/js/modules/compaction.js
 var compactionJS string
 
+//go:embed assets/js/modules/tool-widget.js
+var toolWidgetJS string
+
 // //go:embed assets/js/monacoLoader.js
 // var monacoLoaderJS string
 
@@ -285,17 +288,22 @@ func generateMainUI(isAuthenticated bool) string {
 								b.Div("id", "messages", "class", "messages").R()
 								// Input area
 								b.Div("class", "input-area").R(
-									// Model selector
-									b.Div("class", "model-selector-container").R(
-										b.Label("for", "model-selector", "class", "model-label").T("Model:"),
-										b.Select("id", "model-selector", "class", "model-selector").R(
-											b.Option("value", "claude-opus-4-1-20250805").T("Claude Opus 4.1 (Latest)"),
-											b.Option("value", "claude-opus-4-20250514").T("Claude Opus 4"),
-											b.Option("value", "claude-sonnet-4-20250514").T("Claude Sonnet 4 (Latest)"),
-											b.Option("value", "claude-3-5-sonnet-20241022").T("Claude 3.5 Sonnet"),
-											b.Option("value", "claude-3-opus-20240229").T("Claude 3 Opus"),
-											b.Option("value", "claude-3-sonnet-20240229").T("Claude 3 Sonnet"),
-											b.Option("value", "claude-3-haiku-20240307").T("Claude 3 Haiku (Fast)"),
+									b.DivClass("input-area-header").R(
+										// Model selector
+										b.Div("class", "model-selector-container").R(
+											b.Label("for", "model-selector", "class", "model-label").T("Model:"),
+											b.Select("id", "model-selector", "class", "model-selector").R(
+												b.Option("value", "claude-opus-4-1-20250805").T("Opus 4.1"),
+												b.Option("value", "claude-opus-4-20250514").T("Opus 4"),
+												b.Option("value", "claude-sonnet-4-20250514").T("Sonnet 4"),
+												b.Option("value", "claude-3-7-sonnet-20250219").T("3.7 Sonnet"),
+												b.Option("value", "claude-3-5-sonnet-20241022").T("3.5 Sonnet"),
+												b.Option("value", "claude-3-5-haiku-20240701").T("3.5 Haiku (Fast)"),
+											),
+										),
+										b.DivClass("tool-use-widget hidden", "id", "tool-use-widget").R(
+											b.DivClass("widget-label").T("TOOLS"),
+											b.DivClass("tool-cards-container").R(),
 										),
 									),
 									// Plan mode indicator
@@ -564,6 +572,13 @@ func generateJavaScript(isAuthenticated bool) string {
 })();
 `
 
+	toolWidgetModule := `
+// Tool Widget module wrapped for non-module usage
+(function() {
+` + toolWidgetJS + `
+})();
+`
+
 	permissionsModule := `
 // Permissions module wrapped for non-module usage
 (function() {
@@ -610,10 +625,10 @@ func generateJavaScript(isAuthenticated bool) string {
 })();
 `
 	// Load core modules first, then feature modules, then main UI
-	// Order: utils -> markdown -> state -> events -> sse -> messages -> session -> tools -> permissions -> usage -> other modules -> ui
+	// Order: utils -> markdown -> state -> events -> sse -> messages -> session -> tools -> tool-widget -> permissions -> usage -> other modules -> ui
 	combinedJS := utilsModule + "\n\n" + markdownModule + "\n\n" + stateModule + "\n\n" +
 		eventsModule + "\n\n" + sseModule + "\n\n" + messagesModule + "\n\n" +
-		sessionModule + "\n\n" + toolsModule + "\n\n" + permissionsModule + "\n\n" +
+		sessionModule + "\n\n" + toolsModule + "\n\n" + toolWidgetModule + "\n\n" + permissionsModule + "\n\n" +
 		usageModule + "\n\n" + fileOperationsJS + "\n\n" + fileExplorerJS + "\n\n" +
 		diffViewerJS + "\n\n" + clipboardModule + "\n\n" + uiJS + `
 		// Initialize file explorer and diff viewer after UI is ready
